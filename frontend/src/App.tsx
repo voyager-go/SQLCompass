@@ -14,6 +14,7 @@ import {
     GetFieldDictionarySuggestion,
     GetQueryHistory,
     GetTableDetail,
+    GetTableRowCounts,
     GetWorkspaceState,
     OptimizeSQL,
     PreviewTableData,
@@ -132,6 +133,7 @@ type ChatEntry = {
     sql?: string;
     reasoning?: string;
     result?: QueryResult | null;
+    displayMode?: ChatDisplayMode;
 };
 
 type ChatPendingAction = {
@@ -157,6 +159,11 @@ const themeStorageKey = "sqltool-theme";
 const tablePageSize = 12;
 const previewPageSize = 30;
 const queryPageSize = 50;
+const SLASH_COMMANDS = [
+    { key: "database", label: "/database", desc: "选择数据库" },
+    { key: "table", label: "/table", desc: "选择数据表" },
+] as const;
+const SLASH_PAGE_SIZE = 20;
 
 const pages: PageEntry[] = [
     { id: "connections", label: "连接管理", summary: "切换与维护连接" },
@@ -556,6 +563,28 @@ function formatDateTime(value: string): string {
     } catch {
         return value;
     }
+}
+
+function clamp(value: number, min: number, max: number): number {
+    return Math.min(Math.max(value, min), max);
+}
+
+function stripSlashCommand(input: string, slashStart: number): string {
+    return input.substring(0, slashStart).replace(/\s+$/, "");
+}
+
+function summarizeChatResult(result: QueryResult): string {
+    if (result.rows.length === 0) {
+        return result.message?.trim() || "已执行完成，但没有返回数据。";
+    }
+
+    const firstRow = result.rows[0] ?? {};
+    const highlights = result.columns
+        .slice(0, 3)
+        .map((column) => `${column}: ${firstRow[column] ?? ""}`)
+        .join("，");
+
+    return `${result.message?.trim() || `共返回 ${result.rows.length} 行`}。${highlights ? ` 首行结果：${highlights}` : ""}`;
 }
 
 function stringifySQLValue(value: string): string {
@@ -1009,6 +1038,7 @@ function App() {
     const [slashMenuPage, setSlashMenuPage] = useState(0);
     const [slashMenuDB, setSlashMenuDB] = useState("");
     const [slashMenuStart, setSlashMenuStart] = useState(0); // cursor position where / was typed
+    const [slashMenuActiveIndex, setSlashMenuActiveIndex] = useState(0);
 
     const [workspaceNotice, setWorkspaceNotice] = useState<Notice | null>(null);
     const [connectionNotice, setConnectionNotice] = useState<Notice | null>(null);
@@ -1104,6 +1134,67 @@ function App() {
             return true;
         });
     }, [explorerTree, selectedDatabase, tableDetail]);
+    const slashMenuItems = useMemo(() => {
+        if (slashMenuType === "command") {
+            return SLASH_COMMANDS.filter((c) => c.key.includes(slashMenuFilter)).map((item) => ({
+                key: item.key,
+                label: item.label,
+                desc: item.desc,
+                tone: "command" as const,
+            }));
+        }
+
+        if (slashMenuType === "database" && explorerTree) {
+            return explorerTree.databases
+                .filter((db) => !db.isSystem && db.name.toLowerCase().includes(slashMenuFilter))
+                .map((db) => ({
+                    key: db.name,
+                    label: db.name,
+                    desc: `${db.tableCount} 张表`,
+                    tone: "database" as const,
+                }));
+        }
+
+        if (slashMenuType === "table" && explorerTree) {
+            const dbName = slashMenuDB || selectedDatabase;
+            if (!dbName) {
+                return explorerTree.databases
+                    .filter((db) => !db.isSystem)
+                    .flatMap((db) =>
+                        db.tables
+                            .filter((table) => table.name.toLowerCase().includes(slashMenuFilter))
+                            .map((table) => ({
+                                key: `${db.name}.${table.name}`,
+                                label: table.name,
+                                desc: `${db.name} · ${table.rows === -1 ? "..." : table.rows >= 0 ? table.rows.toLocaleString() : "-"} 行`,
+                                tone: "table" as const,
+                            })),
+                    );
+            }
+
+            const db = explorerTree.databases.find((item) => item.name === dbName);
+            if (!db) {
+                return [];
+            }
+
+            return db.tables
+                .filter((table) => table.name.toLowerCase().includes(slashMenuFilter))
+                .map((table) => ({
+                    key: table.name,
+                    label: table.name,
+                    desc: `${table.rows === -1 ? "..." : table.rows >= 0 ? table.rows.toLocaleString() : "-"} 行`,
+                    tone: "table" as const,
+                }));
+        }
+
+        return [];
+    }, [explorerTree, selectedDatabase, slashMenuDB, slashMenuFilter, slashMenuType]);
+    const slashMenuTotalPages = Math.max(1, Math.ceil(slashMenuItems.length / SLASH_PAGE_SIZE));
+    const slashMenuPageSafe = Math.min(slashMenuPage, slashMenuTotalPages - 1);
+    const pagedSlashMenuItems = useMemo(
+        () => slashMenuItems.slice(slashMenuPageSafe * SLASH_PAGE_SIZE, (slashMenuPageSafe + 1) * SLASH_PAGE_SIZE),
+        [slashMenuItems, slashMenuPageSafe],
+    );
 
     function pushToast(tone: NoticeTone, title: string, message: string) {
         setToast({
@@ -1164,8 +1255,14 @@ function App() {
             return;
         }
 
+        // 1. 快速获取表列表（不含行数）
         const tree = (await GetExplorerTree({ connectionId, database: preferredDatabase })) as ExplorerTree;
         setExplorerTree(tree);
+
+        // 2. 异步加载行数
+        if (tree.databases && tree.databases.length > 0) {
+            loadTableRowCounts(connectionId, tree);
+        }
 
         // 不自动选中数据库，让用户自行选择
         // 仅在用户明确指定了 preferredDatabase 时才选中
@@ -1183,6 +1280,61 @@ function App() {
             const tableExists = tree.databases.find((item) => item.name === nextDatabase)?.tables.some((item) => item.name === selectedTable);
             if (!tableExists) {
                 setSelectedTable("");
+            }
+        }
+    }
+
+    // 异步加载表行数
+    async function loadTableRowCounts(connectionId: string, tree: ExplorerTree) {
+        // 收集所有需要加载行数的表
+        const tablesToLoad: { database: string; tables: string[] }[] = [];
+
+        for (const db of tree.databases) {
+            if (db.tables && db.tables.length > 0) {
+                const tableNames = db.tables
+                    .filter((t) => t.rows === -1) // 只加载尚未加载的
+                    .map((t) => t.name);
+                if (tableNames.length > 0) {
+                    tablesToLoad.push({ database: db.name, tables: tableNames });
+                }
+            }
+        }
+
+        if (tablesToLoad.length === 0) return;
+
+        // 逐库异步加载行数
+        for (const { database, tables } of tablesToLoad) {
+            try {
+                const result = (await GetTableRowCounts({
+                    connectionId,
+                    database,
+                    tables,
+                })) as {
+                    connectionId: string;
+                    database: string;
+                    counts: Record<string, number>;
+                };
+
+                // 更新 explorerTree 中的行数
+                setExplorerTree((prev) => {
+                    if (!prev) return prev;
+                    return {
+                        ...prev,
+                        databases: prev.databases.map((db) => {
+                            if (db.name !== database) return db;
+                            return {
+                                ...db,
+                                tables: db.tables.map((table) => ({
+                                    ...table,
+                                    rows: result.counts[table.name] ?? table.rows,
+                                    loading: false,
+                                })),
+                            };
+                        }),
+                    };
+                });
+            } catch {
+                // 加载失败不影响主流程
             }
         }
     }
@@ -1546,6 +1698,24 @@ function App() {
         return () => window.clearTimeout(timer);
     }, [browserPreview, sqlText]);
 
+    useEffect(() => {
+        if (!slashMenuOpen) {
+            return;
+        }
+
+        setSlashMenuPage(0);
+        setSlashMenuActiveIndex(0);
+    }, [slashMenuFilter, slashMenuOpen, slashMenuType]);
+
+    useEffect(() => {
+        if (!slashMenuOpen) {
+            return;
+        }
+
+        const maxIndex = Math.max(0, pagedSlashMenuItems.length - 1);
+        setSlashMenuActiveIndex((current) => clamp(current, 0, maxIndex));
+    }, [pagedSlashMenuItems, slashMenuOpen]);
+
     function updateConnectionField<K extends keyof ConnectionInput>(key: K, value: ConnectionInput[K]) {
         setConnectionDraft((current) => {
             if (key === "engine") {
@@ -1612,6 +1782,10 @@ function App() {
             ...current,
             [databaseName]: true,
         }));
+
+        if (selectedConnectionId && !browserPreview) {
+            loadExplorer(selectedConnectionId, databaseName).catch(() => undefined);
+        }
     }
 
     function toggleDatabaseExpanded(databaseName: string) {
@@ -2488,19 +2662,20 @@ function App() {
                 displayMode: chatDisplayMode,
             })) as ChatDatabaseResponse;
 
+            if (response.sql && !response.requiresConfirm) {
+                await executeChatSQL(response.sql, response.displayMode as ChatDisplayMode, response.reply, message, response.reasoning, 0);
+                return;
+            }
+
             const assistantMessage: ChatEntry = {
                 id: browserGeneratedID(),
                 role: "assistant",
                 content: response.reply || "AI 已完成本轮分析。",
                 sql: response.sql,
                 reasoning: response.reasoning,
+                displayMode: (response.displayMode as ChatDisplayMode) || chatDisplayMode,
             };
             setChatMessages((current) => [...current, assistantMessage]);
-
-            if (response.sql && !response.requiresConfirm) {
-                await executeChatSQL(response.sql, response.displayMode as ChatDisplayMode, response.reply, message, response.reasoning, 0);
-                return;
-            }
 
             if (response.sql && response.requiresConfirm) {
                 setChatPendingAction({
@@ -2556,9 +2731,11 @@ function App() {
                     content:
                         displayMode === "table"
                             ? `${replyPrefix || "已执行 SQL。"} 已为你展示结果表格。`
-                            : `${replyPrefix || "已执行 SQL。"} 共返回 ${result.rows.length} 行，耗时 ${result.durationMs} ms。`,
+                            : `${replyPrefix || "已执行 SQL。"} ${summarizeChatResult(result)} 耗时 ${result.durationMs} ms。`,
                     sql: statement,
-                    result: displayMode === "table" ? result : null,
+                    result,
+                    reasoning: previousReason,
+                    displayMode,
                 },
             ]);
             await loadHistory(selectedConnection.id);
@@ -2735,7 +2912,9 @@ function App() {
                                             onCopied={(value) => pushToast(value ? "success" : "error", value ? "已复制表名" : "复制失败", value || "请重试")}
                                         />
                                     </div>
-                                    <span className="navigator-meta">{table.rows}</span>
+                                    <span className="navigator-meta">
+                                        {table.rows === -1 ? "加载中..." : table.rows >= 0 ? table.rows.toLocaleString() : "-"}
+                                    </span>
                                 </div>
                             ))}
 
@@ -3291,13 +3470,6 @@ function App() {
         );
     }
 
-    // ── Slash command constants ──
-    const SLASH_COMMANDS = [
-        { key: "database", label: "/database", desc: "选择数据库" },
-        { key: "table", label: "/table", desc: "选择数据表" },
-    ] as const;
-    const SLASH_PAGE_SIZE = 20;
-
     function handleChatInputChange(value: string, cursorPos?: number) {
         setChatInput(value);
         const pos = cursorPos ?? value.length;
@@ -3392,79 +3564,54 @@ function App() {
             setSlashMenuPage(0);
             setSlashMenuDB("");
         } else if (slashMenuType === "database") {
-            // Replace the entire /database token with the selected database name
-            const before = chatInput.substring(0, slashMenuStart);
-            const newText = before + item + " ";
-            setChatInput(newText);
+            const baseText = stripSlashCommand(chatInput, slashMenuStart);
+            setChatInput(baseText ? `${baseText} ` : "");
+            handleSelectDatabase(item);
             setSlashMenuOpen(false);
             setSlashMenuDB(item);
         } else if (slashMenuType === "table") {
-            const before = chatInput.substring(0, slashMenuStart);
-            const newText = before + item + " ";
-            setChatInput(newText);
+            const baseText = stripSlashCommand(chatInput, slashMenuStart);
+            setChatInput(baseText ? `${baseText} ` : "");
+            if (item.includes(".")) {
+                const [databaseName, tableName] = item.split(".", 2);
+                handleSelectDatabase(databaseName);
+                setSelectedTable(tableName);
+                setSlashMenuDB(databaseName);
+            } else {
+                setSelectedTable(item);
+            }
             setSlashMenuOpen(false);
         }
-    }
-
-    function getSlashMenuItems(): { key: string; label: string; desc: string }[] {
-        if (slashMenuType === "command") {
-            return SLASH_COMMANDS.filter((c) => c.key.includes(slashMenuFilter));
-        } else if (slashMenuType === "database" && explorerTree) {
-            const items = explorerTree.databases
-                .filter((db) => !db.isSystem && db.name.toLowerCase().includes(slashMenuFilter))
-                .map((db) => ({ key: db.name, label: db.name, desc: `${db.tableCount} 张表` }));
-            return items;
-        } else if (slashMenuType === "table" && explorerTree) {
-            const dbName = slashMenuDB || selectedDatabase;
-            if (!dbName) {
-                // No database selected — list tables from all non-system databases
-                const items = explorerTree.databases
-                    .filter((db) => !db.isSystem)
-                    .flatMap((db) =>
-                        db.tables
-                            .filter((t) => t.name.toLowerCase().includes(slashMenuFilter))
-                            .map((t) => ({ key: `${db.name}.${t.name}`, label: `${db.name}.${t.name}`, desc: `${t.rows} 行` }))
-                    );
-                return items;
-            }
-            const db = explorerTree.databases.find((d) => d.name === dbName);
-            if (!db) return [];
-            const items = db.tables
-                .filter((t) => t.name.toLowerCase().includes(slashMenuFilter))
-                .map((t) => ({ key: t.name, label: t.name, desc: `${t.rows} 行` }));
-            return items;
-        }
-        return [];
     }
 
     function renderSlashMenu() {
         if (!slashMenuOpen) return null;
-        const items = getSlashMenuItems();
-        const totalPages = Math.ceil(items.length / SLASH_PAGE_SIZE);
-        const pagedItems = items.slice(slashMenuPage * SLASH_PAGE_SIZE, (slashMenuPage + 1) * SLASH_PAGE_SIZE);
-        if (pagedItems.length === 0) return null;
+        if (pagedSlashMenuItems.length === 0) return null;
 
         return (
             <div className="slash-menu">
                 <div className="slash-menu__header">
                     <span>{slashMenuType === "command" ? "命令" : slashMenuType === "database" ? "选择数据库" : "选择数据表"}</span>
-                    {items.length > SLASH_PAGE_SIZE && (
+                    {slashMenuItems.length > SLASH_PAGE_SIZE && (
                         <span className="slash-menu__pager">
-                            <button type="button" className="slash-menu__pager-btn" disabled={slashMenuPage === 0} onClick={() => setSlashMenuPage((p) => p - 1)}>‹</button>
-                            <span>{slashMenuPage + 1}/{totalPages}</span>
-                            <button type="button" className="slash-menu__pager-btn" disabled={slashMenuPage >= totalPages - 1} onClick={() => setSlashMenuPage((p) => p + 1)}>›</button>
+                            <button type="button" className="slash-menu__pager-btn" disabled={slashMenuPageSafe === 0} onClick={() => setSlashMenuPage((page) => page - 1)}>‹</button>
+                            <span>{slashMenuPageSafe + 1}/{slashMenuTotalPages}</span>
+                            <button type="button" className="slash-menu__pager-btn" disabled={slashMenuPageSafe >= slashMenuTotalPages - 1} onClick={() => setSlashMenuPage((page) => page + 1)}>›</button>
                         </span>
                     )}
                 </div>
                 <div className="slash-menu__list">
-                    {pagedItems.map((item) => (
+                    {pagedSlashMenuItems.map((item, index) => (
                         <button
                             key={item.key}
                             type="button"
-                            className="slash-menu__item"
+                            className={`slash-menu__item${index === slashMenuActiveIndex ? " slash-menu__item--active" : ""}`}
                             onClick={() => handleSlashSelect(item.key)}
                         >
-                            <span className="slash-menu__item-label">{item.label}</span>
+                            <span className="slash-menu__item-main">
+                                <span className={`slash-menu__item-tag slash-menu__item-tag--${item.tone}`}>{item.tone === "command" ? "命令" : item.tone === "database" ? "库" : "表"}</span>
+                                <span className="slash-menu__item-label">{item.label}</span>
+                            </span>
                             <span className="slash-menu__item-desc">{item.desc}</span>
                         </button>
                     ))}
@@ -3514,24 +3661,44 @@ function App() {
                                     ) : null}
                                     {item.result ? (
                                         <div className="chat-result-shell">
-                                            <table className="result-table">
-                                                <thead>
-                                                    <tr>
-                                                        {item.result.columns.map((column) => (
-                                                            <th key={column}>{column}</th>
-                                                        ))}
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {item.result.rows.slice(0, 10).map((row, rowIndex) => (
-                                                        <tr key={`${item.id}-${rowIndex}`}>
-                                                            {item.result?.columns.map((column) => (
-                                                                <td key={column}>{row[column] ?? ""}</td>
+                                            <div className="chat-result-shell__meta">
+                                                <span>{item.result.statementType || "SELECT"}</span>
+                                                <span>{item.result.rows.length} 行</span>
+                                                <span>{item.result.durationMs} ms</span>
+                                            </div>
+                                            {item.displayMode === "summary" ? (
+                                                <div className="chat-result-summary">
+                                                    {item.result.rows.slice(0, 3).map((row, rowIndex) => (
+                                                        <div key={`${item.id}-summary-${rowIndex}`} className="chat-result-summary__row">
+                                                            {item.result?.columns.slice(0, 4).map((column) => (
+                                                                <div key={column} className="chat-result-summary__cell">
+                                                                    <span>{column}</span>
+                                                                    <strong>{row[column] ?? "-"}</strong>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <table className="result-table">
+                                                    <thead>
+                                                        <tr>
+                                                            {item.result.columns.map((column) => (
+                                                                <th key={column}>{column}</th>
                                                             ))}
                                                         </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                                    </thead>
+                                                    <tbody>
+                                                        {item.result.rows.slice(0, 10).map((row, rowIndex) => (
+                                                            <tr key={`${item.id}-${rowIndex}`}>
+                                                                {item.result?.columns.map((column) => (
+                                                                    <td key={column}>{row[column] ?? ""}</td>
+                                                                ))}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            )}
                                         </div>
                                     ) : null}
                                 </div>
@@ -3575,6 +3742,11 @@ function App() {
                     <div className="chat-composer-wrap">
                         {renderSlashMenu()}
                         <div className="chat-composer">
+                            <div className="chat-context-tags">
+                                {selectedDatabase ? <span className="chat-context-tag chat-context-tag--database">数据库 · {selectedDatabase}</span> : null}
+                                {selectedTable ? <span className="chat-context-tag chat-context-tag--table">数据表 · {selectedTable}</span> : null}
+                                {!selectedDatabase && !selectedTable ? <span className="chat-context-tag chat-context-tag--muted">未指定上下文，AI 将自行推断</span> : null}
+                            </div>
                             <div className="chat-composer__field">
                                 <textarea
                                     value={chatInput}
@@ -3583,6 +3755,30 @@ function App() {
                                         if (event.key === "Escape" && slashMenuOpen) {
                                             setSlashMenuOpen(false);
                                             event.preventDefault();
+                                            return;
+                                        }
+
+                                        if (slashMenuOpen && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+                                            const delta = event.key === "ArrowDown" ? 1 : -1;
+                                            const maxIndex = pagedSlashMenuItems.length - 1;
+                                            setSlashMenuActiveIndex((current) => {
+                                                if (maxIndex <= 0) {
+                                                    return 0;
+                                                }
+
+                                                return current + delta < 0 ? maxIndex : current + delta > maxIndex ? 0 : current + delta;
+                                            });
+                                            event.preventDefault();
+                                            return;
+                                        }
+
+                                        if (slashMenuOpen && event.key === "Enter") {
+                                            const activeItem = pagedSlashMenuItems[slashMenuActiveIndex];
+                                            if (activeItem) {
+                                                handleSlashSelect(activeItem.key);
+                                                event.preventDefault();
+                                                return;
+                                            }
                                         }
                                     }}
                                     placeholder="输入 / 可快速选择数据库或表"

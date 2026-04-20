@@ -250,6 +250,7 @@ func (s *Service) getMySQLExplorerTree(record store.ConnectionRecord, preferredD
 	}, nil
 }
 
+// listMySQLTables 快速获取表列表（不含行数，避免大数据表查询卡顿）
 func (s *Service) listMySQLTables(record store.ConnectionRecord, databaseName string) ([]TableNode, error) {
 	db, err := openMySQLDatabase(record, databaseName)
 	if err != nil {
@@ -260,8 +261,9 @@ func (s *Service) listMySQLTables(record store.ConnectionRecord, databaseName st
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	// 只获取表名、引擎、注释，不获取行数（行数通过异步接口获取）
 	rows, err := db.QueryContext(ctx, `
-		SELECT table_name, COALESCE(table_rows, 0), COALESCE(engine, ''), COALESCE(table_comment, '')
+		SELECT table_name, COALESCE(engine, ''), COALESCE(table_comment, '')
 		FROM information_schema.tables
 		WHERE table_schema = ?
 		  AND table_type = 'BASE TABLE'
@@ -275,13 +277,88 @@ func (s *Service) listMySQLTables(record store.ConnectionRecord, databaseName st
 	items := []TableNode{}
 	for rows.Next() {
 		var item TableNode
-		if err := rows.Scan(&item.Name, &item.Rows, &item.Engine, &item.Comment); err != nil {
+		if err := rows.Scan(&item.Name, &item.Engine, &item.Comment); err != nil {
 			return nil, err
 		}
+		item.Rows = -1 // -1 表示尚未加载
+		item.Loading = false
 		items = append(items, item)
 	}
 
 	return items, rows.Err()
+}
+
+// GetTableRowCounts 异步获取表行数
+func (s *Service) GetTableRowCounts(input TableRowCountRequest) (TableRowCountResult, error) {
+	record, err := s.getConnectionRecord(input.ConnectionID)
+	if err != nil {
+		return TableRowCountResult{}, err
+	}
+
+	switch record.Engine {
+	case string(database.MySQL), string(database.MariaDB):
+		return s.getMySQLTableRowCounts(record, input.Database, input.Tables)
+	default:
+		return TableRowCountResult{}, fmt.Errorf("%s 暂未接入表行数查询", record.Engine)
+	}
+}
+
+func (s *Service) getMySQLTableRowCounts(record store.ConnectionRecord, databaseName string, tables []string) (TableRowCountResult, error) {
+	if len(tables) == 0 {
+		return TableRowCountResult{
+			ConnectionID: record.ID,
+			Database:     databaseName,
+			Counts:       make(map[string]int64),
+		}, nil
+	}
+
+	db, err := openMySQLDatabase(record, databaseName)
+	if err != nil {
+		return TableRowCountResult{}, err
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 构建 IN 子句
+	placeholders := make([]string, len(tables))
+	args := make([]interface{}, len(tables))
+	for i, table := range tables {
+		placeholders[i] = "?"
+		args[i] = table
+	}
+	args = append([]interface{}{databaseName}, args...)
+
+	query := fmt.Sprintf(`
+		SELECT table_name, COALESCE(table_rows, 0)
+		FROM information_schema.tables
+		WHERE table_schema = ?
+		  AND table_name IN (%s)
+		  AND table_type = 'BASE TABLE'
+	`, strings.Join(placeholders, ","))
+
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return TableRowCountResult{}, err
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int64)
+	for rows.Next() {
+		var tableName string
+		var rowCount int64
+		if err := rows.Scan(&tableName, &rowCount); err != nil {
+			return TableRowCountResult{}, err
+		}
+		counts[tableName] = rowCount
+	}
+
+	return TableRowCountResult{
+		ConnectionID: record.ID,
+		Database:     databaseName,
+		Counts:       counts,
+	}, rows.Err()
 }
 
 func (s *Service) getMySQLTableDetail(record store.ConnectionRecord, databaseName string, tableName string) (TableDetail, error) {

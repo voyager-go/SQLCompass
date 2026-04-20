@@ -8,6 +8,19 @@ export type TableNode = {
     rows: number;
     engine: string;
     comment: string;
+    loading?: boolean;
+};
+
+export type TableRowCountRequest = {
+    connectionId: string;
+    database: string;
+    tables: string[];
+};
+
+export type TableRowCountResult = {
+    connectionId: string;
+    database: string;
+    counts: Record<string, number>;
 };
 
 export type DatabaseNode = {

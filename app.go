@@ -119,6 +119,15 @@ func (a *App) GetExplorerTree(input workspace.ExplorerRequest) (workspace.Explor
 	return service.GetExplorerTree(input)
 }
 
+func (a *App) GetTableRowCounts(input workspace.TableRowCountRequest) (workspace.TableRowCountResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.TableRowCountResult{}, err
+	}
+
+	return service.GetTableRowCounts(input)
+}
+
 func (a *App) GetTableDetail(input workspace.TableDetailRequest) (workspace.TableDetail, error) {
 	service, err := a.requireWorkspace()
 	if err != nil {

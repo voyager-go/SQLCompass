@@ -23,10 +23,23 @@ type DatabaseNode struct {
 }
 
 type TableNode struct {
-	Name    string `json:"name"`
-	Rows    int64  `json:"rows"`
-	Engine  string `json:"engine"`
-	Comment string `json:"comment"`
+	Name     string `json:"name"`
+	Rows     int64  `json:"rows"`
+	Engine   string `json:"engine"`
+	Comment  string `json:"comment"`
+	Loading  bool   `json:"loading"` // 行数是否正在加载中
+}
+
+type TableRowCountRequest struct {
+	ConnectionID string   `json:"connectionId"`
+	Database     string   `json:"database"`
+	Tables       []string `json:"tables"`
+}
+
+type TableRowCountResult struct {
+	ConnectionID string            `json:"connectionId"`
+	Database     string            `json:"database"`
+	Counts       map[string]int64  `json:"counts"` // table_name -> row_count
 }
 
 type TableDetailRequest struct {

@@ -10,6 +10,7 @@ export function SaveAISettings(arg1: any): Promise<any>;
 export function ClearAIAPIKey(): Promise<any>;
 export function GetExplorerTree(arg1: any): Promise<any>;
 export function GetTableDetail(arg1: any): Promise<any>;
+export function GetTableRowCounts(arg1: any): Promise<any>;
 export function ExecuteQuery(arg1: any): Promise<any>;
 export function PreviewTableData(arg1: any): Promise<any>;
 export function GetQueryHistory(arg1: string): Promise<any>;

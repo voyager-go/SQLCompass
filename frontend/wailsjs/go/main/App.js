@@ -38,6 +38,10 @@ export function GetTableDetail(arg1) {
     return window["go"]["main"]["App"]["GetTableDetail"](arg1);
 }
 
+export function GetTableRowCounts(arg1) {
+    return window["go"]["main"]["App"]["GetTableRowCounts"](arg1);
+}
+
 export function ExecuteQuery(arg1) {
     return window["go"]["main"]["App"]["ExecuteQuery"](arg1);
 }
