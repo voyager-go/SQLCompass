@@ -145,6 +145,12 @@ type ChatPendingAction = {
     userMessage: string;
 };
 
+type ChatDropPayload = {
+    kind: "database" | "table";
+    database: string;
+    table?: string;
+};
+
 type CellEditorState = {
     rowKey: string;
     row: Record<string, string>;
@@ -587,6 +593,10 @@ function summarizeChatResult(result: QueryResult): string {
     return `${result.message?.trim() || `共返回 ${result.rows.length} 行`}。${highlights ? ` 首行结果：${highlights}` : ""}`;
 }
 
+function appendUnique(items: string[], value: string): string[] {
+    return items.includes(value) ? items : [...items, value];
+}
+
 function stringifySQLValue(value: string): string {
     if (value === "") {
         return "NULL";
@@ -961,6 +971,7 @@ function App() {
     const sqlFileInputRef = useRef<HTMLInputElement | null>(null);
     const sqlEditorRef = useRef<MonacoEditorNS.IStandaloneCodeEditor | null>(null);
     const monacoRef = useRef<Monaco | null>(null);
+    const chatStreamRef = useRef<HTMLDivElement | null>(null);
     const completionDisposableRef = useRef<IDisposable | null>(null);
     const completionPrimedRef = useRef(false);
     const [monacoReady, setMonacoReady] = useState(false);
@@ -1032,6 +1043,9 @@ function App() {
     const [chatInput, setChatInput] = useState("");
     const [chatMessages, setChatMessages] = useState<ChatEntry[]>([]);
     const [chatPendingAction, setChatPendingAction] = useState<ChatPendingAction | null>(null);
+    const [chatContextDatabase, setChatContextDatabase] = useState("");
+    const [chatContextTables, setChatContextTables] = useState<string[]>([]);
+    const [chatDropActive, setChatDropActive] = useState(false);
     const [slashMenuOpen, setSlashMenuOpen] = useState(false);
     const [slashMenuType, setSlashMenuType] = useState<"command" | "database" | "table">("command");
     const [slashMenuFilter, setSlashMenuFilter] = useState("");
@@ -1644,6 +1658,8 @@ function App() {
         setPreviewContext(null);
         setChatMessages([]);
         setChatPendingAction(null);
+        setChatContextDatabase("");
+        setChatContextTables([]);
         setTablePageByDatabase({});
         setExpandedDatabases({});
         setSelectedSnippet(null);
@@ -1697,6 +1713,15 @@ function App() {
 
         return () => window.clearTimeout(timer);
     }, [browserPreview, sqlText]);
+
+    useEffect(() => {
+        const element = chatStreamRef.current;
+        if (!element) {
+            return;
+        }
+
+        element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+    }, [chatMessages, isRunningChat, chatPendingAction]);
 
     useEffect(() => {
         if (!slashMenuOpen) {
@@ -1767,6 +1792,8 @@ function App() {
 
     function handleSelectDatabase(databaseName: string) {
         setSelectedDatabase(databaseName);
+        setChatContextDatabase(databaseName);
+        setChatContextTables([]);
         setTableSearch("");
         setSelectedTable("");
         setTableDetail(null);
@@ -2638,6 +2665,17 @@ function App() {
             return;
         }
 
+        const effectiveDatabase = chatContextDatabase || selectedDatabase;
+        const effectiveTables = chatContextTables.length > 0 ? chatContextTables : selectedTable ? [selectedTable] : [];
+        const selectedTableText = effectiveTables.join(", ");
+        const contextualMessage = [
+            effectiveDatabase ? `当前数据库：${effectiveDatabase}` : "",
+            selectedTableText ? `限定数据表：${selectedTableText}` : "",
+            message,
+        ]
+            .filter(Boolean)
+            .join("\n");
+
         const nextUserMessage: ChatEntry = {
             id: browserGeneratedID(),
             role: "user",
@@ -2655,15 +2693,15 @@ function App() {
         try {
             const response = (await ChatWithDatabase({
                 connectionId: selectedConnection.id,
-                database: selectedDatabase,
-                selectedTable: selectedTable,
-                message,
+                database: effectiveDatabase,
+                selectedTable: selectedTableText,
+                message: contextualMessage,
                 history: nextHistory,
                 displayMode: chatDisplayMode,
             })) as ChatDatabaseResponse;
 
             if (response.sql && !response.requiresConfirm) {
-                await executeChatSQL(response.sql, response.displayMode as ChatDisplayMode, response.reply, message, response.reasoning, 0);
+                await executeChatSQL(response.sql, response.displayMode as ChatDisplayMode, response.reply, contextualMessage, response.reasoning, 0);
                 return;
             }
 
@@ -2684,7 +2722,7 @@ function App() {
                     analysis: response.analysis,
                     displayMode: (response.displayMode as ChatDisplayMode) || "summary",
                     reasoning: response.reasoning,
-                    userMessage: message,
+                    userMessage: contextualMessage,
                 });
             }
         } catch (error) {
@@ -2707,10 +2745,13 @@ function App() {
             return;
         }
 
+        const effectiveDatabase = chatContextDatabase || selectedDatabase;
+        const selectedTableText = chatContextTables.length > 0 ? chatContextTables.join(", ") : selectedTable;
+
         try {
             const result = (await ExecuteQuery({
                 connectionId: selectedConnection.id,
-                database: selectedDatabase,
+                database: effectiveDatabase,
                 sql: statement,
                 page: 1,
                 pageSize: displayMode === "table" ? previewPageSize : queryPageSize,
@@ -2749,8 +2790,8 @@ function App() {
                     }));
                     const repair = (await RepairChatSQL({
                         connectionId: selectedConnection.id,
-                        database: selectedDatabase,
-                        selectedTable: selectedTable,
+                        database: effectiveDatabase,
+                        selectedTable: selectedTableText,
                         message: userMessage || statement,
                         attemptedSql: statement,
                         errorMessage: message,
@@ -2855,14 +2896,17 @@ function App() {
             const visibleTables: TableNode[] = filteredTables.slice(start, start + tablePageSize);
 
             return (
-                <div key={database.name} className={`navigator-db${isActive ? " navigator-db--active" : ""}`}>
-                    <div className="navigator-db__row">
-                        <div className="navigator-db__button" role="button" tabIndex={0} onClick={() => handleSelectDatabase(database.name)} onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                handleSelectDatabase(database.name);
-                            }
-                        }}>
+                    <div key={database.name} className={`navigator-db${isActive ? " navigator-db--active" : ""}`}>
+                        <div className="navigator-db__row">
+                            <div className="navigator-db__button" role="button" tabIndex={0} draggable onDragStart={(event) => {
+                                event.dataTransfer.effectAllowed = "copy";
+                                event.dataTransfer.setData("application/x-sqltool-chat-item", JSON.stringify({ kind: "database", database: database.name }));
+                            }} onClick={() => handleSelectDatabase(database.name)} onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    handleSelectDatabase(database.name);
+                                }
+                            }}>
                             <button type="button" className="navigator-toggle" onClick={(event) => {
                                 event.stopPropagation();
                                 toggleDatabaseExpanded(database.name);
@@ -2887,6 +2931,11 @@ function App() {
                                     className={`navigator-table${table.name === selectedTable ? " navigator-table--active" : ""}`}
                                     role="button"
                                     tabIndex={0}
+                                    draggable
+                                    onDragStart={(event) => {
+                                        event.dataTransfer.effectAllowed = "copy";
+                                        event.dataTransfer.setData("application/x-sqltool-chat-item", JSON.stringify({ kind: "table", database: database.name, table: table.name }));
+                                    }}
                                     onClick={() => handlePreviewTable(database.name, table.name)}
                                     onContextMenu={(event) => {
                                         event.preventDefault();
@@ -3575,13 +3624,29 @@ function App() {
             if (item.includes(".")) {
                 const [databaseName, tableName] = item.split(".", 2);
                 handleSelectDatabase(databaseName);
-                setSelectedTable(tableName);
+                setChatContextTables((current) => appendUnique(current.filter((name) => name !== tableName), tableName));
                 setSlashMenuDB(databaseName);
             } else {
-                setSelectedTable(item);
+                setChatContextTables((current) => appendUnique(current, item));
             }
             setSlashMenuOpen(false);
         }
+    }
+
+    function handleChatDrop(payload: ChatDropPayload) {
+        if (payload.kind === "database") {
+            handleSelectDatabase(payload.database);
+            return;
+        }
+
+        if (!payload.table) {
+            return;
+        }
+
+        const tableName = payload.table;
+
+        setChatContextDatabase(payload.database);
+        setChatContextTables((current) => (chatContextDatabase && chatContextDatabase !== payload.database ? [tableName] : appendUnique(current, tableName)));
     }
 
     function renderSlashMenu() {
@@ -3622,7 +3687,7 @@ function App() {
 
     function renderChatPage() {
         return (
-            <section className="page-panel page-panel--wide page-panel--scrollable">
+            <section className="page-panel page-panel--wide page-panel--scrollable page-panel--chat">
                 <div className="page-headline">
                     <div>
                         <h2>AI 对话</h2>
@@ -3640,15 +3705,13 @@ function App() {
                 </div>
 
                 <div className="chat-layout">
-                    <div className="chat-stream">
+                    <div ref={chatStreamRef} className="chat-stream">
                         {chatMessages.length === 0 ? <div className="empty-block">直接用自然语言描述你想查询或操作当前数据库的内容，我会先理解意图，再自动生成 SQL。</div> : null}
                         {chatMessages.map((item) => (
                             <div key={item.id} className={`chat-message chat-message--${item.role}`}>
-                                <div className={`chat-message__avatar chat-message__avatar--${item.role}`}>{item.role === "assistant" ? "AI" : "你"}</div>
                                 <div className="chat-message__body">
                                     <div className="chat-message__meta">
                                         <div className="chat-message__label">{item.role === "assistant" ? "AI 助手" : "你"}</div>
-                                        <span className="chat-message__badge">{item.role === "assistant" ? "已生成回答" : "你的提问"}</span>
                                     </div>
                                     <div className={`chat-bubble chat-bubble--${item.role}`}>
                                         <p>{item.content}</p>
@@ -3706,11 +3769,9 @@ function App() {
                         ))}
                         {isRunningChat ? (
                             <div className="chat-message chat-message--assistant">
-                                <div className="chat-message__avatar chat-message__avatar--assistant">AI</div>
                                 <div className="chat-message__body">
                                     <div className="chat-message__meta">
                                         <div className="chat-message__label">AI 助手</div>
-                                        <span className="chat-message__badge">正在分析</span>
                                     </div>
                                     <div className="chat-thinking">
                                         <span className="chat-thinking__spinner">✦</span>
@@ -3739,13 +3800,55 @@ function App() {
                         ) : null}
                     </div>
 
-                    <div className="chat-composer-wrap">
+                    <div className={`chat-composer-wrap${chatDropActive ? " chat-composer-wrap--drop-active" : ""}`} onDragOver={(event) => {
+                        if (!selectedConnection) {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "copy";
+                        setChatDropActive(true);
+                    }} onDragEnter={(event) => {
+                        if (!selectedConnection) {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        setChatDropActive(true);
+                    }} onDragLeave={(event) => {
+                        if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                            return;
+                        }
+                        setChatDropActive(false);
+                    }} onDrop={(event) => {
+                        event.preventDefault();
+                        setChatDropActive(false);
+                        const raw = event.dataTransfer.getData("application/x-sqltool-chat-item");
+                        if (!raw) {
+                            return;
+                        }
+
+                        try {
+                            const payload = JSON.parse(raw) as ChatDropPayload;
+                            handleChatDrop(payload);
+                        } catch {
+                            return;
+                        }
+                    }}>
                         {renderSlashMenu()}
                         <div className="chat-composer">
                             <div className="chat-context-tags">
-                                {selectedDatabase ? <span className="chat-context-tag chat-context-tag--database">数据库 · {selectedDatabase}</span> : null}
-                                {selectedTable ? <span className="chat-context-tag chat-context-tag--table">数据表 · {selectedTable}</span> : null}
-                                {!selectedDatabase && !selectedTable ? <span className="chat-context-tag chat-context-tag--muted">未指定上下文，AI 将自行推断</span> : null}
+                                {chatContextDatabase ? <button type="button" className="chat-context-tag chat-context-tag--database" onClick={() => {
+                                    setChatContextDatabase("");
+                                    setChatContextTables([]);
+                                }}>数据库 · {chatContextDatabase}<span aria-hidden="true">×</span></button> : null}
+                                {chatContextTables.map((tableName) => (
+                                    <button key={tableName} type="button" className="chat-context-tag chat-context-tag--table" onClick={() => setChatContextTables((current) => current.filter((item) => item !== tableName))}>
+                                        数据表 · {tableName}
+                                        <span aria-hidden="true">×</span>
+                                    </button>
+                                ))}
+                                {!chatContextDatabase && chatContextTables.length === 0 ? <span className="chat-context-tag chat-context-tag--muted">可从左侧拖入数据库或数据表作为上下文</span> : null}
                             </div>
                             <div className="chat-composer__field">
                                 <textarea
@@ -3781,7 +3884,7 @@ function App() {
                                             }
                                         }
                                     }}
-                                    placeholder="输入 / 可快速选择数据库或表"
+                                    placeholder="输入你的问题，或从左侧拖入数据库 / 数据表"
                                     rows={5}
                                 />
                                 <button
@@ -3803,7 +3906,7 @@ function App() {
                             </div>
                             <div className="chat-composer__hint">
                                 <span>{selectedConnection ? `当前连接：${selectedConnection.name}` : "请先选择连接后再发送"}</span>
-                                <span>输入 <code>/</code> 可快速插入数据库或表名</span>
+                                <span>输入 <code>/</code> 或直接拖拽左侧数据库 / 表到这里</span>
                             </div>
                         </div>
                     </div>
@@ -3891,6 +3994,7 @@ function App() {
                                                 }
                                             }
                                             setActivePage("query");
+                                            setSidebarView("database"); // 切换回数据库视图
                                             setQueryNotice({ tone: "info", message: `历史 SQL 已回填到编辑器${item.database ? `，已切换至 ${item.database}` : ""}${tableName ? `，表 ${tableName} 已定位` : ""}。` });
                                         }}
                                     >
