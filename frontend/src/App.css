@@ -1,0 +1,106 @@
+
+/* ===== Sidebar Filter Styles ===== */
+.sidebar-title--with-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--sidebar-border);
+}
+
+.sidebar-title__actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.sidebar-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    background: var(--sidebar-surface);
+    color: var(--sidebar-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.sidebar-icon-btn:hover {
+    background: var(--sidebar-surface-strong);
+    color: var(--sidebar-text);
+}
+
+.sidebar-icon-btn--active {
+    background: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+    color: #ffffff;
+}
+
+/* Filter Panel Styles */
+.filter-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    margin: 0 4px 8px;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    background: var(--sidebar-surface);
+    max-height: 200px;
+    overflow: auto;
+}
+
+.filter-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    color: var(--sidebar-muted);
+}
+
+.filter-panel__clear {
+    padding: 2px 8px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--sidebar-accent);
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.filter-panel__clear:hover {
+    background: rgba(33, 92, 227, 0.1);
+}
+
+.filter-panel__list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-panel__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    color: var(--sidebar-text);
+    transition: background 0.15s ease;
+}
+
+.filter-panel__item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.filter-panel__item input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
+}
