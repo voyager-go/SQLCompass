@@ -1219,6 +1219,34 @@ function App() {
         });
     }
 
+    // 保存筛选设置到本地存储
+    function saveFilterSettings() {
+        const settings = {
+            databaseFilter,
+            tableFilter,
+            showDatabaseFilter,
+            showTableFilter,
+        };
+        localStorage.setItem("sqlpilot-filter-settings", JSON.stringify(settings));
+        pushToast("success", "已保存", "筛选设置已保存，下次打开时自动恢复");
+    }
+
+    // 加载保存的筛选设置
+    function loadFilterSettings() {
+        try {
+            const saved = localStorage.getItem("sqlpilot-filter-settings");
+            if (saved) {
+                const settings = JSON.parse(saved);
+                if (settings.databaseFilter) setDatabaseFilter(settings.databaseFilter);
+                if (settings.tableFilter) setTableFilter(settings.tableFilter);
+                if (typeof settings.showDatabaseFilter === "boolean") setShowDatabaseFilter(settings.showDatabaseFilter);
+                if (typeof settings.showTableFilter === "boolean") setShowTableFilter(settings.showTableFilter);
+            }
+        } catch {
+            // 忽略加载错误
+        }
+    }
+
     function getErrorMessage(error: unknown): string {
         if (error instanceof Error && error.message.trim()) {
             return error.message;
@@ -1618,6 +1646,11 @@ function App() {
                 setBackendState(message);
             });
     }, [browserPreview]);
+
+    // 组件挂载时加载保存的筛选设置
+    useEffect(() => {
+        loadFilterSettings();
+    }, []);
 
     useEffect(() => {
         if (workspaceState.connections.length === 0) {
@@ -4652,6 +4685,18 @@ function App() {
                                                 </svg>
                                             </button>
                                         )}
+                                        <button
+                                            type="button"
+                                            className="sidebar-icon-btn"
+                                            onClick={saveFilterSettings}
+                                            title="保存筛选设置"
+                                        >
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                                                <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                                                <polyline points="7 3 7 8 15 8"></polyline>
+                                            </svg>
+                                        </button>
                                     </div>
                                 </div>
 
