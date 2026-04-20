@@ -934,6 +934,7 @@ function App() {
     const monacoRef = useRef<Monaco | null>(null);
     const completionDisposableRef = useRef<IDisposable | null>(null);
     const completionPrimedRef = useRef(false);
+    const [monacoReady, setMonacoReady] = useState(false);
 
     const [workspaceState, setWorkspaceState] = useState<WorkspaceState>(emptyWorkspaceState);
     const [backendState, setBackendState] = useState("正在连接桌面后端");
@@ -990,6 +991,8 @@ function App() {
     const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
     const [historyFocusId, setHistoryFocusId] = useState("");
     const [queryPage, setQueryPage] = useState(1);
+    const [historyPage, setHistoryPage] = useState(1);
+    const historyPageSize = 20;
     const [schemaDraftFields, setSchemaDraftFields] = useState<SchemaDraftField[]>([]);
     const [renameModalOpen, setRenameModalOpen] = useState(false);
     const [renameTableName, setRenameTableName] = useState("");
@@ -1429,7 +1432,7 @@ function App() {
             disposable.dispose();
             completionDisposableRef.current = null;
         };
-    }, [sqlCompletionSpecs]);
+    }, [monacoReady, sqlCompletionSpecs]);
 
     useEffect(() => {
         if (browserPreview) {
@@ -1773,6 +1776,7 @@ function App() {
     function handleEditorDidMount(editor: MonacoEditorNS.IStandaloneCodeEditor, monaco: Monaco) {
         sqlEditorRef.current = editor;
         monacoRef.current = monaco;
+        setMonacoReady(true);
 
         monaco.editor.defineTheme("sqltool-sql", {
             base: "vs-dark",
@@ -3493,46 +3497,58 @@ function App() {
                         {chatMessages.length === 0 ? <div className="empty-block">直接用自然语言描述你想查询或操作当前数据库的内容，我会先理解意图，再自动生成 SQL。</div> : null}
                         {chatMessages.map((item) => (
                             <div key={item.id} className={`chat-message chat-message--${item.role}`}>
-                                {item.role === "assistant" ? <div className="chat-message__label">AI 助手</div> : null}
-                                <div className={`chat-bubble chat-bubble--${item.role}`}>
-                                    <p>{item.content}</p>
-                                </div>
-                                {item.reasoning ? <span className="chat-reasoning">{item.reasoning}</span> : null}
-                                {item.sql ? (
-                                    <div className="code-block code-block--light">
-                                        <pre>{item.sql}</pre>
+                                <div className={`chat-message__avatar chat-message__avatar--${item.role}`}>{item.role === "assistant" ? "AI" : "你"}</div>
+                                <div className="chat-message__body">
+                                    <div className="chat-message__meta">
+                                        <div className="chat-message__label">{item.role === "assistant" ? "AI 助手" : "你"}</div>
+                                        <span className="chat-message__badge">{item.role === "assistant" ? "已生成回答" : "你的提问"}</span>
                                     </div>
-                                ) : null}
-                                {item.result ? (
-                                    <div className="chat-result-shell">
-                                        <table className="result-table">
-                                            <thead>
-                                                <tr>
-                                                    {item.result.columns.map((column) => (
-                                                        <th key={column}>{column}</th>
-                                                    ))}
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {item.result.rows.slice(0, 10).map((row, rowIndex) => (
-                                                    <tr key={`${item.id}-${rowIndex}`}>
-                                                        {item.result?.columns.map((column) => (
-                                                            <td key={column}>{row[column] ?? ""}</td>
+                                    <div className={`chat-bubble chat-bubble--${item.role}`}>
+                                        <p>{item.content}</p>
+                                    </div>
+                                    {item.reasoning ? <span className="chat-reasoning">{item.reasoning}</span> : null}
+                                    {item.sql ? (
+                                        <div className="code-block code-block--light">
+                                            <pre>{item.sql}</pre>
+                                        </div>
+                                    ) : null}
+                                    {item.result ? (
+                                        <div className="chat-result-shell">
+                                            <table className="result-table">
+                                                <thead>
+                                                    <tr>
+                                                        {item.result.columns.map((column) => (
+                                                            <th key={column}>{column}</th>
                                                         ))}
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                ) : null}
+                                                </thead>
+                                                <tbody>
+                                                    {item.result.rows.slice(0, 10).map((row, rowIndex) => (
+                                                        <tr key={`${item.id}-${rowIndex}`}>
+                                                            {item.result?.columns.map((column) => (
+                                                                <td key={column}>{row[column] ?? ""}</td>
+                                                            ))}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : null}
+                                </div>
                             </div>
                         ))}
                         {isRunningChat ? (
                             <div className="chat-message chat-message--assistant">
-                                <div className="chat-message__label">AI 助手</div>
-                                <div className="chat-thinking">
-                                    <span className="chat-thinking__spinner">✦</span>
-                                    <span>正在思考并读取当前数据库上下文...</span>
+                                <div className="chat-message__avatar chat-message__avatar--assistant">AI</div>
+                                <div className="chat-message__body">
+                                    <div className="chat-message__meta">
+                                        <div className="chat-message__label">AI 助手</div>
+                                        <span className="chat-message__badge">正在分析</span>
+                                    </div>
+                                    <div className="chat-thinking">
+                                        <span className="chat-thinking__spinner">✦</span>
+                                        <span>正在思考并读取当前数据库上下文...</span>
+                                    </div>
                                 </div>
                             </div>
                         ) : null}
@@ -3570,7 +3586,7 @@ function App() {
                                         }
                                     }}
                                     placeholder="输入 / 可快速选择数据库或表"
-                                    rows={4}
+                                    rows={5}
                                 />
                                 <button
                                     type="button"
@@ -3589,6 +3605,10 @@ function App() {
                                     )}
                                 </button>
                             </div>
+                            <div className="chat-composer__hint">
+                                <span>{selectedConnection ? `当前连接：${selectedConnection.name}` : "请先选择连接后再发送"}</span>
+                                <span>输入 <code>/</code> 可快速插入数据库或表名</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3600,24 +3620,37 @@ function App() {
         const handleClearHistory = () => {
             if (!selectedConnection) return;
             setHistoryItems([]);
+            setHistoryPage(1);
             pushToast("success", "历史已清空", "查询历史记录已清空");
         };
 
+        // 分页计算
+        const totalHistory = historyItems.length;
+        const totalHistoryPages = Math.max(1, Math.ceil(totalHistory / historyPageSize));
+        const currentHistoryPage = Math.min(historyPage, totalHistoryPages) || 1;
+        const pagedHistoryItems = historyItems.slice(
+            (currentHistoryPage - 1) * historyPageSize,
+            currentHistoryPage * historyPageSize,
+        );
+
         return (
             <section className="page-panel">
-                {selectedConnection && historyItems.length > 0 && (
-                    <div className="toolbar-actions toolbar-actions--end">
+                <div className="history-header">
+                    {selectedConnection && (
+                        <span className="history-count">共 {totalHistory} 条记录</span>
+                    )}
+                    {selectedConnection && historyItems.length > 0 && (
                         <button type="button" className="ghost-button text-button--danger" onClick={handleClearHistory}>
                             清空历史
                         </button>
-                    </div>
-                )}
+                    )}
+                </div>
 
                 <div className="history-stream-single">
                     {historyItems.length === 0 ? (
                         <div className="empty-block">{selectedConnection ? "当前连接下还没有历史 SQL。" : "请先选择连接"}</div>
                     ) : (
-                        historyItems.map((item) => (
+                        pagedHistoryItems.map((item) => (
                             <div key={item.id} className="history-item-row">
                                 <div className="history-item-main">
                                     <div className="history-item__head">
@@ -3683,6 +3716,31 @@ function App() {
                         ))
                     )}
                 </div>
+
+                {/* 分页控件 */}
+                {totalHistoryPages > 1 && (
+                    <div className="history-pagination">
+                        <button
+                            type="button"
+                            className="mini-ghost-button"
+                            disabled={currentHistoryPage <= 1}
+                            onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                        >
+                            上一页
+                        </button>
+                        <span className="pagination-info">
+                            {currentHistoryPage} / {totalHistoryPages}
+                        </span>
+                        <button
+                            type="button"
+                            className="mini-ghost-button"
+                            disabled={currentHistoryPage >= totalHistoryPages}
+                            onClick={() => setHistoryPage((p) => Math.min(totalHistoryPages, p + 1))}
+                        >
+                            下一页
+                        </button>
+                    </div>
+                )}
             </section>
         );
     }
@@ -4205,15 +4263,21 @@ function App() {
 
             <aside className={`sidebar${sidebarCollapsed ? " sidebar--collapsed" : ""}`}>
                 <div className="sidebar-brand">
-                    <button type="button" className="sidebar-collapse" onClick={() => setSidebarCollapsed((current) => !current)}>
-                        {sidebarCollapsed ? "›" : "‹"}
-                    </button>
                     {!sidebarCollapsed ? (
-                        <div>
-                            <strong>SQLPilot</strong>
-                            <span>更懂开发的数据库客户端</span>
+                        <div className="sidebar-brand__title">
+                            <div>
+                                <strong>SQLPilot</strong>
+                                <span>更懂开发的数据库客户端</span>
+                            </div>
+                            <button type="button" className="sidebar-collapse" onClick={() => setSidebarCollapsed((current) => !current)} title="收起侧边栏">
+                                ‹
+                            </button>
                         </div>
-                    ) : null}
+                    ) : (
+                        <button type="button" className="sidebar-collapse sidebar-collapse--collapsed" onClick={() => setSidebarCollapsed((current) => !current)} title="展开侧边栏">
+                            ›
+                        </button>
+                    )}
                 </div>
 
                 {!sidebarCollapsed ? (
