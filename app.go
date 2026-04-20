@@ -245,6 +245,52 @@ func (a *App) SummarizeChatResult(input workspace.ChatResultSummaryRequest) (wor
 	return service.SummarizeChatResult(input)
 }
 
+func (a *App) GetStorageInfo() workspace.StorageInfoView {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.StorageInfoView{}
+	}
+	return service.GetStorageInfo()
+}
+
+func (a *App) SetStoragePath(newPath string) workspace.SetStoragePathResult {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.SetStoragePathResult{Success: false, Message: err.Error()}
+	}
+	return service.SetStoragePath(newPath)
+}
+
+func (a *App) GrantStoragePermission() workspace.SetStoragePathResult {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.SetStoragePathResult{Success: false, Message: err.Error()}
+	}
+	return service.GrantStoragePermission()
+}
+
+func (a *App) ClearStorageData(category string) workspace.SetStoragePathResult {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.SetStoragePathResult{Success: false, Message: err.Error()}
+	}
+	return service.ClearStorageData(category)
+}
+
+func (a *App) SelectStorageDirectory() string {
+	if a.ctx == nil {
+		return ""
+	}
+	selectedPath, err := wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title:            "选择存储路径",
+		DefaultDirectory: "",
+	})
+	if err != nil || selectedPath == "" {
+		return ""
+	}
+	return selectedPath
+}
+
 func (a *App) ExportTextFile(input workspace.ExportFileRequest) (workspace.ExportFileResult, error) {
 	if a.ctx == nil {
 		return workspace.ExportFileResult{}, errors.New("desktop context is unavailable")

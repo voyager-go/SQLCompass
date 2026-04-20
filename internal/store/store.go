@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,8 +55,24 @@ type AppState struct {
 	History     []QueryHistoryRecord `json:"history"`
 }
 
+// StorageFileInfo describes a single storage file.
+type StorageFileInfo struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+	Size int64  `json:"size"`
+}
+
+// StorageInfo is the summary of all storage files.
+type StorageInfo struct {
+	DataDir string            `json:"dataDir"`
+	Files   []StorageFileInfo `json:"files"`
+	Total   int64             `json:"total"`
+	Writable bool             `json:"writable"`
+}
+
 type Store struct {
 	filePath string
+	dataDir  string
 	mu       sync.Mutex
 }
 
@@ -71,11 +88,127 @@ func NewStore() (*Store, error) {
 
 	return &Store{
 		filePath: filepath.Join(dataDir, "app-state.json"),
+		dataDir:  dataDir,
 	}, nil
 }
 
 func (s *Store) Path() string {
 	return s.filePath
+}
+
+func (s *Store) DataDir() string {
+	return s.dataDir
+}
+
+// SetDataDir changes the storage directory, migrating existing data.
+func (s *Store) SetDataDir(newDir string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cleaned := strings.TrimSpace(newDir)
+	if cleaned == "" {
+		return fmt.Errorf("storage path cannot be empty")
+	}
+
+	absDir, err := filepath.Abs(cleaned)
+	if err != nil {
+		return fmt.Errorf("invalid path: %w", err)
+	}
+
+	if err := os.MkdirAll(absDir, 0o700); err != nil {
+		return fmt.Errorf("cannot create directory: %w", err)
+	}
+
+	newFilePath := filepath.Join(absDir, "app-state.json")
+
+	// Migrate existing data if the old file exists and new one doesn't.
+	if _, err := os.Stat(s.filePath); err == nil {
+		if _, err := os.Stat(newFilePath); err != nil {
+			data, err := os.ReadFile(s.filePath)
+			if err != nil {
+				return fmt.Errorf("cannot read existing data: %w", err)
+			}
+			if err := os.WriteFile(newFilePath, data, 0o600); err != nil {
+				return fmt.Errorf("cannot write to new location: %w", err)
+			}
+		}
+	}
+
+	s.filePath = newFilePath
+	s.dataDir = absDir
+	return nil
+}
+
+// GetStorageInfo returns information about app-owned storage files only.
+func (s *Store) GetStorageInfo() StorageInfo {
+	s.mu.Lock()
+	dir := s.dataDir
+	s.mu.Unlock()
+
+	info := StorageInfo{
+		DataDir:  dir,
+		Files:    []StorageFileInfo{},
+		Writable: false,
+	}
+
+	// Check writability
+	testFile := filepath.Join(dir, ".sqlpilot-write-test")
+	if err := os.WriteFile(testFile, []byte("test"), 0o600); err == nil {
+		info.Writable = true
+		os.Remove(testFile)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return info
+	}
+
+	var total int64
+	for _, entry := range entries {
+		name := entry.Name()
+		if !isAppOwnedFile(name) {
+			continue
+		}
+
+		fullPath := filepath.Join(dir, name)
+		if entry.IsDir() {
+			size := dirSize(fullPath)
+			info.Files = append(info.Files, StorageFileInfo{
+				Name: name + "/",
+				Path: fullPath,
+				Size: size,
+			})
+			total += size
+		} else {
+			fi, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			info.Files = append(info.Files, StorageFileInfo{
+				Name: name,
+				Path: fullPath,
+				Size: fi.Size(),
+			})
+			total += fi.Size()
+		}
+	}
+
+	info.Total = total
+	return info
+}
+
+// ClearHistory removes all query history from the store.
+func (s *Store) ClearHistory() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, err := s.loadUnlocked()
+	if err != nil {
+		return err
+	}
+
+	state.History = nil
+	return s.saveUnlocked(state)
 }
 
 func (s *Store) Load() (AppState, error) {
@@ -128,6 +261,20 @@ func (s *Store) saveUnlocked(state AppState) error {
 	return os.Rename(tempPath, s.filePath)
 }
 
+func dirSize(path string) int64 {
+	var size int64
+	filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() {
+			size += info.Size()
+		}
+		return nil
+	})
+	return size
+}
+
 func resolveDataDir() (string, error) {
 	if override := strings.TrimSpace(os.Getenv("SQLTOOL_DATA_DIR")); override != "" {
 		return override, nil
@@ -139,4 +286,15 @@ func resolveDataDir() (string, error) {
 	}
 
 	return filepath.Join(configDir, "sqltool-studio"), nil
+}
+
+// isAppOwnedFile checks whether a file name belongs to the application,
+// preventing exposure of user's private data in the storage directory.
+func isAppOwnedFile(name string) bool {
+	switch name {
+	case "app-state.json", ".sqlpilot-write-test":
+		return true
+	default:
+		return false
+	}
 }

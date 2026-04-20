@@ -231,3 +231,24 @@ export type ExportFileResult = {
     path: string;
     saved: boolean;
 };
+
+export type StorageFileEntry = {
+    name: string;
+    path: string;
+    size: number;
+    sizeHR: string;
+};
+
+export type StorageInfoView = {
+    dataDir: string;
+    files: StorageFileEntry[];
+    total: number;
+    totalHR: string;
+    writable: boolean;
+};
+
+export type SetStoragePathResult = {
+    success: boolean;
+    newPath: string;
+    message: string;
+};

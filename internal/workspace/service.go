@@ -500,6 +500,118 @@ func maskSecret(value string) string {
 	return string(runes[:4]) + strings.Repeat("*", len(runes)-8) + string(runes[len(runes)-4:])
 }
 
+// StorageInfoView is the frontend view of storage information.
+type StorageInfoView struct {
+	DataDir  string              `json:"dataDir"`
+	Files    []StorageFileEntry  `json:"files"`
+	Total    int64               `json:"total"`
+	TotalHR  string              `json:"totalHR"`
+	Writable bool                `json:"writable"`
+}
+
+// StorageFileEntry describes a single storage file for the frontend.
+type StorageFileEntry struct {
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Size   int64  `json:"size"`
+	SizeHR string `json:"sizeHR"`
+}
+
+// SetStoragePathResult is the result of changing storage path.
+type SetStoragePathResult struct {
+	Success   bool   `json:"success"`
+	NewPath   string `json:"newPath"`
+	Message   string `json:"message"`
+}
+
+func (s *Service) GetStorageInfo() StorageInfoView {
+	info := s.store.GetStorageInfo()
+	files := make([]StorageFileEntry, 0, len(info.Files))
+	for _, f := range info.Files {
+		files = append(files, StorageFileEntry{
+			Name:   f.Name,
+			Path:   f.Path,
+			Size:   f.Size,
+			SizeHR: humanSize(f.Size),
+		})
+	}
+	return StorageInfoView{
+		DataDir:  info.DataDir,
+		Files:    files,
+		Total:    info.Total,
+		TotalHR:  humanSize(info.Total),
+		Writable: info.Writable,
+	}
+}
+
+func (s *Service) SetStoragePath(newPath string) SetStoragePathResult {
+	if err := s.store.SetDataDir(newPath); err != nil {
+		return SetStoragePathResult{
+			Success: false,
+			Message: err.Error(),
+		}
+	}
+	return SetStoragePathResult{
+		Success: true,
+		NewPath: s.store.DataDir(),
+		Message: "存储路径已更新",
+	}
+}
+
+func (s *Service) GrantStoragePermission() SetStoragePathResult {
+	dir := s.store.DataDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return SetStoragePathResult{
+			Success: false,
+			Message: fmt.Sprintf("无法设置权限: %v", err),
+		}
+	}
+	return SetStoragePathResult{
+		Success: true,
+		NewPath: dir,
+		Message: "读写权限已授予",
+	}
+}
+
+func (s *Service) ClearStorageData(category string) SetStoragePathResult {
+	switch strings.ToLower(strings.TrimSpace(category)) {
+	case "history":
+		if err := s.store.ClearHistory(); err != nil {
+			return SetStoragePathResult{
+				Success: false,
+				Message: err.Error(),
+			}
+		}
+		return SetStoragePathResult{
+			Success: true,
+			Message: "历史记录已清除",
+		}
+	default:
+		return SetStoragePathResult{
+			Success: false,
+			Message: "未知的清理类别",
+		}
+	}
+}
+
+func humanSize(bytes int64) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+	)
+	switch {
+	case bytes >= GB:
+		return fmt.Sprintf("%.2f GB", float64(bytes)/float64(GB))
+	case bytes >= MB:
+		return fmt.Sprintf("%.2f MB", float64(bytes)/float64(MB))
+	case bytes >= KB:
+		return fmt.Sprintf("%.2f KB", float64(bytes)/float64(KB))
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
+}
+
 func newID() string {
 	buffer := make([]byte, 8)
 	if _, err := rand.Read(buffer); err != nil {

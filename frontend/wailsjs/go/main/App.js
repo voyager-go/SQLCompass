@@ -86,6 +86,26 @@ export function RepairChatSQL(arg1) {
     return window["go"]["main"]["App"]["RepairChatSQL"](arg1);
 }
 
+export function GetStorageInfo() {
+    return window["go"]["main"]["App"]["GetStorageInfo"]();
+}
+
+export function SetStoragePath(arg1) {
+    return window["go"]["main"]["App"]["SetStoragePath"](arg1);
+}
+
+export function GrantStoragePermission() {
+    return window["go"]["main"]["App"]["GrantStoragePermission"]();
+}
+
+export function ClearStorageData(arg1) {
+    return window["go"]["main"]["App"]["ClearStorageData"](arg1);
+}
+
+export function SelectStorageDirectory() {
+    return window["go"]["main"]["App"]["SelectStorageDirectory"]();
+}
+
 export function ExportTextFile(arg1) {
     return window["go"]["main"]["App"]["ExportTextFile"](arg1);
 }

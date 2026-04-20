@@ -1,11 +1,12 @@
 import Editor, { type Monaco } from "@monaco-editor/react";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { IDisposable, editor as MonacoEditorNS } from "monaco-editor";
 import {
     AnalyzeSQL,
     BeautifySQL,
     ChatWithDatabase,
     ClearAIAPIKey,
+    ClearStorageData,
     DeleteConnection,
     ExecuteQuery,
     ExportTextFile,
@@ -13,15 +14,19 @@ import {
     GetExplorerTree,
     GetFieldDictionarySuggestion,
     GetQueryHistory,
+    GetStorageInfo,
     GetTableDetail,
     GetTableRowCounts,
     GetWorkspaceState,
+    GrantStoragePermission,
     OptimizeSQL,
     PreviewTableData,
     RepairChatSQL,
     RenameTable,
     SaveAISettings,
     SaveConnection,
+    SelectStorageDirectory,
+    SetStoragePath,
     TestConnection,
 } from "../wailsjs/go/main/App";
 import "./App.css";
@@ -40,15 +45,17 @@ import type {
     FieldDictionarySuggestion,
     HistoryItem,
     QueryResult,
+    SetStoragePathResult,
     SQLAnalysis,
     SQLOptimizeResult,
+    StorageInfoView,
     TableDetail,
     TableField,
     TableNode,
 } from "./types/runtime";
 
 type NoticeTone = "success" | "error" | "info";
-type WorkbenchPage = "connections" | "query" | "history" | "schema" | "transfer" | "ai" | "theme";
+type WorkbenchPage = "connections" | "query" | "history" | "schema" | "transfer" | "ai" | "theme" | "settings";
 type WorkMode = "normal" | "chat";
 type ThemeMode = "light" | "dark" | "custom";
 
@@ -178,6 +185,7 @@ const pages: PageEntry[] = [
     { id: "history", label: "历史查询", summary: "按连接回看 SQL" },
     { id: "ai", label: "AI 设置", summary: "模型与注释助手" },
     { id: "theme", label: "自定义主题", summary: "个性化外观设置" },
+    { id: "settings", label: "系统设置", summary: "存储路径与数据管理" },
 ];
 
 const emptyWorkspaceState: WorkspaceState = {
@@ -1014,6 +1022,36 @@ function App() {
     const [tableFilter, setTableFilter] = useState<string[]>([]);
     const [showDatabaseFilter, setShowDatabaseFilter] = useState(false);
     const [showTableFilter, setShowTableFilter] = useState(false);
+    const [storageInfo, setStorageInfo] = useState<StorageInfoView | null>(null);
+    const [newStoragePath, setNewStoragePath] = useState("");
+    const [showPermissionModal, setShowPermissionModal] = useState(false);
+    const [showClearModal, setShowClearModal] = useState<string | null>(null);
+
+    const loadStorageInfo = useCallback(() => {
+        if (browserPreview) {
+            setStorageInfo({
+                dataDir: "浏览器本地预览",
+                files: [],
+                total: 0,
+                totalHR: "0 B",
+                writable: true,
+            });
+            return;
+        }
+        GetStorageInfo().then((info: StorageInfoView) => {
+            setStorageInfo(info);
+            setNewStoragePath(info.dataDir);
+            if (!info.writable) {
+                setShowPermissionModal(true);
+            }
+        });
+    }, [browserPreview]);
+
+    useEffect(() => {
+        if (activePage === "settings") {
+            loadStorageInfo();
+        }
+    }, [activePage, loadStorageInfo]);
     const [tableDetail, setTableDetail] = useState<TableDetail | null>(null);
     const [tablePageByDatabase, setTablePageByDatabase] = useState<Record<string, number>>({});
     const [expandedDatabases, setExpandedDatabases] = useState<Record<string, boolean>>({});
@@ -2001,11 +2039,17 @@ function App() {
 
         const start = model.getOffsetAt(selection.getStartPosition());
         const end = model.getOffsetAt(selection.getEndPosition());
+        const visiblePosition = editor.getScrolledVisiblePosition(selection.getEndPosition());
+        const layoutInfo = editor.getLayoutInfo();
+        const anchorLeft = visiblePosition ? Math.min(visiblePosition.left + 24, layoutInfo.contentWidth - 12) : 24;
+        const anchorTop = visiblePosition ? visiblePosition.top + visiblePosition.height + 8 : 24;
 
         setSelectedSnippet({
             text,
             start,
             end,
+            anchorTop,
+            anchorLeft,
         });
     }
 
@@ -2035,10 +2079,21 @@ function App() {
 
         monaco.editor.setTheme("sqltool-sql");
 
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+            const currentSelection = editor.getSelection();
+            if (currentSelection && !currentSelection.isEmpty()) {
+                handleExecuteSelectedSQL().catch(() => undefined);
+                return;
+            }
+
+            handleExecuteQuery(1).catch(() => undefined);
+        });
+
         // 强制开启自动建议（Wails 环境下可能需要）
         editor.updateOptions({ quickSuggestionsDelay: 100 });
 
         editor.onDidChangeCursorSelection(() => syncSelectedSnippet());
+        editor.onDidScrollChange(() => syncSelectedSnippet());
 
         // 监听按键，在输入字母时主动触发补全
         editor.onKeyDown((e) => {
@@ -2126,6 +2181,8 @@ function App() {
             text: result.sql,
             start: nextStart,
             end: nextEnd,
+            anchorTop: selectedSnippet.anchorTop,
+            anchorLeft: selectedSnippet.anchorLeft,
         });
 
         window.requestAnimationFrame(() => {
@@ -2933,7 +2990,12 @@ function App() {
             return (
                     <div key={database.name} className={`navigator-db${isActive ? " navigator-db--active" : ""}`}>
                         <div className="navigator-db__row">
-                            <div className="navigator-db__button" role="button" tabIndex={0} draggable onDragStart={(event) => {
+                            <div className="navigator-db__button" role="button" tabIndex={0} draggable={activePage === "ai"} onDragStart={(event) => {
+                                if (activePage !== "ai") {
+                                    event.preventDefault();
+                                    return;
+                                }
+
                                 event.dataTransfer.effectAllowed = "copy";
                                 event.dataTransfer.setData("application/x-sqltool-chat-item", JSON.stringify({ kind: "database", database: database.name }));
                             }} onClick={() => handleSelectDatabase(database.name)} onKeyDown={(event) => {
@@ -2966,8 +3028,13 @@ function App() {
                                     className={`navigator-table${table.name === selectedTable ? " navigator-table--active" : ""}`}
                                     role="button"
                                     tabIndex={0}
-                                    draggable
+                                    draggable={activePage === "ai"}
                                     onDragStart={(event) => {
+                                        if (activePage !== "ai") {
+                                            event.preventDefault();
+                                            return;
+                                        }
+
                                         event.dataTransfer.effectAllowed = "copy";
                                         event.dataTransfer.setData("application/x-sqltool-chat-item", JSON.stringify({ kind: "table", database: database.name, table: table.name }));
                                     }}
@@ -3333,27 +3400,32 @@ function App() {
                             {sqlEditorCollapsed ? "▾" : "▴"}
                         </button>
                     </div>
-                    {!sqlEditorCollapsed && selectedSnippet?.text.trim() ? (
-                        <div className="selection-actions">
-                            <span>已选中 {selectedSnippet.text.trim().split(/\s+/).length} 个词</span>
-                            <button type="button" className="mini-primary-button" onClick={() => handleExecuteSelectedSQL()} disabled={isExecutingQuery}>
-                                执行
-                            </button>
-                            <button type="button" className="mini-ghost-button" onClick={() => handleBeautifySelectedSQL()} disabled={isOptimizingSQL}>
-                                美化
-                            </button>
-                            <button type="button" className="mini-ghost-button" onClick={() => handleOptimizeSelectedSQL()} disabled={isOptimizingSQL}>
-                                优化
-                            </button>
-                        </div>
-                    ) : null}
                     {!sqlEditorCollapsed ? (
                         <div className="sql-editor">
                             {isOptimizingSQL ? <div className="editor-ai-mask"><span className="editor-ai-spinner">✦</span><strong>AI 正在优化</strong></div> : null}
                             {!isOptimizingSQL && !sqlText.trim() ? (
                                 <div className="editor-placeholder">
                                     <span className="editor-placeholder__icon">⌨</span>
-                                    <span>输入 SQL 语句，按 <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 执行查询</span>
+                                    <span>输入 SQL 语句，按 <kbd>Ctrl</kbd>+<kbd>Enter</kbd> / <kbd>Cmd</kbd>+<kbd>Enter</kbd> 执行查询</span>
+                                </div>
+                            ) : null}
+                            {!isOptimizingSQL && selectedSnippet?.text.trim() ? (
+                                <div
+                                    className="selection-actions selection-actions--floating"
+                                    style={{
+                                        top: selectedSnippet.anchorTop,
+                                        left: selectedSnippet.anchorLeft,
+                                    }}
+                                >
+                                    <button type="button" className="mini-primary-button" onClick={() => handleExecuteSelectedSQL()} disabled={isExecutingQuery}>
+                                        执行
+                                    </button>
+                                    <button type="button" className="mini-ghost-button" onClick={() => handleBeautifySelectedSQL()} disabled={isOptimizingSQL}>
+                                        美化
+                                    </button>
+                                    <button type="button" className="mini-ghost-button" onClick={() => handleOptimizeSelectedSQL()} disabled={isOptimizingSQL}>
+                                        优化
+                                    </button>
                                 </div>
                             ) : null}
                             <Editor
@@ -4568,6 +4640,229 @@ function App() {
         );
     }
 
+    function renderSettingsPage() {
+        const handleSetStoragePath = async () => {
+            if (browserPreview) return;
+            const result = (await SetStoragePath(newStoragePath)) as SetStoragePathResult;
+            if (result.success) {
+                pushToast("success", "路径已更新", result.message);
+                const info = (await GetStorageInfo()) as StorageInfoView;
+                setStorageInfo(info);
+                await refreshWorkspaceState();
+            } else {
+                pushToast("error", "更新失败", result.message);
+            }
+        };
+
+        const handleGrantPermission = async () => {
+            if (browserPreview) return;
+            const result = (await GrantStoragePermission()) as SetStoragePathResult;
+            if (result.success) {
+                pushToast("success", "权限已授予", result.message);
+                const info = (await GetStorageInfo()) as StorageInfoView;
+                setStorageInfo(info);
+            } else {
+                pushToast("error", "权限设置失败", result.message);
+            }
+            setShowPermissionModal(false);
+        };
+
+        const handleClearData = async (category: string) => {
+            if (browserPreview) return;
+            const result = (await ClearStorageData(category)) as SetStoragePathResult;
+            if (result.success) {
+                pushToast("success", "清理完成", result.message);
+                const info = (await GetStorageInfo()) as StorageInfoView;
+                setStorageInfo(info);
+            } else {
+                pushToast("error", "清理失败", result.message);
+            }
+            setShowClearModal(null);
+        };
+
+        const handleSelectDirectory = async () => {
+            if (browserPreview) return;
+            const dir = await SelectStorageDirectory();
+            if (dir) {
+                setNewStoragePath(dir);
+            }
+        };
+
+        return (
+            <section className="page-panel">
+                <div className="page-headline">
+                    <div>
+                        <h2>系统设置</h2>
+                        <p>管理应用存储路径、查看存储占用与清理数据</p>
+                    </div>
+                </div>
+
+                {/* Storage Path */}
+                <div className="settings-section panel-card" style={{ marginBottom: 20 }}>
+                    <div className="section-title">
+                        <div>
+                            <h3>存储路径</h3>
+                            <p>自定义应用数据的存储位置，修改后已有数据将自动迁移</p>
+                        </div>
+                    </div>
+                    <div className="settings-path-row">
+                        <input
+                            type="text"
+                            className="settings-path-input"
+                            value={newStoragePath}
+                            onChange={(e) => setNewStoragePath(e.target.value)}
+                            placeholder="输入新的存储路径..."
+                        />
+                        <button type="button" className="ghost-button" onClick={handleSelectDirectory} disabled={browserPreview} title="选择文件夹">
+                            选择路径
+                        </button>
+                        <button type="button" className="primary-button" onClick={handleSetStoragePath} disabled={browserPreview || newStoragePath === (storageInfo?.dataDir ?? "")}>
+                            应用配置
+                        </button>
+                    </div>
+                    {storageInfo && (
+                        <div className="settings-path-hint">
+                            当前路径：<code>{storageInfo.dataDir}</code>
+                        </div>
+                    )}
+                </div>
+
+                {/* Storage Overview */}
+                {storageInfo && (
+                    <div className="settings-section panel-card" style={{ marginBottom: 20 }}>
+                        <div className="section-title">
+                            <div>
+                                <h3>存储概况</h3>
+                                <p>应用数据文件占用情况</p>
+                            </div>
+                            <div className="settings-total-badge">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                                </svg>
+                                <span>{storageInfo.totalHR}</span>
+                            </div>
+                        </div>
+
+                        {!storageInfo.writable && (
+                            <div className="notice-banner notice-banner--error" style={{ marginBottom: 14 }}>
+                                <span className="notice-banner__icon">!</span>
+                                <span className="notice-banner__text">
+                                    当前存储目录没有写入权限，部分功能可能无法正常使用。
+                                    <button type="button" className="text-button" onClick={() => setShowPermissionModal(true)} style={{ marginLeft: 8 }}>
+                                        授权写入
+                                    </button>
+                                </span>
+                            </div>
+                        )}
+
+                        {storageInfo.writable && (
+                            <div className="notice-banner notice-banner--success" style={{ marginBottom: 14 }}>
+                                <span className="notice-banner__icon">✓</span>
+                                <span className="notice-banner__text">存储目录读写权限正常</span>
+                            </div>
+                        )}
+
+                        <div className="settings-file-list">
+                            {storageInfo.files.length === 0 ? (
+                                <div className="settings-file-empty">暂无存储文件</div>
+                            ) : (
+                                storageInfo.files.map((file, idx) => (
+                                    <div key={idx} className="settings-file-item">
+                                        <div className="settings-file-icon">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                {file.name.endsWith("/") ? (
+                                                    <>
+                                                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                                        <polyline points="14 2 14 8 20 8"></polyline>
+                                                    </>
+                                                )}
+                                            </svg>
+                                        </div>
+                                        <div className="settings-file-info">
+                                            <span className="settings-file-name">{file.name}</span>
+                                            <span className="settings-file-path">{file.path}</span>
+                                        </div>
+                                        <div className="settings-file-size">{file.sizeHR}</div>
+                                        {file.name === "app-state.json" && (
+                                            <button
+                                                type="button"
+                                                className="mini-ghost-button ghost-button--danger"
+                                                onClick={() => setShowClearModal("history")}
+                                                title="清除历史查询记录以减小文件大小"
+                                            >
+                                                清理
+                                            </button>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Permission Modal */}
+                {showPermissionModal && (
+                    <div className="modal-backdrop" onClick={() => setShowPermissionModal(false)}>
+                        <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                            <div className="section-title">
+                                <div>
+                                    <h3>写入权限请求</h3>
+                                    <p>应用需要写入配置文件以保存您的设置</p>
+                                </div>
+                            </div>
+                            <div className="notice-banner notice-banner--info">
+                                <span className="notice-banner__icon">i</span>
+                                <span className="notice-banner__text">
+                                    当前存储目录 <code>{storageInfo?.dataDir}</code> 没有写入权限。是否授权该目录读写权限？
+                                </span>
+                            </div>
+                            <div className="toolbar-actions toolbar-actions--end">
+                                <button type="button" className="ghost-button" onClick={() => setShowPermissionModal(false)}>
+                                    拒绝
+                                </button>
+                                <button type="button" className="primary-button" onClick={handleGrantPermission}>
+                                    授权写入
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Clear Confirm Modal */}
+                {showClearModal && (
+                    <div className="modal-backdrop" onClick={() => setShowClearModal(null)}>
+                        <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                            <div className="section-title">
+                                <div>
+                                    <h3>确认清理</h3>
+                                    <p>此操作不可撤销，请确认</p>
+                                </div>
+                            </div>
+                            <div className="notice-banner notice-banner--error">
+                                <span className="notice-banner__icon">!</span>
+                                <span className="notice-banner__text">
+                                    确定要清除{showClearModal === "history" ? "所有历史查询记录" : "所选数据"}吗？此操作不可撤销。
+                                </span>
+                            </div>
+                            <div className="toolbar-actions toolbar-actions--end">
+                                <button type="button" className="ghost-button" onClick={() => setShowClearModal(null)}>
+                                    取消
+                                </button>
+                                <button type="button" className="primary-button" style={{ background: "rgba(239, 68, 68, 0.9)", borderColor: "rgba(239, 68, 68, 0.6)" }} onClick={() => handleClearData(showClearModal)}>
+                                    确认清理
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </section>
+        );
+    }
+
     function renderCurrentPage() {
         if (workMode === "chat") {
             return renderChatPage();
@@ -4586,6 +4881,8 @@ function App() {
                 return renderAIPage();
             case "theme":
                 return renderThemePage();
+            case "settings":
+                return renderSettingsPage();
             default:
                 return null;
         }
