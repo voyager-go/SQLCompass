@@ -607,6 +607,17 @@ function appendUnique(items: string[], value: string): string[] {
     return items.includes(value) ? items : [...items, value];
 }
 
+function setDragPreview(event: React.DragEvent<HTMLElement>, title: string, typeLabel: string) {
+    const preview = document.createElement("div");
+    preview.className = "drag-preview";
+    preview.innerHTML = `<span class="drag-preview__type">${escapeHTML(typeLabel)}</span><strong class="drag-preview__title">${escapeHTML(title)}</strong>`;
+    document.body.appendChild(preview);
+    event.dataTransfer.setDragImage(preview, 18, 18);
+    window.setTimeout(() => {
+        document.body.removeChild(preview);
+    }, 0);
+}
+
 function stringifySQLValue(value: string): string {
     if (value === "") {
         return "NULL";
@@ -1541,6 +1552,14 @@ function App() {
         window.localStorage.setItem(themeStorageKey, themeMode);
     }, [themeMode, customTheme]);
 
+    // Sync SQL editor theme with app theme
+    useEffect(() => {
+        if (monacoRef.current) {
+            const editorTheme = themeMode === "light" ? "sql-pilot-sql-light" : "sql-pilot-sql-dark";
+            monacoRef.current.editor.setTheme(editorTheme);
+        }
+    }, [themeMode]);
+
     useEffect(() => {
         if (!tableContextMenu) {
             return;
@@ -2054,7 +2073,8 @@ function App() {
         monacoRef.current = monaco;
         setMonacoReady(true);
 
-        monaco.editor.defineTheme("sql-pilot-sql", {
+        // Dark SQL editor theme
+        monaco.editor.defineTheme("sql-pilot-sql-dark", {
             base: "vs-dark",
             inherit: true,
             rules: [
@@ -2073,7 +2093,28 @@ function App() {
             },
         });
 
-        monaco.editor.setTheme("sql-pilot-sql");
+        // Light SQL editor theme — soft, muted, comfortable
+        monaco.editor.defineTheme("sql-pilot-sql-light", {
+            base: "vs",
+            inherit: true,
+            rules: [
+                { token: "keyword", foreground: "3a6ea5", fontStyle: "bold" },
+                { token: "number", foreground: "b07830" },
+                { token: "string", foreground: "488068" },
+                { token: "comment", foreground: "93a3bc", fontStyle: "italic" },
+            ],
+            colors: {
+                "editor.background": "#f9fafb",
+                "editorLineNumber.foreground": "#c0c8d0",
+                "editorLineNumber.activeForeground": "#5a6a80",
+                "editor.selectionBackground": "#b8d4f050",
+                "editor.inactiveSelectionBackground": "#b8d4f028",
+                "editorCursor.foreground": "#2d5a8a",
+            },
+        });
+
+        // Apply theme based on current mode
+        monaco.editor.setTheme(themeMode === "light" ? "sql-pilot-sql-light" : "sql-pilot-sql-dark");
 
         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
             const currentSelection = editor.getSelection();
@@ -2986,14 +3027,15 @@ function App() {
             return (
                     <div key={database.name} className={`navigator-db${isActive ? " navigator-db--active" : ""}`}>
                         <div className="navigator-db__row">
-                            <div className="navigator-db__button" role="button" tabIndex={0} draggable={activePage === "ai"} onDragStart={(event) => {
-                                if (activePage !== "ai") {
+                            <div className="navigator-db__button" role="button" tabIndex={0} draggable={workMode === "chat"} onDragStart={(event) => {
+                                if (workMode !== "chat") {
                                     event.preventDefault();
                                     return;
                                 }
 
                                 event.dataTransfer.effectAllowed = "copy";
                                 event.dataTransfer.setData("application/x-sql-pilot-chat-item", JSON.stringify({ kind: "database", database: database.name }));
+                                setDragPreview(event, database.name, "数据库");
                             }} onClick={() => handleSelectDatabase(database.name)} onKeyDown={(event) => {
                                 if (event.key === "Enter" || event.key === " ") {
                                     event.preventDefault();
@@ -3024,15 +3066,16 @@ function App() {
                                     className={`navigator-table${table.name === selectedTable ? " navigator-table--active" : ""}`}
                                     role="button"
                                     tabIndex={0}
-                                    draggable={activePage === "ai"}
+                                    draggable={workMode === "chat"}
                                     onDragStart={(event) => {
-                                        if (activePage !== "ai") {
+                                        if (workMode !== "chat") {
                                             event.preventDefault();
                                             return;
                                         }
 
                                         event.dataTransfer.effectAllowed = "copy";
                                         event.dataTransfer.setData("application/x-sql-pilot-chat-item", JSON.stringify({ kind: "table", database: database.name, table: table.name }));
+                                        setDragPreview(event, table.name, "数据表");
                                     }}
                                     onClick={() => handlePreviewTable(database.name, table.name)}
                                     onContextMenu={(event) => {
