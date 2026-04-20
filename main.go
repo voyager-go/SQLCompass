@@ -15,7 +15,7 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:     "SQLTool Studio",
+		Title:     "SQLPilot",
 		Width:     1440,
 		Height:    960,
 		MinWidth:  1180,

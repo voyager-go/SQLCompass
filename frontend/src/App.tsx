@@ -169,8 +169,8 @@ type CellEditorState = {
     nextValue: string;
 };
 
-const browserStorageKey = "sqltool-browser-workspace";
-const themeStorageKey = "sqltool-theme";
+const browserStorageKey = "sql-pilot-browser-workspace";
+const themeStorageKey = "sql-pilot-theme";
 const tablePageSize = 12;
 const previewPageSize = 30;
 const queryPageSize = 50;
@@ -1000,7 +1000,7 @@ function App() {
         if (typeof window === "undefined") {
             return { navFontSize: 14, resultFontSize: 14, fontColor: "#1f2937", accentColor: "#3b82f6", backgroundColor: "#f8fcfb", backgroundImage: null };
         }
-        const saved = window.localStorage.getItem("sqltool-custom-theme");
+        const saved = window.localStorage.getItem("sql-pilot-custom-theme");
         if (saved) {
             const parsed = JSON.parse(saved);
             return { ...parsed, backgroundImage: parsed.backgroundImage ?? null, backgroundColor: parsed.backgroundColor ?? "#f8fcfb" };
@@ -1259,28 +1259,24 @@ function App() {
         });
     }
 
-    // 保存筛选设置到本地存储
+    // 保存筛选设置到本地存储（仅保留过滤项，不保存面板展开状态）
     function saveFilterSettings() {
         const settings = {
             databaseFilter,
             tableFilter,
-            showDatabaseFilter,
-            showTableFilter,
         };
-        localStorage.setItem("sqlpilot-filter-settings", JSON.stringify(settings));
-        pushToast("success", "已保存", "筛选设置已保存，下次打开时自动恢复");
+        localStorage.setItem("sql-pilot-filter-settings", JSON.stringify(settings));
+        pushToast("success", "已保存", "筛选设置已保存，下次连接时自动恢复");
     }
 
-    // 加载保存的筛选设置
+    // 加载保存的筛选设置（仅恢复过滤项，不自动展开面板）
     function loadFilterSettings() {
         try {
-            const saved = localStorage.getItem("sqlpilot-filter-settings");
+            const saved = localStorage.getItem("sql-pilot-filter-settings");
             if (saved) {
                 const settings = JSON.parse(saved);
-                if (settings.databaseFilter) setDatabaseFilter(settings.databaseFilter);
-                if (settings.tableFilter) setTableFilter(settings.tableFilter);
-                if (typeof settings.showDatabaseFilter === "boolean") setShowDatabaseFilter(settings.showDatabaseFilter);
-                if (typeof settings.showTableFilter === "boolean") setShowTableFilter(settings.showTableFilter);
+                if (settings.databaseFilter?.length > 0) setDatabaseFilter(settings.databaseFilter);
+                if (settings.tableFilter?.length > 0) setTableFilter(settings.tableFilter);
             }
         } catch {
             // 忽略加载错误
@@ -2058,7 +2054,7 @@ function App() {
         monacoRef.current = monaco;
         setMonacoReady(true);
 
-        monaco.editor.defineTheme("sqltool-sql", {
+        monaco.editor.defineTheme("sql-pilot-sql", {
             base: "vs-dark",
             inherit: true,
             rules: [
@@ -2077,7 +2073,7 @@ function App() {
             },
         });
 
-        monaco.editor.setTheme("sqltool-sql");
+        monaco.editor.setTheme("sql-pilot-sql");
 
         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
             const currentSelection = editor.getSelection();
@@ -2997,7 +2993,7 @@ function App() {
                                 }
 
                                 event.dataTransfer.effectAllowed = "copy";
-                                event.dataTransfer.setData("application/x-sqltool-chat-item", JSON.stringify({ kind: "database", database: database.name }));
+                                event.dataTransfer.setData("application/x-sql-pilot-chat-item", JSON.stringify({ kind: "database", database: database.name }));
                             }} onClick={() => handleSelectDatabase(database.name)} onKeyDown={(event) => {
                                 if (event.key === "Enter" || event.key === " ") {
                                     event.preventDefault();
@@ -3036,7 +3032,7 @@ function App() {
                                         }
 
                                         event.dataTransfer.effectAllowed = "copy";
-                                        event.dataTransfer.setData("application/x-sqltool-chat-item", JSON.stringify({ kind: "table", database: database.name, table: table.name }));
+                                        event.dataTransfer.setData("application/x-sql-pilot-chat-item", JSON.stringify({ kind: "table", database: database.name, table: table.name }));
                                     }}
                                     onClick={() => handlePreviewTable(database.name, table.name)}
                                     onContextMenu={(event) => {
@@ -3930,7 +3926,7 @@ function App() {
                     }} onDrop={(event) => {
                         event.preventDefault();
                         setChatDropActive(false);
-                        const raw = event.dataTransfer.getData("application/x-sqltool-chat-item");
+                        const raw = event.dataTransfer.getData("application/x-sql-pilot-chat-item");
                         if (!raw) {
                             return;
                         }
@@ -4409,14 +4405,14 @@ function App() {
 
     function renderThemePage() {
         const handleSaveTheme = () => {
-            window.localStorage.setItem("sqltool-custom-theme", JSON.stringify(customTheme));
+            window.localStorage.setItem("sql-pilot-custom-theme", JSON.stringify(customTheme));
             pushToast("success", "主题已保存", "自定义主题设置已保存到本地");
         };
 
         const handleResetTheme = () => {
             const defaultTheme = { navFontSize: 14, resultFontSize: 14, fontColor: "#1f2937", accentColor: "#3b82f6", backgroundColor: "#f8fcfb", backgroundImage: null };
             setCustomTheme(defaultTheme);
-            window.localStorage.setItem("sqltool-custom-theme", JSON.stringify(defaultTheme));
+            window.localStorage.setItem("sql-pilot-custom-theme", JSON.stringify(defaultTheme));
             pushToast("success", "主题已重置", "已恢复默认设置");
         };
 
@@ -4590,7 +4586,7 @@ function App() {
                         <div className="theme-preview-inner">
                             <div className="preview-mock-sidebar">
                                 <div className="preview-brand">
-                                    <strong style={{ fontSize: `${Math.max(12, customTheme.navFontSize - 2)}px` }}>SQLTool</strong>
+                                    <strong style={{ fontSize: `${Math.max(12, customTheme.navFontSize - 2)}px` }}>SQLPilot</strong>
                                     <span style={{ fontSize: `${Math.max(10, customTheme.navFontSize - 4)}px`, opacity: 0.6 }}>数据库客户端</span>
                                 </div>
                                 {["连接管理", "SQL 查询", "历史记录", "表设计", "AI 设置"].map((item) => (

@@ -152,7 +152,7 @@ func (s *Store) GetStorageInfo() StorageInfo {
 	}
 
 	// Check writability
-	testFile := filepath.Join(dir, ".sqlpilot-write-test")
+	testFile := filepath.Join(dir, ".sql-pilot-write-test")
 	if err := os.WriteFile(testFile, []byte("test"), 0o600); err == nil {
 		info.Writable = true
 		os.Remove(testFile)
@@ -276,7 +276,7 @@ func dirSize(path string) int64 {
 }
 
 func resolveDataDir() (string, error) {
-	if override := strings.TrimSpace(os.Getenv("SQLTOOL_DATA_DIR")); override != "" {
+	if override := strings.TrimSpace(os.Getenv("SQLPILOT_DATA_DIR")); override != "" {
 		return override, nil
 	}
 
@@ -285,14 +285,14 @@ func resolveDataDir() (string, error) {
 		return "", err
 	}
 
-	return filepath.Join(configDir, "sqltool-studio"), nil
+	return filepath.Join(configDir, "sql-pilot"), nil
 }
 
 // isAppOwnedFile checks whether a file name belongs to the application,
 // preventing exposure of user's private data in the storage directory.
 func isAppOwnedFile(name string) bool {
 	switch name {
-	case "app-state.json", ".sqlpilot-write-test":
+	case "app-state.json", ".sql-pilot-write-test":
 		return true
 	default:
 		return false
