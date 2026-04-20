@@ -97,6 +97,8 @@ type SelectedSnippet = {
     text: string;
     start: number;
     end: number;
+    anchorTop: number;
+    anchorLeft: number;
 };
 
 type DeleteDialogState = {
@@ -4788,7 +4790,13 @@ function App() {
                                             key={page.id}
                                             type="button"
                                             className={`page-button${activePage === page.id ? " page-button--active" : ""}`}
-                                            onClick={() => setActivePage(page.id)}
+                                            onClick={() => {
+                                                // 从工作台选择页面时，自动退出 Chat 模式
+                                                if (workMode === "chat") {
+                                                    setWorkMode("normal");
+                                                }
+                                                setActivePage(page.id);
+                                            }}
                                         >
                                             <strong>{page.label}</strong>
                                             <span>{page.summary}</span>
