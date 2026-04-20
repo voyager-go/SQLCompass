@@ -6,6 +6,14 @@
 # --------------------
 # Go build cache
 .gocache/
+# Go module cache
+.gomodcache/
+# Go run configs
+.run/
+# Go binary
+sqltool
+SQLTool
+SQLPilot
 # Go test binary
 *.test
 # Go coverage
