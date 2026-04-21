@@ -1979,7 +1979,7 @@ body[data-theme="dark"] .connection-card__item--active {
 .chat-message__body {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 4px;
     max-width: min(920px, 100%);
 }
 
@@ -2033,15 +2033,16 @@ body[data-theme="dark"] .connection-card__item--active {
 
 .chat-bubble p {
     margin: 0;
-    font-size: 15px;
+    font-size: 14px;
     white-space: pre-wrap;
     word-break: break-word;
+    line-height: 1.6;
 }
 
 .chat-bubble--user {
     max-width: min(760px, 100%);
-    padding: 18px 22px;
-    border-radius: 18px;
+    padding: 10px 16px;
+    border-radius: 14px;
     background: color-mix(in srgb, var(--surface-2) 96%, #f3f4f6);
     color: var(--text-primary);
     border: 1px solid var(--panel-border);
@@ -2051,6 +2052,99 @@ body[data-theme="dark"] .connection-card__item--active {
     background: transparent;
     color: var(--text-primary);
     border: none;
+}
+
+/* User bubble actions — copy / edit */
+.chat-bubble-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    padding: 2px 4px 0;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.chat-bubble--user:hover + .chat-bubble-actions,
+.chat-bubble-actions:hover {
+    opacity: 1;
+}
+
+.chat-bubble-actions__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(22, 42, 70, 0.06);
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    line-height: 1.2;
+}
+
+.chat-bubble-actions__btn:hover {
+    background: rgba(22, 42, 70, 0.12);
+    color: var(--text-primary);
+}
+
+/* Code block with copy button */
+.code-block--with-copy {
+    position: relative;
+}
+
+.code-block__copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 7px;
+    border: none;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(6px);
+    color: var(--text-secondary);
+    font-size: 10.5px;
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.12s ease;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.code-block--with-copy:hover .code-block__copy-btn,
+.code-block__copy-btn:hover {
+    opacity: 1;
+}
+
+.code-block__copy-btn:hover {
+    background: #fff;
+    color: var(--sidebar-accent);
+}
+
+/* Chat result shell with copy */
+.chat-result-shell__copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    border: none;
+    border-radius: 5px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font-size: 10.5px;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    margin-left: auto;
+    border: 1px solid var(--panel-border);
+}
+
+.chat-result-shell__copy-btn:hover {
+    background: var(--surface-3);
+    color: var(--text-primary);
 }
 
 /* ================================================================
@@ -3147,8 +3241,8 @@ body[data-theme="dark"] .connection-card__item--active {
 
 .chat-reasoning {
     width: 100%;
-    padding: 14px 16px;
-    border-radius: 12px;
+    padding: 8px 12px;
+    border-radius: 8px;
     background: var(--surface-2);
     border: 1px solid var(--panel-border);
     font-size: 12.5px;

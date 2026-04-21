@@ -2869,6 +2869,63 @@ function App() {
         }
     }
 
+    // Chat action helpers: copy, edit, format
+    async function handleCopyText(text: string, label?: string) {
+        try {
+            await copyText(text);
+            pushToast("success", "已复制", label ? `${label} 已复制到剪贴板` : "内容已复制到剪贴板");
+        } catch {
+            pushToast("error", "复制失败", "请稍后重试");
+        }
+    }
+
+    function handleCopyUserMessage(item: ChatEntry) {
+        handleCopyText(item.content, "消息");
+    }
+
+    function handleEditUserMessage(item: ChatEntry) {
+        setChatInput(item.content);
+        const textarea = document.querySelector(".chat-composer textarea") as HTMLTextAreaElement;
+        if (textarea) {
+            textarea.focus();
+            textarea.selectionStart = item.content.length;
+            textarea.selectionEnd = item.content.length;
+        }
+    }
+
+    async function handleCopyChatMessage(item: ChatEntry) {
+        let text = "";
+        if (item.role === "assistant") {
+            const parts: string[] = [item.content];
+            if (item.sql) parts.push(`\n--- SQL ---\n${item.sql}`);
+            if (item.result) {
+                parts.push(`\n--- 查询结果 (${item.result.statementType || "SELECT"} | ${item.result.rows.length} 行 | ${item.result.durationMs}ms) ---`);
+                const header = (item.result.columns ?? []).join("\t");
+                const rows = item.result.rows.slice(0, 20).map((r: Record<string, string>) => (item.result?.columns ?? []).map((c: string) => r[c] ?? "").join("\t"));
+                parts.push([header, ...rows].join("\n"));
+                if (item.result.rows.length > 20) {
+                    parts.push(`\n... 共 ${item.result.rows.length} 行，仅展示前 20 行 ...`);
+                }
+            }
+            text = parts.join("\n\n");
+        } else {
+            text = item.content;
+        }
+        await handleCopyText(text, item.role === "assistant" ? "对话" : "消息");
+    }
+
+    async function handleCopyChatResult(item: ChatEntry) {
+        if (!item.result) return;
+        const cols = item.result.columns ?? [];
+        const header = cols.join("\t");
+        const rows = item.result.rows.slice(0, 50).map((r: Record<string, string>) => cols.map((c: string) => r[c] ?? "").join("\t"));
+        const lines = [`查询类型：${item.result.statementType || "SELECT"}`, `耗时：${item.result.durationMs} ms`, `行数：${item.result.rows.length}`, "", header, ...rows];
+        if (item.result.rows.length > 50) {
+            lines.push("", `... 共 ${item.result.rows.length} 行，仅展示前 50 行 ...`);
+        }
+        await handleCopyText(lines.join("\n"), "查询结果");
+    }
+
     async function executeChatSQL(statement: string, displayMode: ChatDisplayMode, replyPrefix = "", userMessage = "", previousReason = "", repairAttempt = 0) {
         if (!selectedConnection) {
             return;
@@ -3858,14 +3915,27 @@ function App() {
                                 <div className="chat-message__body">
                                     <div className="chat-message__meta">
                                         <div className="chat-message__label">{item.role === "assistant" ? "AI 助手" : "你"}</div>
+                                        {item.role === "assistant" ? (
+                                            <button type="button" className="chat-bubble-actions__btn" style={{ opacity: 0.55 }} onClick={() => handleCopyChatMessage(item)} title="复制整轮对话">
+                                                复制全部
+                                            </button>
+                                        ) : null}
                                     </div>
                                     <div className={`chat-bubble chat-bubble--${item.role}`}>
                                         <p>{item.content}</p>
                                     </div>
+                                    {/* User bubble actions: copy / edit */}
+                                    {item.role === "user" ? (
+                                        <div className="chat-bubble-actions">
+                                            <button type="button" className="chat-bubble-actions__btn" onClick={() => handleCopyUserMessage(item)} title="复制内容">📋</button>
+                                            <button type="button" className="chat-bubble-actions__btn" onClick={() => handleEditUserMessage(item)} title="修改内容">✏️</button>
+                                        </div>
+                                    ) : null}
                                     {item.reasoning ? <span className="chat-reasoning">{item.reasoning}</span> : null}
                                     {item.sql ? (
-                                        <div className="code-block code-block--light">
+                                        <div className="code-block code-block--light code-block--with-copy">
                                             <pre>{item.sql}</pre>
+                                            <button type="button" className="code-block__copy-btn" onClick={() => handleCopyText(item.sql ?? "", "SQL")}>📋 复制</button>
                                         </div>
                                     ) : null}
                                     {item.result ? (
@@ -3874,6 +3944,7 @@ function App() {
                                                 <span>{item.result.statementType || "SELECT"}</span>
                                                 <span>{item.result.rows.length} 行</span>
                                                 <span>{item.result.durationMs} ms</span>
+                                                <button type="button" className="chat-result-shell__copy-btn" onClick={() => handleCopyChatResult(item)}>📋 复制结果</button>
                                             </div>
                                             {item.displayMode === "summary" ? (
                                                 <div className="chat-result-summary">
@@ -4028,6 +4099,15 @@ function App() {
                                                 event.preventDefault();
                                                 return;
                                             }
+                                        }
+
+                                        // Enter 发送，Shift+Enter 换行
+                                        if (!(event.nativeEvent as any).isComposing && event.key === "Enter" && !event.shiftKey && !slashMenuOpen) {
+                                            event.preventDefault();
+                                            if (chatInput.trim()) {
+                                                handleSendChatMessage();
+                                            }
+                                            return;
                                         }
                                     }}
                                     placeholder="输入你的问题，或从左侧拖入数据库 / 数据表"
