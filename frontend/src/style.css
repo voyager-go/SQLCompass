@@ -204,30 +204,142 @@ body[data-theme="custom"][data-bg-image] {
     background-attachment: fixed !important;
 }
 
+/* 背景遮罩层 - 降低背景图亮度 */
 body[data-theme="custom"][data-bg-image]::before {
     content: "";
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.35);
+    background: rgba(20, 25, 35, 0.55);
     pointer-events: none;
     z-index: -1;
 }
 
 body[data-theme="custom"][data-bg-image] .studio-shell {
-    background: rgba(255, 255, 255, 0.92);
+    background: transparent;
 }
 
+/* 侧边栏 - 提高不透明度，添加渐变背景 */
 body[data-theme="custom"][data-bg-image] .sidebar {
-    background: rgba(255, 255, 255, 0.88);
-    backdrop-filter: blur(20px);
+    background: linear-gradient(180deg, rgba(245, 248, 252, 0.92) 0%, rgba(235, 240, 248, 0.88) 100%);
+    backdrop-filter: blur(24px);
+    border-right: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
 }
 
+/* 侧边栏导航项 */
+body[data-theme="custom"][data-bg-image] .sidebar-nav-item {
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    margin: 2px 8px;
+    border-radius: 8px;
+}
+
+body[data-theme="custom"][data-bg-image] .sidebar-nav-item:hover {
+    background: rgba(255, 255, 255, 0.85);
+}
+
+body[data-theme="custom"][data-bg-image] .sidebar-nav-item--active {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.3);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+}
+
+/* 主面板区域 */
 body[data-theme="custom"][data-bg-image] .page-panel,
-body[data-theme="custom"][data-bg-image] .connection-card,
-body[data-theme="custom"][data-bg-image] .connection-editor,
 body[data-theme="custom"][data-bg-image] .panel-card {
+    background: rgba(250, 252, 255, 0.88);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+}
+
+/* 连接卡片 */
+body[data-theme="custom"][data-bg-image] .connection-card,
+body[data-theme="custom"][data-bg-image] .connection-editor {
     background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* 数据表格区域 - 需要更高的不透明度确保可读性 */
+body[data-theme="custom"][data-bg-image] .result-board,
+body[data-theme="custom"][data-bg-image] .query-result-table-container,
+body[data-theme="custom"][data-bg-image] .data-table-wrapper {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.1);
+}
+
+/* 表格行 */
+body[data-theme="custom"][data-bg-image] .query-result-table tr {
+    background: rgba(255, 255, 255, 0.9);
+}
+
+body[data-theme="custom"][data-bg-image] .query-result-table tr:nth-child(even) {
+    background: rgba(245, 248, 252, 0.9);
+}
+
+/* 顶部工具栏 */
+body[data-theme="custom"][data-bg-image] .page-headline,
+body[data-theme="custom"][data-bg-image] .toolbar {
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+/* 按钮增强 */
+body[data-theme="custom"][data-bg-image] .primary-button {
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+body[data-theme="custom"][data-bg-image] .ghost-button {
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* 输入框增强 */
+body[data-theme="custom"][data-bg-image] input,
+body[data-theme="custom"][data-bg-image] textarea,
+body[data-theme="custom"][data-bg-image] select {
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* 深色模式适配 */
+body[data-theme="dark"][data-bg-image]::before {
+    background: rgba(10, 12, 18, 0.70);
+}
+
+body[data-theme="dark"][data-bg-image] .sidebar {
+    background: linear-gradient(180deg, rgba(35, 38, 48, 0.92) 0%, rgba(30, 33, 42, 0.88) 100%);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+body[data-theme="dark"][data-bg-image] .sidebar-nav-item {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+body[data-theme="dark"][data-bg-image] .sidebar-nav-item:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+body[data-theme="dark"][data-bg-image] .page-panel,
+body[data-theme="dark"][data-bg-image] .panel-card {
+    background: rgba(35, 38, 48, 0.90);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+body[data-theme="dark"][data-bg-image] .connection-card,
+body[data-theme="dark"][data-bg-image] .connection-editor {
+    background: rgba(40, 43, 54, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+body[data-theme="dark"][data-bg-image] .result-board,
+body[data-theme="dark"][data-bg-image] .query-result-table-container {
+    background: rgba(30, 33, 42, 0.95);
 }
 
 /* Apply custom font sizes to specific elements */
@@ -715,8 +827,8 @@ body[data-theme="custom"] .history-item-meta {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    padding: 4px 12px;
+    gap: 3px;
+    padding: 5px 12px;
     border: 1px solid var(--button-active-border);
     border-radius: 6px;
     background: var(--button-active-bg);
@@ -726,6 +838,12 @@ body[data-theme="custom"] .history-item-meta {
     cursor: pointer;
     transition: all 0.15s ease;
     white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.mini-primary-button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
 }
 
 .mini-primary-button:disabled {
@@ -770,11 +888,11 @@ body[data-theme="custom"] .history-item-meta {
     align-items: center;
     justify-content: center;
     gap: 3px;
-    padding: 4px 10px;
-    border: 1px solid var(--button-ghost-border);
+    padding: 5px 10px;
+    border: 1px solid var(--surface-3);
     border-radius: 6px;
-    background: var(--button-ghost-bg);
-    color: var(--button-ghost-text);
+    background: var(--surface-2);
+    color: var(--text-1);
     font-size: 12px;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -787,6 +905,7 @@ body[data-theme="custom"] .history-item-meta {
 }
 
 .mini-ghost-button:hover:not(:disabled) {
+    background: var(--surface-3);
     border-color: var(--button-ghost-hover-border);
 }
 
@@ -1401,14 +1520,14 @@ body[data-theme="dark"] .connection-card__item--active {
 .selection-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    background: rgba(11, 18, 32, 0.94);
-    border: 1px solid rgba(122, 162, 255, 0.22);
-    border-radius: 12px;
-    box-shadow: 0 14px 30px rgba(3, 8, 18, 0.32);
-    font-size: 12.5px;
-    color: #c8d5ef;
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--surface-1);
+    border: 1px solid var(--surface-3);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    font-size: 12px;
+    color: var(--text-1);
 }
 
 .selection-actions--floating {

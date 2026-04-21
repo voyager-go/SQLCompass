@@ -2116,14 +2116,24 @@ function App() {
         // Apply theme based on current mode
         monaco.editor.setTheme(themeMode === "light" ? "sql-compass-sql-light" : "sql-compass-sql-dark");
 
-        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-            const currentSelection = editor.getSelection();
-            if (currentSelection && !currentSelection.isEmpty()) {
-                handleExecuteSelectedSQL().catch(() => undefined);
-                return;
-            }
-
-            handleExecuteQuery(1).catch(() => undefined);
+        // 使用 addAction 替代 addCommand，更可靠地绑定快捷键
+        editor.addAction({
+            id: "sql-execute-query",
+            label: "执行 SQL 查询",
+            keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+            run: () => {
+                const currentSelection = editor.getSelection();
+                const model = editor.getModel();
+                if (currentSelection && !currentSelection.isEmpty() && model) {
+                    // 直接从编辑器获取选中文本，不依赖状态
+                    const selectedText = model.getValueInRange(currentSelection);
+                    if (selectedText.trim()) {
+                        runSQL(selectedText, 1).catch(() => undefined);
+                        return;
+                    }
+                }
+                handleExecuteQuery(1).catch(() => undefined);
+            },
         });
 
         // 强制开启自动建议（Wails 环境下可能需要）
@@ -2132,21 +2142,30 @@ function App() {
         editor.onDidChangeCursorSelection(() => syncSelectedSnippet());
         editor.onDidScrollChange(() => syncSelectedSnippet());
 
+        // 检查光标所在行是否以分号结尾
+        function isCurrentLineEndsWithSemicolon(): boolean {
+            const model = editor.getModel();
+            const position = editor.getPosition();
+            if (!model || !position) return false;
+            const lineContent = model.getLineContent(position.lineNumber);
+            return lineContent.trim().endsWith(";");
+        }
+
         // 监听按键，在输入字母时主动触发补全
         editor.onKeyDown((e) => {
             const key = e.browserEvent.key;
             if (key.length === 1 && /[a-zA-Z]/.test(key)) {
                 window.setTimeout(() => {
-                    if (editor && editor.hasTextFocus()) {
+                    if (editor && editor.hasTextFocus() && !isCurrentLineEndsWithSemicolon()) {
                         editor.trigger("keyboard", "editor.action.triggerSuggest", {});
                     }
                 }, 80);
             }
         });
 
-        // 内容变化时也触发
+        // 内容变化时也触发（但跳过以分号结尾的行）
         editor.onDidChangeModelContent(() => {
-            if (editor.hasTextFocus()) {
+            if (editor.hasTextFocus() && !isCurrentLineEndsWithSemicolon()) {
                 setTimeout(() => {
                     editor.trigger("keyboard", "editor.action.triggerSuggest", {});
                 }, 60);
@@ -4459,17 +4478,6 @@ function App() {
     function renderAIPage() {
         return (
             <section className="page-panel">
-                <div className="page-headline">
-                    <div className="toolbar-actions">
-                        <button type="button" className="ghost-button" onClick={handleClearAPIKey} disabled={isSavingAI}>
-                            清空 Key
-                        </button>
-                        <button type="button" className="primary-button" onClick={handleSaveAISettings} disabled={isSavingAI}>
-                            {isSavingAI ? "保存中..." : "保存设置"}
-                        </button>
-                    </div>
-                </div>
-
                 <NoticeBanner notice={aiNotice} />
 
                 <div className="ai-layout">
@@ -4492,6 +4500,14 @@ function App() {
                                     placeholder="输入新 Key 后保存"
                                 />
                             </label>
+                        </div>
+                        <div className="form-actions" style={{ display: "flex", gap: "8px", marginTop: "16px", paddingTop: "16px", borderTop: "1px solid rgba(0,0,0,0.06)" }}>
+                            <button type="button" className="ghost-button" onClick={handleClearAPIKey} disabled={isSavingAI}>
+                                清空 Key
+                            </button>
+                            <button type="button" className="primary-button" onClick={handleSaveAISettings} disabled={isSavingAI}>
+                                {isSavingAI ? "保存中..." : "保存设置"}
+                            </button>
                         </div>
                     </div>
 
