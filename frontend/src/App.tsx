@@ -29,17 +29,20 @@ import "./App.css";
 import splashLogo from "./assets/images/start.png";
 import { NoticeBanner } from "./components/NoticeBanner";
 import { FloatingToast } from "./components/FloatingToast";
-import { CopyableText } from "./components/CopyableText";
 import { AIPage } from "./pages/AIPage";
 import { ThemePage } from "./pages/ThemePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ConnectionsPage } from "./pages/ConnectionsPage";
 import { engineLabels, defaultPortForEngine } from "./lib/engine";
-import { copyText, isTextLikeType } from "./lib/utils";
+import { copyText, toEditorValue, fromEditorValue, escapeHTML } from "./lib/utils";
 import { HistoryPage } from "./pages/HistoryPage";
 import { SchemaPage } from "./pages/SchemaPage";
 import { QueryPage } from "./pages/QueryPage";
 import { ChatPage } from "./pages/ChatPage";
+import { SidebarTree } from "./pages/SidebarTree";
+import { OptimizeReviewModal } from "./pages/OptimizeReviewModal";
+import { CellEditorModal } from "./pages/CellEditorModal";
+import { DeleteDialogModal } from "./pages/DeleteDialogModal";
 import type {
     AISettingsInput,
     ConnectionInput,
@@ -60,7 +63,6 @@ import type {
     StorageInfoView,
     TableDetail,
     TableField,
-    TableNode,
 } from "./types/runtime";
 
 type NoticeTone = "success" | "error" | "info";
@@ -180,7 +182,6 @@ type CellEditorState = {
 
 const browserStorageKey = "sql-compass-browser-workspace";
 const themeStorageKey = "sql-compass-theme";
-const tablePageSize = 12;
 const previewPageSize = 30;
 const DEFAULT_QUERY_PAGE_SIZE = 20;
 const QUERY_PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200];
@@ -478,17 +479,6 @@ function appendUnique(items: string[], value: string): string[] {
     return items.includes(value) ? items : [...items, value];
 }
 
-function setDragPreview(event: React.DragEvent<HTMLElement>, title: string, typeLabel: string) {
-    const preview = document.createElement("div");
-    preview.className = "drag-preview";
-    preview.innerHTML = `<span class="drag-preview__type">${escapeHTML(typeLabel)}</span><strong class="drag-preview__title">${escapeHTML(title)}</strong>`;
-    document.body.appendChild(preview);
-    event.dataTransfer.setDragImage(preview, 18, 18);
-    window.setTimeout(() => {
-        document.body.removeChild(preview);
-    }, 0);
-}
-
 function stringifySQLValue(value: string): string {
     if (value === "") {
         return "NULL";
@@ -528,37 +518,7 @@ function buildRowSelectionKey(page: number, columns: string[], row: Record<strin
     return `${page}:${rowIndex}:${signature}`;
 }
 
-function isDateLikeType(type: string): boolean {
-    return /(date|time|timestamp|datetime|year)/i.test(type);
-}
 
-function editorInputType(type: string): "text" | "date" | "time" | "datetime-local" {
-    if (/^date$/i.test(type)) {
-        return "date";
-    }
-    if (/^time/i.test(type)) {
-        return "time";
-    }
-    if (/(datetime|timestamp)/i.test(type)) {
-        return "datetime-local";
-    }
-    return "text";
-}
-
-function toEditorValue(value: string, type: string): string {
-    const normalized = value ?? "";
-    if (editorInputType(type) === "datetime-local") {
-        return normalized.replace(" ", "T").slice(0, 16);
-    }
-    return normalized;
-}
-
-function fromEditorValue(value: string, type: string): string {
-    if (editorInputType(type) === "datetime-local") {
-        return value ? value.replace("T", " ") : "";
-    }
-    return value;
-}
 
 function buildFieldDefinition(field: SchemaDraftField): string {
     const parts = [`\`${field.name || "new_column"}\``, field.type || "varchar(255)"];
@@ -654,15 +614,6 @@ function downloadText(filename: string, content: string, mimeType: string) {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-}
-
-function escapeHTML(value: string): string {
-    return value
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
 }
 
 function excelFromRows(sheetName: string, columns: string[], rows: Record<string, string>[]): string {
@@ -1629,13 +1580,6 @@ function App() {
         if (selectedConnectionId && !browserPreview) {
             loadExplorer(selectedConnectionId, databaseName).catch(() => undefined);
         }
-    }
-
-    function toggleDatabaseExpanded(databaseName: string) {
-        setExpandedDatabases((current) => ({
-            ...current,
-            [databaseName]: !(current[databaseName] ?? databaseName === selectedDatabase),
-        }));
     }
 
     async function handlePreviewTableWithSize(databaseName: string, tableName: string, nextPage = 1, pageSize = queryPageSize) {
@@ -2809,161 +2753,6 @@ function App() {
         }
     }
 
-    function renderSidebarTree() {
-        if (!explorerTree || explorerTree.databases.length === 0) {
-            return <div className="sidebar-empty">先选择一个连接，或者先在连接管理里新建连接。</div>;
-        }
-
-        // Apply database filter if set
-        const filteredDatabases = databaseFilter.length > 0
-            ? explorerTree.databases.filter((db) => databaseFilter.includes(db.name))
-            : explorerTree.databases;
-
-        return filteredDatabases.map((database) => {
-            const isActive = database.name === selectedDatabase;
-            const isExpanded = expandedDatabases[database.name] ?? isActive;
-            const shouldFilterTables = Boolean(tableSearch.trim()) && database.name === selectedDatabase;
-            let filteredTables = shouldFilterTables
-                ? database.tables.filter((table) => table.name.toLowerCase().includes(tableSearch.trim().toLowerCase()))
-                : database.tables;
-            // Apply table filter if set and this is the selected database
-            if (tableFilter.length > 0 && database.name === selectedDatabase) {
-                filteredTables = filteredTables.filter((table) => tableFilter.includes(table.name));
-            }
-            const page = tablePageByDatabase[database.name] ?? 1;
-            const pageCount = Math.max(1, Math.ceil(filteredTables.length / tablePageSize));
-            const normalizedPage = Math.min(page, pageCount);
-            const start = (normalizedPage - 1) * tablePageSize;
-            const visibleTables: TableNode[] = filteredTables.slice(start, start + tablePageSize);
-
-            return (
-                    <div key={database.name} className={`navigator-db${isActive ? " navigator-db--active" : ""}`}>
-                        <div className="navigator-db__row">
-                            <div className="navigator-db__button" role="button" tabIndex={0} draggable={workMode === "chat"} onDragStart={(event) => {
-                                if (workMode !== "chat") {
-                                    event.preventDefault();
-                                    return;
-                                }
-
-                                event.dataTransfer.effectAllowed = "copy";
-                                event.dataTransfer.setData("application/x-sql-compass-chat-item", JSON.stringify({ kind: "database", database: database.name }));
-                                setDragPreview(event, database.name, "数据库");
-                            }} onClick={() => handleSelectDatabase(database.name)} onKeyDown={(event) => {
-                                if (event.key === "Enter" || event.key === " ") {
-                                    event.preventDefault();
-                                    handleSelectDatabase(database.name);
-                                }
-                            }}>
-                            <button type="button" className="navigator-toggle" onClick={(event) => {
-                                event.stopPropagation();
-                                toggleDatabaseExpanded(database.name);
-                            }}>
-                                {isExpanded ? "▾" : "▸"}
-                            </button>
-                            <div className="navigator-db__main">
-                                <CopyableText
-                                    value={database.name}
-                                    onCopied={(value) => pushToast(value ? "success" : "error", value ? "已复制数据库名" : "复制失败", value || "请重试")}
-                                />
-                            </div>
-                            <span className="navigator-count">{database.tableCount}</span>
-                        </div>
-                    </div>
-
-                    {isExpanded ? (
-                        <div className="navigator-table-list">
-                            {visibleTables.map((table) => (
-                                <div
-                                    key={table.name}
-                                    className={`navigator-table${table.name === selectedTable ? " navigator-table--active" : ""}`}
-                                    role="button"
-                                    tabIndex={0}
-                                    draggable={workMode === "chat"}
-                                    onDragStart={(event) => {
-                                        if (workMode !== "chat") {
-                                            event.preventDefault();
-                                            return;
-                                        }
-
-                                        event.dataTransfer.effectAllowed = "copy";
-                                        event.dataTransfer.setData("application/x-sql-compass-chat-item", JSON.stringify({ kind: "table", database: database.name, table: table.name }));
-                                        setDragPreview(event, table.name, "数据表");
-                                    }}
-                                    onClick={() => handlePreviewTable(database.name, table.name)}
-                                    onContextMenu={(event) => {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        setTableContextMenu({
-                                            x: Math.min(event.clientX, window.innerWidth - 148),
-                                            y: Math.min(event.clientY, window.innerHeight - 72),
-                                            database: database.name,
-                                            table: table.name,
-                                        });
-                                    }}
-                                    onKeyDown={(event) => {
-                                        if (event.key === "Enter" || event.key === " ") {
-                                            event.preventDefault();
-                                            handlePreviewTable(database.name, table.name).catch(() => undefined);
-                                        }
-                                    }}
-                                >
-                                    <div className="navigator-table__main">
-                                        <CopyableText
-                                            value={table.name}
-                                            helperText={table.comment || "暂无表注释"}
-                                            onCopied={(value) => pushToast(value ? "success" : "error", value ? "已复制表名" : "复制失败", value || "请重试")}
-                                        />
-                                    </div>
-                                    <span className="navigator-meta">
-                                        {table.rows === -1 ? "加载中..." : table.rows >= 0 ? table.rows.toLocaleString() : "-"}
-                                    </span>
-                                </div>
-                            ))}
-
-                            {visibleTables.length === 0 ? <div className="navigator-empty">没有匹配的表</div> : null}
-
-                            {pageCount > 1 && visibleTables.length > 0 ? (
-                                <div className="navigator-pager">
-                                    <button
-                                        type="button"
-                                        className="mini-ghost-button"
-                                        onClick={() =>
-                                            setTablePageByDatabase((current) => ({
-                                                ...current,
-                                                [database.name]: Math.max(1, normalizedPage - 1),
-                                            }))
-                                        }
-                                        disabled={normalizedPage <= 1}
-                                    >
-                                        上一页
-                                    </button>
-                                    <span>
-                                        {normalizedPage} / {pageCount}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        className="mini-ghost-button"
-                                        onClick={() =>
-                                            setTablePageByDatabase((current) => ({
-                                                ...current,
-                                                [database.name]: Math.min(pageCount, normalizedPage + 1),
-                                            }))
-                                        }
-                                        disabled={normalizedPage >= pageCount}
-                                    >
-                                        下一页
-                                    </button>
-                                </div>
-                            ) : null}
-                        </div>
-                    ) : null}
-                </div>
-            );
-        });
-    }
-
-
-
     function handleChatInputChange(value: string, cursorPos?: number) {
         setChatInput(value);
         const pos = cursorPos ?? value.length;
@@ -3529,7 +3318,27 @@ function App() {
                                         placeholder={selectedDatabase ? "搜索当前数据库中的表" : "先选择数据库再搜索表"}
                                     />
                                 </div>
-                                <div className="navigator-shell">{renderSidebarTree()}</div>
+                                <div className="navigator-shell">
+                                    <SidebarTree
+                                        explorerTree={explorerTree}
+                                        databaseFilter={databaseFilter}
+                                        selectedDatabase={selectedDatabase}
+                                        expandedDatabases={expandedDatabases}
+                                        setExpandedDatabases={setExpandedDatabases}
+                                        tableSearch={tableSearch}
+                                        tableFilter={tableFilter}
+                                        tablePageByDatabase={tablePageByDatabase}
+                                        setTablePageByDatabase={setTablePageByDatabase}
+                                        workMode={workMode}
+                                        selectedTable={selectedTable}
+                                        handleSelectDatabase={handleSelectDatabase}
+                                        handlePreviewTable={handlePreviewTable}
+                                        tableContextMenu={tableContextMenu}
+                                        setTableContextMenu={setTableContextMenu}
+                                        openTableDesigner={openTableDesigner}
+                                        pushToast={pushToast}
+                                    />
+                                </div>
                             </div>
                         ) : (
                             <div className="sidebar-section sidebar-section--fill">
@@ -3565,131 +3374,30 @@ function App() {
                 </div>
             </main>
 
-            {optimizeReview ? (
-                <div className="modal-backdrop" onClick={() => setOptimizeReview(null)}>
-                    <div className="modal-card modal-card--wide" onClick={(event) => event.stopPropagation()}>
-                        <div className="section-title">
-                            <div>
-                                <h3>AI 优化建议</h3>
-                                <p>AI 会先解释为什么这么优化，你确认后才会回填到编辑器。</p>
-                            </div>
-                        </div>
-                        <div className="form-grid">
-                            <label className="field field--full">
-                                <span>优化提示词</span>
-                                <textarea
-                                    value={optimizeReview.prompt}
-                                    onChange={(event) => setOptimizeReview((current) => (current ? { ...current, prompt: event.target.value } : current))}
-                                    rows={3}
-                                    placeholder="可补充约束，例如：尽量减少子查询、保持索引友好、不要改动 where 条件"
-                                />
-                            </label>
-                        </div>
-                        <div className="notice notice--info">{optimizeReview.reasoning}</div>
-                        <div className="code-block code-block--light">
-                            <pre>{optimizeReview.sql}</pre>
-                        </div>
-                        <div className="toolbar-actions toolbar-actions--end">
-                            <button type="button" className="ghost-button" onClick={() => setOptimizeReview(null)}>
-                                取消
-                            </button>
-                            <button type="button" className="ghost-button" onClick={() => handleRetryOptimizeReview()} disabled={isOptimizingSQL}>
-                                {isOptimizingSQL ? "优化中..." : "再次优化"}
-                            </button>
-                            <button type="button" className="primary-button" onClick={handleApplyOptimizeReview}>
-                                确认回填
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            ) : null}
+            <OptimizeReviewModal
+                optimizeReview={optimizeReview}
+                setOptimizeReview={setOptimizeReview}
+                isOptimizingSQL={isOptimizingSQL}
+                handleRetryOptimizeReview={handleRetryOptimizeReview}
+                handleApplyOptimizeReview={handleApplyOptimizeReview}
+            />
 
-            {cellEditor ? (
-                <div className="modal-backdrop" onClick={() => setCellEditor(null)}>
-                    <div className="modal-card modal-card--wide" onClick={(event) => event.stopPropagation()}>
-                        <div className="section-title">
-                            <div>
-                                <h3>编辑字段</h3>
-                                <p>{cellEditor.column} · {cellEditor.fieldType}</p>
-                            </div>
-                        </div>
-                        <label className="field field--full">
-                            <span>字段值</span>
-                            {isTextLikeType(cellEditor.fieldType) ? (
-                                <textarea
-                                    value={cellEditor.nextValue}
-                                    onChange={(event) => setCellEditor((current) => (current ? { ...current, nextValue: event.target.value } : current))}
-                                    rows={8}
-                                />
-                            ) : (
-                                <input
-                                    type={editorInputType(cellEditor.fieldType)}
-                                    value={cellEditor.nextValue}
-                                    onChange={(event) => setCellEditor((current) => (current ? { ...current, nextValue: event.target.value } : current))}
-                                />
-                            )}
-                        </label>
-                        <div className="cell-editor-toolbar">
-                            <button type="button" className="ghost-button" onClick={() => {
-                                copyText(fromEditorValue(cellEditor.nextValue, cellEditor.fieldType));
-                                pushToast("success", "复制成功", "字段值已复制到剪贴板");
-                            }}>
-                                复制
-                            </button>
-                            <button type="button" className="ghost-button" onClick={() => setCellEditor(null)}>
-                                取消
-                            </button>
-                            <button type="button" className="primary-button" onClick={() => handleConfirmCellEdit()} disabled={isSavingCell}>
-                                {isSavingCell ? "保存中..." : "确认"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            ) : null}
+            <CellEditorModal
+                cellEditor={cellEditor}
+                setCellEditor={setCellEditor}
+                isSavingCell={isSavingCell}
+                handleConfirmCellEdit={handleConfirmCellEdit}
+                pushToast={pushToast}
+            />
 
-            {deleteDialog ? (
-                <div className="modal-backdrop" onClick={() => setDeleteDialog(null)}>
-                    <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-                        <div className="section-title">
-                            <div>
-                                <h3>确认删除选中项</h3>
-                                <p>将从当前表中删除 {deleteDialog.count} 条已勾选数据，这个操作不可撤销。</p>
-                            </div>
-                        </div>
-                        <div className="code-block code-block--light">
-                            <pre>{deleteDialog.statement}</pre>
-                        </div>
-                        <div className="toolbar-actions toolbar-actions--end">
-                            <button type="button" className="ghost-button" onClick={() => setDeleteDialog(null)}>
-                                取消
-                            </button>
-                            <button type="button" className="primary-button" onClick={() => handleConfirmDeleteSelectedRows()} disabled={isExecutingQuery}>
-                                {isExecutingQuery ? "删除中..." : "确认删除"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            ) : null}
+            <DeleteDialogModal
+                deleteDialog={deleteDialog}
+                setDeleteDialog={setDeleteDialog}
+                isExecutingQuery={isExecutingQuery}
+                handleConfirmDeleteSelectedRows={handleConfirmDeleteSelectedRows}
+            />
 
-            {tableContextMenu ? (
-                <div
-                    className="context-menu"
-                    style={{
-                        top: tableContextMenu.y,
-                        left: tableContextMenu.x,
-                    }}
-                    onClick={(event) => event.stopPropagation()}
-                    onContextMenu={(event) => event.preventDefault()}
-                >
-                    <button
-                        type="button"
-                        className="context-menu__item"
-                        onClick={() => openTableDesigner(tableContextMenu.database, tableContextMenu.table)}
-                    >
-                        设计
-                    </button>
-                </div>
-            ) : null}
+
             </div>
         </>
     );

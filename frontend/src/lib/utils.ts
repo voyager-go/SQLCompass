@@ -48,3 +48,40 @@ export function formatCellPreview(value: string, type: string): string {
     }
     return `${normalized.slice(0, 48)}...`;
 }
+
+export function editorInputType(type: string): "text" | "date" | "time" | "datetime-local" {
+    if (/^date$/i.test(type)) {
+        return "date";
+    }
+    if (/^time/i.test(type)) {
+        return "time";
+    }
+    if (/(datetime|timestamp)/i.test(type)) {
+        return "datetime-local";
+    }
+    return "text";
+}
+
+export function toEditorValue(value: string, type: string): string {
+    const normalized = value ?? "";
+    if (editorInputType(type) === "datetime-local") {
+        return normalized.replace(" ", "T").slice(0, 16);
+    }
+    return normalized;
+}
+
+export function fromEditorValue(value: string, type: string): string {
+    if (editorInputType(type) === "datetime-local") {
+        return value ? value.replace("T", " ") : "";
+    }
+    return value;
+}
+
+export function escapeHTML(value: string): string {
+    return value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
