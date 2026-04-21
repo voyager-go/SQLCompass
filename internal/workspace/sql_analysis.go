@@ -65,7 +65,7 @@ func analyzeSQL(statement string) SQLAnalysis {
 	}
 
 	if analysis.StatementType == "SELECT" && !strings.Contains(normalized, " LIMIT ") {
-		analysis.Warnings = append(analysis.Warnings, "未检测到 LIMIT，系统会自动按每页 50 行分页展示。")
+		analysis.Warnings = append(analysis.Warnings, "未检测到 LIMIT，系统会自动按每页 20 行分页展示。")
 	}
 
 	if analysis.StatementType == "ALTER" {

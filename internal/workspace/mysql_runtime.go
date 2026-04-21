@@ -415,7 +415,7 @@ func (s *Service) runMySQLQuery(record store.ConnectionRecord, input QueryReques
 
 	pageSize := input.PageSize
 	if pageSize <= 0 {
-		pageSize = 50
+		pageSize = 20
 	}
 
 	databaseName := strings.TrimSpace(input.Database)

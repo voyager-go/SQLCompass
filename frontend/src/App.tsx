@@ -173,7 +173,8 @@ const browserStorageKey = "sql-compass-browser-workspace";
 const themeStorageKey = "sql-compass-theme";
 const tablePageSize = 12;
 const previewPageSize = 30;
-const queryPageSize = 50;
+const DEFAULT_QUERY_PAGE_SIZE = 20;
+const QUERY_PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200];
 const SLASH_COMMANDS = [
     { key: "database", label: "/database", desc: "选择数据库" },
     { key: "table", label: "/table", desc: "选择数据表" },
@@ -1082,6 +1083,11 @@ function App() {
     const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
     const [historyFocusId, setHistoryFocusId] = useState("");
     const [queryPage, setQueryPage] = useState(1);
+    const [queryPageSize, setQueryPageSize] = useState(() => {
+        const saved = localStorage.getItem("sql-compass-query-page-size");
+        return saved ? Number(saved) : DEFAULT_QUERY_PAGE_SIZE;
+    });
+    const [jumpPageInput, setJumpPageInput] = useState("");
     const [historyPage, setHistoryPage] = useState(1);
     const historyPageSize = 20;
     const [schemaDraftFields, setSchemaDraftFields] = useState<SchemaDraftField[]>([]);
@@ -1933,7 +1939,7 @@ function App() {
                 database: databaseName,
                 table: tableName,
                 page: nextPage,
-                pageSize: previewPageSize,
+                pageSize: queryPageSize,
             })) as QueryResult;
             setPreviewContext({
                 connectionId: selectedConnection.id,
@@ -3594,37 +3600,101 @@ function App() {
                         </div>
                         {queryResult && (
                             <div className="result-board__pagination">
-                                <button
-                                    type="button"
-                                    className="ghost-button ghost-button--sm"
-                                    onClick={() => {
-                                        const nextPage = Math.max(1, queryPage - 1);
-                                        if (previewContext) {
-                                            handlePreviewTable(previewContext.database, previewContext.table, nextPage).catch(() => undefined);
-                                            return;
-                                        }
-                                        runSQL(lastExecutedSQL || sqlText, nextPage).catch(() => undefined);
-                                    }}
-                                    disabled={queryPage <= 1 || isExecutingQuery}
-                                >
-                                    上一页
-                                </button>
-                                <span className="result-board__page-info">{queryPage}</span>
-                                <button
-                                    type="button"
-                                    className="ghost-button ghost-button--sm"
-                                    onClick={() => {
-                                        const nextPage = queryPage + 1;
-                                        if (previewContext) {
-                                            handlePreviewTable(previewContext.database, previewContext.table, nextPage).catch(() => undefined);
-                                            return;
-                                        }
-                                        runSQL(lastExecutedSQL || sqlText, nextPage).catch(() => undefined);
-                                    }}
-                                    disabled={isExecutingQuery || !hasNextQueryPage}
-                                >
-                                    下一页
-                                </button>
+                                {/* 每页条数选择 */}
+                                <div className="pagination-size">
+                                    <span className="pagination-label">每页</span>
+                                    <select
+                                        className="pagination-select"
+                                        value={queryPageSize}
+                                        onChange={(e) => {
+                                            const newSize = Number(e.target.value);
+                                            setQueryPageSize(newSize);
+                                            localStorage.setItem("sql-compass-query-page-size", String(newSize));
+                                            // 重新查询第一页
+                                            if (previewContext) {
+                                                handlePreviewTable(previewContext.database, previewContext.table, 1).catch(() => undefined);
+                                            } else {
+                                                runSQL(lastExecutedSQL || sqlText, 1).catch(() => undefined);
+                                            }
+                                        }}
+                                        disabled={isExecutingQuery}
+                                    >
+                                        {QUERY_PAGE_SIZE_OPTIONS.map((size) => (
+                                            <option key={size} value={size}>
+                                                {size}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <span className="pagination-label">条</span>
+                                </div>
+
+                                {/* 分页控制 */}
+                                <div className="pagination-nav">
+                                    <button
+                                        type="button"
+                                        className="pagination-btn"
+                                        onClick={() => {
+                                            const nextPage = Math.max(1, queryPage - 1);
+                                            if (previewContext) {
+                                                handlePreviewTable(previewContext.database, previewContext.table, nextPage).catch(() => undefined);
+                                                return;
+                                            }
+                                            runSQL(lastExecutedSQL || sqlText, nextPage).catch(() => undefined);
+                                        }}
+                                        disabled={queryPage <= 1 || isExecutingQuery}
+                                        title="上一页"
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <polyline points="15 18 9 12 15 6"></polyline>
+                                        </svg>
+                                    </button>
+                                    <span className="pagination-current">{queryPage}</span>
+                                    <button
+                                        type="button"
+                                        className="pagination-btn"
+                                        onClick={() => {
+                                            const nextPage = queryPage + 1;
+                                            if (previewContext) {
+                                                handlePreviewTable(previewContext.database, previewContext.table, nextPage).catch(() => undefined);
+                                                return;
+                                            }
+                                            runSQL(lastExecutedSQL || sqlText, nextPage).catch(() => undefined);
+                                        }}
+                                        disabled={isExecutingQuery || !hasNextQueryPage}
+                                        title="下一页"
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <polyline points="9 18 15 12 9 6"></polyline>
+                                        </svg>
+                                    </button>
+                                </div>
+
+                                {/* 跳转到指定页 */}
+                                <div className="pagination-goto">
+                                    <span className="pagination-label">跳至</span>
+                                    <input
+                                        type="text"
+                                        className="pagination-input"
+                                        value={jumpPageInput}
+                                        onChange={(e) => setJumpPageInput(e.target.value.replace(/\D/g, ""))}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                const page = Number(jumpPageInput);
+                                                if (page > 0) {
+                                                    if (previewContext) {
+                                                        handlePreviewTable(previewContext.database, previewContext.table, page).catch(() => undefined);
+                                                    } else {
+                                                        runSQL(lastExecutedSQL || sqlText, page).catch(() => undefined);
+                                                    }
+                                                    setJumpPageInput("");
+                                                }
+                                            }
+                                        }}
+                                        placeholder=""
+                                        disabled={isExecutingQuery}
+                                    />
+                                    <span className="pagination-label">页</span>
+                                </div>
                             </div>
                         )}
                     </div>
