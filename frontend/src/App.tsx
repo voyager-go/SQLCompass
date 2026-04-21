@@ -1,4 +1,4 @@
-import Editor, { type Monaco } from "@monaco-editor/react";
+import { type Monaco } from "@monaco-editor/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { IDisposable, editor as MonacoEditorNS } from "monaco-editor";
 import {
@@ -35,6 +35,11 @@ import { ThemePage } from "./pages/ThemePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ConnectionsPage } from "./pages/ConnectionsPage";
 import { engineLabels, defaultPortForEngine } from "./lib/engine";
+import { copyText, isTextLikeType } from "./lib/utils";
+import { HistoryPage } from "./pages/HistoryPage";
+import { SchemaPage } from "./pages/SchemaPage";
+import { QueryPage } from "./pages/QueryPage";
+import { ChatPage } from "./pages/ChatPage";
 import type {
     AISettingsInput,
     ConnectionInput,
@@ -447,19 +452,6 @@ function updateBrowserAIState(state: WorkspaceState, form: AISettingsInput): Wor
     };
 }
 
-function formatDateTime(value: string): string {
-    try {
-        return new Intl.DateTimeFormat("zh-CN", {
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-        }).format(new Date(value));
-    } catch {
-        return value;
-    }
-}
-
 function clamp(value: number, min: number, max: number): number {
     return Math.min(Math.max(value, min), max);
 }
@@ -536,10 +528,6 @@ function buildRowSelectionKey(page: number, columns: string[], row: Record<strin
     return `${page}:${rowIndex}:${signature}`;
 }
 
-function isTextLikeType(type: string): boolean {
-    return /(text|blob|json|longtext|mediumtext|tinytext)/i.test(type);
-}
-
 function isDateLikeType(type: string): boolean {
     return /(date|time|timestamp|datetime|year)/i.test(type);
 }
@@ -555,18 +543,6 @@ function editorInputType(type: string): "text" | "date" | "time" | "datetime-loc
         return "datetime-local";
     }
     return "text";
-}
-
-function formatCellPreview(value: string, type: string): string {
-    if (!isTextLikeType(type)) {
-        return value;
-    }
-
-    const normalized = (value || "").replace(/\s+/g, " ").trim();
-    if (normalized.length <= 48) {
-        return normalized;
-    }
-    return `${normalized.slice(0, 48)}...`;
 }
 
 function toEditorValue(value: string, type: string): string {
@@ -718,22 +694,6 @@ function excelFromRows(sheetName: string, columns: string[], rows: Record<string
     </table>
 </body>
 </html>`;
-}
-
-async function copyText(value: string): Promise<void> {
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(value);
-        return;
-    }
-
-    const textarea = document.createElement("textarea");
-    textarea.value = value;
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand("copy");
-    document.body.removeChild(textarea);
 }
 
 function App() {
@@ -3002,333 +2962,7 @@ function App() {
         });
     }
 
-    function renderQueryPage() {
-        return (
-            <section className="page-panel page-panel--wide page-panel--scrollable">
-                <div className="page-headline">
-                    <div className="toolbar-actions toolbar-actions--end">
-                        <button type="button" className="primary-button" onClick={() => handleExecuteQuery(1)} disabled={isExecutingQuery}>
-                            {isExecutingQuery ? "执行中..." : "执行"}
-                        </button>
-                        <button type="button" className="ghost-button" onClick={handleBeautifySQL} disabled={isOptimizingSQL || !sqlText.trim()}>
-                            {isOptimizingSQL ? "处理中..." : "美化"}
-                        </button>
-                        <button type="button" className="ghost-button" onClick={handleOptimizeSQL} disabled={isOptimizingSQL || !sqlText.trim()}>
-                            {isOptimizingSQL ? "处理中..." : "优化"}
-                        </button>
-                        <button type="button" className="ghost-button" onClick={() => sqlFileInputRef.current?.click()}>
-                            导入
-                        </button>
-                    </div>
-                </div>
 
-                {queryNotice ? <NoticeBanner notice={queryNotice} /> : null}
-
-                <div className={`editor-shell${sqlEditorCollapsed ? " editor-shell--collapsed" : ""}`}>
-                    <div className="editor-shell__top">
-                        <div className="editor-shell__signals">
-                            <span className="editor-dot" />
-                            <span className="editor-dot" />
-                            <span className="editor-dot" />
-                        </div>
-                        <button
-                            type="button"
-                            className="editor-toggle-fab"
-                            onClick={() => setSQLEditorCollapsed((current) => !current)}
-                            aria-label={sqlEditorCollapsed ? "展开编辑器" : "收起编辑器"}
-                        >
-                            {sqlEditorCollapsed ? "▾" : "▴"}
-                        </button>
-                    </div>
-                    {!sqlEditorCollapsed ? (
-                        <div className="sql-editor">
-                            {isOptimizingSQL ? <div className="editor-ai-mask"><span className="editor-ai-spinner">✦</span><strong>AI 正在优化</strong></div> : null}
-                            {!isOptimizingSQL && !sqlText.trim() ? (
-                                <div className="editor-placeholder">
-                                    <span className="editor-placeholder__icon">⌨</span>
-                                    <span>输入 SQL 语句，按 <kbd>Ctrl</kbd>+<kbd>Enter</kbd> / <kbd>Cmd</kbd>+<kbd>Enter</kbd> 执行查询</span>
-                                </div>
-                            ) : null}
-                            {!isOptimizingSQL && selectedSnippet?.text.trim() ? (
-                                <div
-                                    className="selection-actions selection-actions--floating"
-                                    style={{
-                                        top: selectedSnippet.anchorTop,
-                                        left: selectedSnippet.anchorLeft,
-                                    }}
-                                >
-                                    <button type="button" className="mini-primary-button" onClick={() => handleExecuteSelectedSQL()} disabled={isExecutingQuery}>
-                                        执行
-                                    </button>
-                                    <button type="button" className="mini-ghost-button" onClick={() => handleBeautifySelectedSQL()} disabled={isOptimizingSQL}>
-                                        美化
-                                    </button>
-                                    <button type="button" className="mini-ghost-button" onClick={() => handleOptimizeSelectedSQL()} disabled={isOptimizingSQL}>
-                                        优化
-                                    </button>
-                                </div>
-                            ) : null}
-                            <Editor
-                                height="320px"
-                                defaultLanguage="sql"
-                                value={sqlText}
-                                onMount={handleEditorDidMount}
-                                onChange={(value) => {
-                                    setSQLText(value ?? "");
-                                    setSelectedSnippet(null);
-                                    setQueryErrorDetail("");
-                                }}
-                                options={{
-                                    automaticLayout: true,
-                                    minimap: { enabled: false },
-                                    fontSize: 14,
-                                    lineHeight: 22,
-                                    readOnly: isOptimizingSQL,
-                                    roundedSelection: true,
-                                    scrollBeyondLastLine: false,
-                                    wordWrap: "on",
-                                    // 补全相关 — 全部开启
-                                    quickSuggestions: {
-                                        other: true,
-                                        comments: false,
-                                        strings: true,
-                                    },
-                                    suggestOnTriggerCharacters: true,
-                                    quickSuggestionsDelay: 80,
-                                    suggest: {
-                                        snippetsPreventQuickSuggestions: false,
-                                        showKeywords: true,
-                                        localityBonus: true,
-                                    },
-                                    tabSize: 2,
-                                    padding: {
-                                        top: 14,
-                                        bottom: 14,
-                                    },
-                                }}
-                            />
-                        </div>
-                    ) : null}
-                </div>
-
-                <div className="result-board">
-                    <div className="result-board__header">
-                        <div className="result-board__title">
-                            <span className="result-board__dot"></span>
-                            查询结果
-                        </div>
-                        {queryResult && (
-                            <div className="result-board__pagination">
-                                {/* 每页条数选择 */}
-                                <div className="pagination-size">
-                                    <span className="pagination-label">每页</span>
-                                    <select
-                                        className="pagination-select"
-                                        value={queryPageSize}
-                                        onChange={(e) => {
-                                            const newSize = Number(e.target.value);
-                                            setQueryPageSize(newSize);
-                                            localStorage.setItem("sql-compass-query-page-size", String(newSize));
-                                            // 重新查询第一页，使用新的 pageSize
-                                            if (previewContext) {
-                                                handlePreviewTableWithSize(previewContext.database, previewContext.table, 1, newSize).catch(() => undefined);
-                                            } else {
-                                                runSQLWithSize(lastExecutedSQL || sqlText, 1, newSize).catch(() => undefined);
-                                            }
-                                        }}
-                                        disabled={isExecutingQuery}
-                                    >
-                                        {QUERY_PAGE_SIZE_OPTIONS.map((size) => (
-                                            <option key={size} value={size}>
-                                                {size}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <span className="pagination-label">条</span>
-                                </div>
-
-                                {/* 分页控制 */}
-                                <div className="pagination-nav">
-                                    <button
-                                        type="button"
-                                        className="pagination-btn"
-                                        onClick={() => {
-                                            const nextPage = Math.max(1, queryPage - 1);
-                                            if (previewContext) {
-                                                handlePreviewTable(previewContext.database, previewContext.table, nextPage).catch(() => undefined);
-                                                return;
-                                            }
-                                            runSQL(lastExecutedSQL || sqlText, nextPage).catch(() => undefined);
-                                        }}
-                                        disabled={queryPage <= 1 || isExecutingQuery}
-                                        title="上一页"
-                                    >
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <polyline points="15 18 9 12 15 6"></polyline>
-                                        </svg>
-                                    </button>
-                                    <span className="pagination-current">{queryPage}</span>
-                                    <button
-                                        type="button"
-                                        className="pagination-btn"
-                                        onClick={() => {
-                                            const nextPage = queryPage + 1;
-                                            if (previewContext) {
-                                                handlePreviewTable(previewContext.database, previewContext.table, nextPage).catch(() => undefined);
-                                                return;
-                                            }
-                                            runSQL(lastExecutedSQL || sqlText, nextPage).catch(() => undefined);
-                                        }}
-                                        disabled={isExecutingQuery || !hasNextQueryPage}
-                                        title="下一页"
-                                    >
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <polyline points="9 18 15 12 9 6"></polyline>
-                                        </svg>
-                                    </button>
-                                </div>
-
-                                {/* 跳转到指定页 */}
-                                <div className="pagination-goto">
-                                    <span className="pagination-label">跳至</span>
-                                    <input
-                                        type="text"
-                                        className="pagination-input"
-                                        value={jumpPageInput}
-                                        onChange={(e) => setJumpPageInput(e.target.value.replace(/\D/g, ""))}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Enter") {
-                                                const page = Number(jumpPageInput);
-                                                if (page > 0) {
-                                                    if (previewContext) {
-                                                        handlePreviewTable(previewContext.database, previewContext.table, page).catch(() => undefined);
-                                                    } else {
-                                                        runSQL(lastExecutedSQL || sqlText, page).catch(() => undefined);
-                                                    }
-                                                    setJumpPageInput("");
-                                                }
-                                            }
-                                        }}
-                                        placeholder=""
-                                        disabled={isExecutingQuery}
-                                    />
-                                    <span className="pagination-label">页</span>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {queryErrorDetail ? (
-                        <div className="query-error-card">
-                            <div className="section-title">
-                                <div>
-                                    <h3>完整报错</h3>
-                                    <p>这里展示数据库返回的完整错误信息，不再只提示执行失败。</p>
-                                </div>
-                            </div>
-                            <div className="code-block">
-                                <pre>{queryErrorDetail}</pre>
-                            </div>
-                        </div>
-                    ) : null}
-
-                    {queryResult ? (
-                        <>
-                            <div className="result-meta">
-                                <span>{queryResult.durationMs} ms</span>
-                                <span>第 {queryResult.page} 页</span>
-                                <span>{queryResult.rows.length} 行</span>
-                                <span>{queryResult.columns.length} 列</span>
-                                {selectedResultRows.length > 0 ? <span>已选 {selectedResultRows.length} 项</span> : null}
-                            </div>
-
-                            {queryResult.columns.length > 0 ? (
-                                <>
-                                    <div className="result-table-shell">
-                                    <table className="result-table">
-                                        <thead>
-                                            <tr>
-                                                <th className="result-table__checkbox">
-                                                    <input type="checkbox" checked={Boolean(allVisibleRowsSelected)} onChange={handleToggleAllResultRows} />
-                                                </th>
-                                                {queryResult.columns.map((column) => (
-                                                    <th key={column}>{column}</th>
-                                                ))}
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {queryResult.rows.map((row, rowIndex) => (
-                                                <tr key={buildRowSelectionKey(queryResult.page, queryResult.columns, row, rowIndex)}>
-                                                    <td className="result-table__checkbox">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selectedResultRowKeys.includes(buildRowSelectionKey(queryResult.page, queryResult.columns, row, rowIndex))}
-                                                            onChange={() => handleToggleResultRow(buildRowSelectionKey(queryResult.page, queryResult.columns, row, rowIndex))}
-                                                        />
-                                                    </td>
-                                                    {queryResult.columns.map((column) => {
-                                                        const field = tableDetail?.fields.find((item) => item.name === column);
-                                                        const fieldType = field?.type ?? "";
-                                                        const value = row[column] ?? "";
-                                                        const rowKey = buildRowSelectionKey(queryResult.page, queryResult.columns, row, rowIndex);
-                                                        return (
-                                                            <td key={column} onDoubleClick={() => openCellEditor(row, rowKey, column)}>
-                                                                {isTextLikeType(fieldType) ? (
-                                                                    <div className="result-cell result-cell--text" title={value}>
-                                                                        {formatCellPreview(value, fieldType) || "空值"}
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="result-cell" title={value}>
-                                                                        {value || ""}
-                                                                    </div>
-                                                                )}
-                                                            </td>
-                                                        );
-                                                    })}
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                    </div>
-
-                                    <div className="result-actions-bar">
-                                        <div className="result-actions-bar__summary">
-                                            <strong>{selectedResultRows.length}</strong>
-                                            <span>已勾选结果项</span>
-                                        </div>
-                                        <div className="toolbar-actions">
-                                            <button type="button" className="ghost-button" onClick={handleCopySQL} disabled={!queryResult?.effectiveSql && selectedResultRows.length === 0}>
-                                                复制 SQL
-                                            </button>
-                                            <button type="button" className="ghost-button" onClick={handleExportQuerySQL} disabled={!queryResult?.effectiveSql || isExporting}>
-                                                导出 SQL
-                                            </button>
-                                            <button type="button" className="ghost-button" onClick={handleExportQueryCSV} disabled={!queryResult || queryResult.rows.length === 0 || isExporting}>
-                                                导出 CSV
-                                            </button>
-                                            <button type="button" className="ghost-button" onClick={handleExportQueryExcel} disabled={!queryResult || queryResult.rows.length === 0 || isExporting}>
-                                                导出 Excel
-                                            </button>
-                                            <button type="button" className="ghost-button" onClick={handleExportSelectedRows} disabled={selectedResultRows.length === 0 || isExporting}>
-                                                导出选中项
-                                            </button>
-                                            <button type="button" className="ghost-button ghost-button--danger" onClick={handleRequestDeleteSelectedRows} disabled={!canDeleteSelectedRows || isExecutingQuery}>
-                                                删除选中项
-                                            </button>
-                                        </div>
-                                    </div>
-                                </>
-                            ) : (
-                                <div className="empty-block">该 SQL 没有返回结果集。</div>
-                            )}
-                        </>
-                    ) : (
-                        <div className="empty-block">执行 SQL 或点击左侧某张表后，这里会展示真实数据结果。</div>
-                    )}
-                </div>
-            </section>
-        );
-    }
 
     function handleChatInputChange(value: string, cursorPos?: number) {
         setChatInput(value);
@@ -3460,612 +3094,7 @@ function App() {
         setChatContextTables((current) => (chatContextDatabase && chatContextDatabase !== payload.database ? [tableName] : appendUnique(current, tableName)));
     }
 
-    function renderSlashMenu() {
-        if (!slashMenuOpen) return null;
-        if (pagedSlashMenuItems.length === 0) return null;
 
-        return (
-            <div className="slash-menu">
-                <div className="slash-menu__header">
-                    <span>{slashMenuType === "command" ? "命令" : slashMenuType === "database" ? "选择数据库" : "选择数据表"}</span>
-                    {slashMenuItems.length > SLASH_PAGE_SIZE && (
-                        <span className="slash-menu__pager">
-                            <button type="button" className="slash-menu__pager-btn" disabled={slashMenuPageSafe === 0} onClick={() => setSlashMenuPage((page) => page - 1)}>‹</button>
-                            <span>{slashMenuPageSafe + 1}/{slashMenuTotalPages}</span>
-                            <button type="button" className="slash-menu__pager-btn" disabled={slashMenuPageSafe >= slashMenuTotalPages - 1} onClick={() => setSlashMenuPage((page) => page + 1)}>›</button>
-                        </span>
-                    )}
-                </div>
-                <div className="slash-menu__list">
-                    {pagedSlashMenuItems.map((item, index) => (
-                        <button
-                            key={item.key}
-                            type="button"
-                            className={`slash-menu__item${index === slashMenuActiveIndex ? " slash-menu__item--active" : ""}`}
-                            onClick={() => handleSlashSelect(item.key)}
-                        >
-                            <span className="slash-menu__item-main">
-                                <span className={`slash-menu__item-tag slash-menu__item-tag--${item.tone}`}>{item.tone === "command" ? "命令" : item.tone === "database" ? "库" : "表"}</span>
-                                <span className="slash-menu__item-label">{item.label}</span>
-                            </span>
-                            <span className="slash-menu__item-desc">{item.desc}</span>
-                        </button>
-                    ))}
-                </div>
-            </div>
-        );
-    }
-
-    function renderChatPage() {
-        return (
-            <section className="page-panel page-panel--wide page-panel--scrollable page-panel--chat">
-                <div className="page-headline">
-                    <div>
-                        <h2>AI 对话</h2>
-                        <p>{selectedConnection ? "直接用自然语言描述你想查询或操作的内容" : "请先选择一个连接"}</p>
-                    </div>
-                    <div className="toolbar-actions">
-                        <span className="status-chip">结果展示</span>
-                        <button type="button" className={`ghost-button${chatDisplayMode === "summary" ? " ghost-button--active" : ""}`} onClick={() => setChatDisplayMode("summary")}>
-                            摘要
-                        </button>
-                        <button type="button" className={`ghost-button${chatDisplayMode === "table" ? " ghost-button--active" : ""}`} onClick={() => setChatDisplayMode("table")}>
-                            表格
-                        </button>
-                    </div>
-                </div>
-
-                <div className="chat-layout">
-                    <div ref={chatStreamRef} className="chat-stream">
-                        {chatMessages.length === 0 ? <div className="empty-block">直接用自然语言描述你想查询或操作当前数据库的内容，我会先理解意图，再自动生成 SQL。</div> : null}
-                        {chatMessages.map((item) => (
-                            <div key={item.id} className={`chat-message chat-message--${item.role}`}>
-                                <div className="chat-message__body">
-                                    <div className="chat-message__meta">
-                                        <div className="chat-message__label">{item.role === "assistant" ? "AI 助手" : "你"}</div>
-                                    </div>
-                                    <div className={`chat-bubble chat-bubble--${item.role}`}>
-                                        <p>{item.content}</p>
-                                    </div>
-                                    {/* User bubble actions: copy / edit */}
-                                    {item.role === "user" ? (
-                                        <div className="chat-bubble-actions">
-                                            <button type="button" className="chat-bubble-actions__btn" onClick={() => handleCopyUserMessage(item)} title="复制内容">📋</button>
-                                            <button type="button" className="chat-bubble-actions__btn" onClick={() => handleEditUserMessage(item)} title="修改内容">✏️</button>
-                                        </div>
-                                    ) : null}
-                                    {item.reasoning ? <span className="chat-reasoning">{item.reasoning}</span> : null}
-                                    {item.sql ? (
-                                        <div className="code-block code-block--light code-block--with-copy">
-                                            <pre>{item.sql}</pre>
-                                            <button type="button" className="code-block__copy-btn" onClick={() => handleCopyText(item.sql ?? "", "SQL")}>📋 复制</button>
-                                        </div>
-                                    ) : null}
-                                    {item.result ? (
-                                        <div className="chat-result-shell">
-                                            <div className="chat-result-shell__meta">
-                                                <span>{item.result.statementType || "SELECT"}</span>
-                                                <span>{item.result.rows.length} 行</span>
-                                                <span>{item.result.durationMs} ms</span>
-                                                <button type="button" className="chat-result-shell__copy-btn" onClick={() => handleCopyChatResult(item)}>📋 复制结果</button>
-                                            </div>
-                                            {item.displayMode === "summary" ? (
-                                                <div className="chat-result-summary">
-                                                    {item.result.rows.slice(0, 3).map((row, rowIndex) => (
-                                                        <div key={`${item.id}-summary-${rowIndex}`} className="chat-result-summary__row">
-                                                            {item.result?.columns.slice(0, 4).map((column) => (
-                                                                <div key={column} className="chat-result-summary__cell">
-                                                                    <span>{column}</span>
-                                                                    <strong>{row[column] ?? "-"}</strong>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <table className="result-table">
-                                                    <thead>
-                                                        <tr>
-                                                            {item.result.columns.map((column) => (
-                                                                <th key={column}>{column}</th>
-                                                            ))}
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {item.result.rows.slice(0, 10).map((row, rowIndex) => (
-                                                            <tr key={`${item.id}-${rowIndex}`}>
-                                                                {item.result?.columns.map((column) => (
-                                                                    <td key={column}>{row[column] ?? ""}</td>
-                                                                ))}
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            )}
-                                        </div>
-                                    ) : null}
-                                    {/* Copy whole conversation button - placed at bottom right */}
-                                    {item.role === "assistant" ? (
-                                        <div className="chat-message__footer">
-                                            <button type="button" className="chat-copy-all-btn" onClick={() => handleCopyChatMessage(item)} title="复制整轮对话">
-                                                📋 复制全部
-                                            </button>
-                                        </div>
-                                    ) : null}
-                                </div>
-                            </div>
-                        ))}
-                        {isRunningChat ? (
-                            <div className="chat-message chat-message--assistant">
-                                <div className="chat-message__body">
-                                    <div className="chat-message__meta">
-                                        <div className="chat-message__label">AI 助手</div>
-                                    </div>
-                                    <div className="chat-thinking">
-                                        <span className="chat-thinking__spinner">✦</span>
-                                        <span>正在思考并读取当前数据库上下文...</span>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : null}
-
-                        {chatPendingAction ? (
-                            <div className="chat-pending-card">
-                                <strong>敏感操作待确认</strong>
-                                <p>{chatPendingAction.reply}</p>
-                                <div className="code-block code-block--light">
-                                    <pre>{chatPendingAction.sql}</pre>
-                                </div>
-                                <div className="toolbar-actions">
-                                    <button type="button" className="ghost-button" onClick={() => setChatPendingAction(null)}>
-                                        取消
-                                    </button>
-                                    <button type="button" className="primary-button" onClick={() => executeChatSQL(chatPendingAction.sql, chatPendingAction.displayMode, chatPendingAction.reply, chatPendingAction.userMessage, chatPendingAction.reasoning, 0)} disabled={isRunningChat || isExecutingQuery}>
-                                        确认执行
-                                    </button>
-                                </div>
-                            </div>
-                        ) : null}
-                    </div>
-
-                    <div className={`chat-composer-wrap${chatDropActive ? " chat-composer-wrap--drop-active" : ""}`} onDragOver={(event) => {
-                        if (!selectedConnection) {
-                            return;
-                        }
-
-                        event.preventDefault();
-                        event.dataTransfer.dropEffect = "copy";
-                        setChatDropActive(true);
-                    }} onDragEnter={(event) => {
-                        if (!selectedConnection) {
-                            return;
-                        }
-
-                        event.preventDefault();
-                        setChatDropActive(true);
-                    }} onDragLeave={(event) => {
-                        if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                            return;
-                        }
-                        setChatDropActive(false);
-                    }} onDrop={(event) => {
-                        event.preventDefault();
-                        setChatDropActive(false);
-                        const raw = event.dataTransfer.getData("application/x-sql-compass-chat-item");
-                        if (!raw) {
-                            return;
-                        }
-
-                        try {
-                            const payload = JSON.parse(raw) as ChatDropPayload;
-                            handleChatDrop(payload);
-                        } catch {
-                            return;
-                        }
-                    }}>
-                        {renderSlashMenu()}
-                        <div className="chat-composer">
-                            <div className="chat-context-tags">
-                                {chatContextDatabase ? <button type="button" className="chat-context-tag chat-context-tag--database" onClick={() => {
-                                    setChatContextDatabase("");
-                                    setChatContextTables([]);
-                                }}>数据库 · {chatContextDatabase}<span aria-hidden="true">×</span></button> : null}
-                                {chatContextTables.map((tableName) => (
-                                    <button key={tableName} type="button" className="chat-context-tag chat-context-tag--table" onClick={() => setChatContextTables((current) => current.filter((item) => item !== tableName))}>
-                                        数据表 · {tableName}
-                                        <span aria-hidden="true">×</span>
-                                    </button>
-                                ))}
-                                {!chatContextDatabase && chatContextTables.length === 0 ? <span className="chat-context-tag chat-context-tag--muted">可从左侧拖入数据库或数据表作为上下文</span> : null}
-                            </div>
-                            <div className="chat-composer__field">
-                                <textarea
-                                    value={chatInput}
-                                    onChange={(event) => handleChatInputChange(event.target.value, event.target.selectionStart)}
-                                    onKeyDown={(event) => {
-                                        if (event.key === "Escape" && slashMenuOpen) {
-                                            setSlashMenuOpen(false);
-                                            event.preventDefault();
-                                            return;
-                                        }
-
-                                        if (slashMenuOpen && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
-                                            const delta = event.key === "ArrowDown" ? 1 : -1;
-                                            const maxIndex = pagedSlashMenuItems.length - 1;
-                                            setSlashMenuActiveIndex((current) => {
-                                                if (maxIndex <= 0) {
-                                                    return 0;
-                                                }
-
-                                                return current + delta < 0 ? maxIndex : current + delta > maxIndex ? 0 : current + delta;
-                                            });
-                                            event.preventDefault();
-                                            return;
-                                        }
-
-                                        if (slashMenuOpen && event.key === "Enter") {
-                                            const activeItem = pagedSlashMenuItems[slashMenuActiveIndex];
-                                            if (activeItem) {
-                                                handleSlashSelect(activeItem.key);
-                                                event.preventDefault();
-                                                return;
-                                            }
-                                        }
-
-                                        // Enter 发送，Shift+Enter 换行
-                                        if (!(event.nativeEvent as any).isComposing && event.key === "Enter" && !event.shiftKey && !slashMenuOpen) {
-                                            event.preventDefault();
-                                            if (chatInput.trim()) {
-                                                handleSendChatMessage();
-                                            }
-                                            return;
-                                        }
-                                    }}
-                                    placeholder="输入你的问题，或从左侧拖入数据库 / 数据表"
-                                    rows={5}
-                                />
-                                <button
-                                    type="button"
-                                    className={`chat-send-button${isRunningChat ? " chat-send-button--loading" : ""}`}
-                                    onClick={() => handleSendChatMessage()}
-                                    disabled={!selectedConnection || !chatInput.trim() || isRunningChat}
-                                    aria-label={isRunningChat ? "正在思考" : "发送"}
-                                >
-                                    {isRunningChat ? (
-                                        <span className="chat-send-button__spinner">✦</span>
-                                    ) : (
-                                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                            <path d="M21 3L10 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M21 3L14 21L10 14L3 10L21 3Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                    )}
-                                </button>
-                            </div>
-                            <div className="chat-composer__hint">
-                                <span>{selectedConnection ? `当前连接：${selectedConnection.name}` : "请先选择连接后再发送"}</span>
-                                <span>输入 <code>/</code> 或直接拖拽左侧数据库 / 表到这里</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        );
-    }
-
-    function renderHistoryPage() {
-        const handleClearHistory = () => {
-            if (!selectedConnection) return;
-            setHistoryItems([]);
-            setHistoryPage(1);
-            pushToast("success", "历史已清空", "查询历史记录已清空");
-        };
-
-        // 分页计算
-        const totalHistory = historyItems.length;
-        const totalHistoryPages = Math.max(1, Math.ceil(totalHistory / historyPageSize));
-        const currentHistoryPage = Math.min(historyPage, totalHistoryPages) || 1;
-        const pagedHistoryItems = historyItems.slice(
-            (currentHistoryPage - 1) * historyPageSize,
-            currentHistoryPage * historyPageSize,
-        );
-
-        return (
-            <section className="page-panel">
-                <div className="history-header">
-                    {selectedConnection && (
-                        <span className="history-count">共 {totalHistory} 条记录</span>
-                    )}
-                    {selectedConnection && historyItems.length > 0 && (
-                        <button type="button" className="ghost-button text-button--danger" onClick={handleClearHistory}>
-                            清空历史
-                        </button>
-                    )}
-                </div>
-
-                <div className="history-stream-single">
-                    {historyItems.length === 0 ? (
-                        <div className="empty-block">{selectedConnection ? "当前连接下还没有历史 SQL。" : "请先选择连接"}</div>
-                    ) : (
-                        pagedHistoryItems.map((item) => (
-                            <div key={item.id} className="history-item-row">
-                                <div className="history-item-main">
-                                    <div className="history-item__head">
-                                        <span className="status-chip">{item.statementType}</span>
-                                        <span className={`risk-pill risk-pill--${item.riskLevel === "critical" ? "danger" : item.riskLevel === "high" ? "warn" : "safe"}`}>{item.riskLevel}</span>
-                                    </div>
-                                    <code className="history-item__sql">{item.statement}</code>
-                                    <div className="history-item__meta">
-                                        <span>{item.database || "未指定库"}</span>
-                                        <span>{item.rowCount} 行</span>
-                                        <span>{item.durationMs} ms</span>
-                                        <span>{formatDateTime(item.createdAt)}</span>
-                                    </div>
-                                </div>
-                                <div className="history-item-actions">
-                                    <button
-                                        type="button"
-                                        className="mini-ghost-button"
-                                        onClick={() => {
-                                            // 解析 SQL 语句中的表名（简单正则匹配）
-                                            const stmt = item.statement;
-                                            let tableName = "";
-                                            const fromMatch = stmt.match(/\bFROM\s+`?(\w+)`?\b/i);
-                                            const intoMatch = stmt.match(/\bINTO\s+`?(\w+)`?\b/i);
-                                            const updateMatch = stmt.match(/\bUPDATE\s+`?(\w+)`?\b/i);
-                                            const joinMatch = stmt.match(/\b(?:JOIN|INNER\s+JOIN|LEFT\s+JOIN|RIGHT\s+JOIN)\s+`?(\w+)`?\b/i);
-                                            tableName = fromMatch?.[1] || intoMatch?.[1] || updateMatch?.[1] || joinMatch?.[1] || "";
-
-                                            setSQLText(stmt);
-                                            setPreviewContext(null);
-
-                                            if (item.database) {
-                                                handleSelectDatabase(item.database);
-                                                // 展开该数据库
-                                                setExpandedDatabases((prev) => ({
-                                                    ...prev,
-                                                    [item.database]: true,
-                                                }));
-                                                // 如果解析到了表名，选中它并切换到表设计页
-                                                if (tableName) {
-                                                    setTimeout(() => setSelectedTable(tableName), 100);
-                                                }
-                                            }
-                                            setActivePage("query");
-                                            setSidebarView("database"); // 切换回数据库视图
-                                            setQueryNotice({ tone: "info", message: `历史 SQL 已回填到编辑器${item.database ? `，已切换至 ${item.database}` : ""}${tableName ? `，表 ${tableName} 已定位` : ""}。` });
-                                        }}
-                                    >
-                                        回填编辑器
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="mini-ghost-button"
-                                        onClick={() => {
-                                            copyText(item.statement)
-                                                .then(() => pushToast("success", "已复制 SQL", "完整语句已复制到剪贴板"))
-                                                .catch(() => pushToast("error", "复制失败", "请稍后重试"));
-                                        }}
-                                    >
-                                        复制 SQL
-                                    </button>
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
-
-                {/* 分页控件 */}
-                {totalHistoryPages > 1 && (
-                    <div className="history-pagination">
-                        <button
-                            type="button"
-                            className="mini-ghost-button"
-                            disabled={currentHistoryPage <= 1}
-                            onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
-                        >
-                            上一页
-                        </button>
-                        <span className="pagination-info">
-                            {currentHistoryPage} / {totalHistoryPages}
-                        </span>
-                        <button
-                            type="button"
-                            className="mini-ghost-button"
-                            disabled={currentHistoryPage >= totalHistoryPages}
-                            onClick={() => setHistoryPage((p) => Math.min(totalHistoryPages, p + 1))}
-                        >
-                            下一页
-                        </button>
-                    </div>
-                )}
-            </section>
-        );
-    }
-
-    function renderSchemaPage() {
-        return (
-            <section className="page-panel page-panel--wide">
-                <div className="page-headline">
-                    <div>
-                        <h2>表设计</h2>
-                        <p>{selectedTable ? `当前表：${selectedTable}` : "请先从左侧点击某张表，再进入这里查看结构。"}</p>
-                    </div>
-                    <div className="toolbar-actions">
-                        <button type="button" className="ghost-button" onClick={handleAddField} disabled={!tableDetail}>
-                            新增字段
-                        </button>
-                        <button type="button" className="ghost-button" onClick={() => setRenameModalOpen(true)} disabled={!tableDetail}>
-                            重命名表
-                        </button>
-                        <button type="button" className="ghost-button" onClick={handleExportDDL} disabled={!tableDetail || isExporting}>
-                            {isExporting ? "导出中..." : "导出 DDL"}
-                        </button>
-                    </div>
-                </div>
-
-                <NoticeBanner notice={schemaNotice} />
-
-                {!tableDetail ? (
-                    <div className="empty-block">左侧点开数据库后，单击某张表先查看前 30 行数据；需要改结构时再切到这里。</div>
-                ) : (
-                    <div className="schema-layout">
-                        <div className="detail-card schema-form-card">
-                            <div className="section-title">
-                                <div>
-                                    <h3>字段结构</h3>
-                                </div>
-                            </div>
-                            <div className="schema-table-shell">
-                                <table className="schema-table">
-                                    <thead>
-                                        <tr>
-                                            <th>字段名</th>
-                                            <th>类型</th>
-                                            <th>可空</th>
-                                            <th>默认值</th>
-                                            <th>主键</th>
-                                            <th>自增</th>
-                                            <th>注释</th>
-                                            <th>操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {schemaDraftFields.map((field, index) => (
-                                            <tr key={field.id}>
-                                                <td>
-                                                    <input
-                                                        value={field.name}
-                                                        onChange={(event) => updateDraftField(index, "name", event.target.value)}
-                                                        onBlur={(event) => applyFieldSuggestion(index, event.target.value)}
-                                                    />
-                                                </td>
-                                                <td>
-                                                    <select value={field.type} onChange={(event) => updateDraftField(index, "type", event.target.value)}>
-                                                        {mysqlTypeOptions.map((type) => (
-                                                            <option key={type} value={type}>
-                                                                {type}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                </td>
-                                                <td>
-                                                    <label className="checkbox-cell">
-                                                        <input type="checkbox" checked={field.nullable} onChange={(event) => updateDraftField(index, "nullable", event.target.checked)} />
-                                                    </label>
-                                                </td>
-                                                <td>
-                                                    <input value={field.defaultValue} onChange={(event) => updateDraftField(index, "defaultValue", event.target.value)} />
-                                                </td>
-                                                <td>
-                                                    <label className="checkbox-cell">
-                                                        <input type="checkbox" checked={field.primary} onChange={(event) => updateDraftField(index, "primary", event.target.checked)} />
-                                                    </label>
-                                                </td>
-                                                <td>
-                                                    <label className="checkbox-cell">
-                                                        <input type="checkbox" checked={field.autoIncrement} onChange={(event) => updateDraftField(index, "autoIncrement", event.target.checked)} />
-                                                    </label>
-                                                </td>
-                                                <td>
-                                                    <div className="comment-editor">
-                                                        <input value={field.comment} onChange={(event) => updateDraftField(index, "comment", event.target.value)} />
-                                                        {field.needsAiComment ? (
-                                                            <button type="button" className="mini-ai-button" onClick={() => handleGenerateFieldComment(index)} disabled={field.aiLoading}>
-                                                                {field.aiLoading ? "生成中" : "AI"}
-                                                            </button>
-                                                        ) : null}
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    <button type="button" className="text-button text-button--danger" onClick={() => handleDeleteDraftField(index)}>
-                                                        删除
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <div className="detail-card schema-ddl-card">
-                            <div className="section-title">
-                                <div>
-                                    <h3>DDL 语句</h3>
-                                </div>
-                                <div className="toolbar-actions">
-                                    <button type="button" className="ghost-button" onClick={handleCopyDDL}>
-                                        复制 DDL
-                                    </button>
-                                    <button type="button" className="ghost-button" onClick={handleExportDDL} disabled={isExporting}>
-                                        {isExporting ? "导出中..." : "导出 SQL"}
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="code-block code-block--wide code-block--tall">
-                                <pre>{tableDetail.ddl}</pre>
-                            </div>
-                        </div>
-
-                        <div className="schema-detail-grid">
-                            <div className="detail-card schema-detail-card">
-                                <div className="section-title">
-                                    <div>
-                                        <h3>索引诊断</h3>
-                                    </div>
-                                </div>
-                                <ul className="diagnostic-list">
-                                    {tableDetail.indexDiagnostics.map((item) => (
-                                        <li key={`${item.title}-${item.detail}`}>
-                                            <strong>{item.title}</strong>
-                                            <span>{item.detail}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-
-                            <div className="detail-card schema-detail-card">
-                                <div className="section-title">
-                                    <div>
-                                        <h3>结构变更预览 SQL</h3>
-                                    </div>
-                                </div>
-                                <div className="code-block code-block--wide schema-alter-block">
-                                    <pre>{currentAlterSQL}</pre>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {renameModalOpen ? (
-                    <div className="modal-backdrop" onClick={() => setRenameModalOpen(false)}>
-                        <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-                            <div className="section-title">
-                                <div>
-                                    <h3>重命名表</h3>
-                                    <p>这个操作不常用，所以收进右上角按钮里。</p>
-                                </div>
-                            </div>
-                            <label className="field">
-                                <span>新表名</span>
-                                <input value={renameTableName} onChange={(event) => setRenameTableName(event.target.value)} />
-                            </label>
-                            <div className="toolbar-actions toolbar-actions--end">
-                                <button type="button" className="ghost-button" onClick={() => setRenameModalOpen(false)}>
-                                    取消
-                                </button>
-                                <button type="button" className="primary-button" onClick={handleRenameTable} disabled={isRenamingTable}>
-                                    {isRenamingTable ? "处理中..." : "确认重命名"}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                ) : null}
-
-            </section>
-        );
-    }
 
     function renderAIPage() {
         return (
@@ -4096,7 +3125,47 @@ function App() {
 
     function renderCurrentPage() {
         if (workMode === "chat") {
-            return renderChatPage();
+            return (
+                <ChatPage
+                    selectedConnection={selectedConnection}
+                    chatDisplayMode={chatDisplayMode}
+                    setChatDisplayMode={setChatDisplayMode}
+                    chatStreamRef={chatStreamRef}
+                    chatMessages={chatMessages}
+                    isRunningChat={isRunningChat}
+                    handleCopyUserMessage={handleCopyUserMessage}
+                    handleEditUserMessage={handleEditUserMessage}
+                    handleCopyText={handleCopyText}
+                    handleCopyChatResult={handleCopyChatResult}
+                    handleCopyChatMessage={handleCopyChatMessage}
+                    chatPendingAction={chatPendingAction}
+                    setChatPendingAction={setChatPendingAction}
+                    executeChatSQL={executeChatSQL}
+                    isExecutingQuery={isExecutingQuery}
+                    chatDropActive={chatDropActive}
+                    setChatDropActive={setChatDropActive}
+                    chatContextDatabase={chatContextDatabase}
+                    setChatContextDatabase={setChatContextDatabase}
+                    chatContextTables={chatContextTables}
+                    setChatContextTables={setChatContextTables}
+                    chatInput={chatInput}
+                    setChatInput={setChatInput}
+                    handleSendChatMessage={handleSendChatMessage}
+                    handleChatInputChange={handleChatInputChange}
+                    handleSlashSelect={handleSlashSelect}
+                    handleChatDrop={handleChatDrop}
+                    slashMenuOpen={slashMenuOpen}
+                    slashMenuItems={slashMenuItems}
+                    slashMenuTotalPages={slashMenuTotalPages}
+                    slashMenuPageSafe={slashMenuPageSafe}
+                    pagedSlashMenuItems={pagedSlashMenuItems}
+                    slashMenuActiveIndex={slashMenuActiveIndex}
+                    setSlashMenuPage={setSlashMenuPage}
+                    setSlashMenuActiveIndex={setSlashMenuActiveIndex}
+                    setSlashMenuOpen={setSlashMenuOpen}
+                    slashMenuType={slashMenuType}
+                />
+            );
         }
 
         switch (activePage) {
@@ -4123,11 +3192,103 @@ function App() {
                     />
                 );
             case "query":
-                return renderQueryPage();
+                return (
+                    <QueryPage
+                        isExecutingQuery={isExecutingQuery}
+                        handleExecuteQuery={handleExecuteQuery}
+                        handleBeautifySQL={handleBeautifySQL}
+                        isOptimizingSQL={isOptimizingSQL}
+                        sqlText={sqlText}
+                        handleOptimizeSQL={handleOptimizeSQL}
+                        sqlFileInputRef={sqlFileInputRef}
+                        queryNotice={queryNotice}
+                        sqlEditorCollapsed={sqlEditorCollapsed}
+                        setSQLEditorCollapsed={setSQLEditorCollapsed}
+                        selectedSnippet={selectedSnippet}
+                        setSelectedSnippet={setSelectedSnippet}
+                        handleExecuteSelectedSQL={handleExecuteSelectedSQL}
+                        handleBeautifySelectedSQL={handleBeautifySelectedSQL}
+                        handleOptimizeSelectedSQL={handleOptimizeSelectedSQL}
+                        handleEditorDidMount={handleEditorDidMount}
+                        setSQLText={setSQLText}
+                        queryErrorDetail={queryErrorDetail}
+                        setQueryErrorDetail={setQueryErrorDetail}
+                        queryResult={queryResult}
+                        queryPageSize={queryPageSize}
+                        setQueryPageSize={setQueryPageSize}
+                        previewContext={previewContext}
+                        handlePreviewTableWithSize={handlePreviewTableWithSize}
+                        handlePreviewTable={handlePreviewTable}
+                        runSQLWithSize={runSQLWithSize}
+                        runSQL={runSQL}
+                        lastExecutedSQL={lastExecutedSQL}
+                        queryPage={queryPage}
+                        hasNextQueryPage={hasNextQueryPage}
+                        jumpPageInput={jumpPageInput}
+                        setJumpPageInput={setJumpPageInput}
+                        selectedResultRows={selectedResultRows}
+                        allVisibleRowsSelected={allVisibleRowsSelected}
+                        handleToggleAllResultRows={handleToggleAllResultRows}
+                        handleToggleResultRow={handleToggleResultRow}
+                        selectedResultRowKeys={selectedResultRowKeys}
+                        buildRowSelectionKey={buildRowSelectionKey}
+                        tableDetail={tableDetail}
+                        openCellEditor={openCellEditor}
+                        handleCopySQL={handleCopySQL}
+                        handleExportQuerySQL={handleExportQuerySQL}
+                        handleExportQueryCSV={handleExportQueryCSV}
+                        handleExportQueryExcel={handleExportQueryExcel}
+                        handleExportSelectedRows={handleExportSelectedRows}
+                        isExporting={isExporting}
+                        canDeleteSelectedRows={canDeleteSelectedRows}
+                        handleRequestDeleteSelectedRows={handleRequestDeleteSelectedRows}
+                        queryPageSizeOptions={QUERY_PAGE_SIZE_OPTIONS}
+                    />
+                );
             case "history":
-                return renderHistoryPage();
+                return (
+                    <HistoryPage
+                        selectedConnection={selectedConnection}
+                        historyItems={historyItems}
+                        setHistoryItems={setHistoryItems}
+                        historyPage={historyPage}
+                        setHistoryPage={setHistoryPage}
+                        pushToast={pushToast}
+                        setSQLText={setSQLText}
+                        setPreviewContext={setPreviewContext}
+                        handleSelectDatabase={handleSelectDatabase}
+                        setExpandedDatabases={setExpandedDatabases}
+                        setSelectedTable={setSelectedTable}
+                        setActivePage={setActivePage}
+                        setSidebarView={setSidebarView}
+                        setQueryNotice={setQueryNotice}
+                    />
+                );
             case "schema":
-                return renderSchemaPage();
+                return (
+                    <SchemaPage
+                        selectedTable={selectedTable}
+                        tableDetail={tableDetail}
+                        schemaNotice={schemaNotice}
+                        schemaDraftFields={schemaDraftFields}
+                        mysqlTypeOptions={mysqlTypeOptions}
+                        updateDraftField={updateDraftField}
+                        applyFieldSuggestion={applyFieldSuggestion}
+                        handleGenerateFieldComment={handleGenerateFieldComment}
+                        handleDeleteDraftField={handleDeleteDraftField}
+                        handleAddField={handleAddField}
+                        setRenameModalOpen={setRenameModalOpen}
+                        handleExportDDL={handleExportDDL}
+                        isExporting={isExporting}
+                        handleCopyDDL={handleCopyDDL}
+                        currentAlterSQL={currentAlterSQL}
+                        renameModalOpen={renameModalOpen}
+                        renameTableName={renameTableName}
+                        setRenameTableName={setRenameTableName}
+                        handleRenameTable={handleRenameTable}
+                        isRenamingTable={isRenamingTable}
+                    />
+                );
             case "ai":
                 return renderAIPage();
             case "theme":
