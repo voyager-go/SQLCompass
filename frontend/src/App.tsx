@@ -1916,7 +1916,7 @@ function App() {
         }));
     }
 
-    async function handlePreviewTable(databaseName: string, tableName: string, nextPage = 1) {
+    async function handlePreviewTableWithSize(databaseName: string, tableName: string, nextPage = 1, pageSize = queryPageSize) {
         if (!selectedConnection) {
             setWorkspaceNotice({ tone: "error", message: "请先选择连接。" });
             return;
@@ -1939,7 +1939,7 @@ function App() {
                 database: databaseName,
                 table: tableName,
                 page: nextPage,
-                pageSize: queryPageSize,
+                pageSize: pageSize,
             })) as QueryResult;
             setPreviewContext({
                 connectionId: selectedConnection.id,
@@ -1960,6 +1960,47 @@ function App() {
         } finally {
             setIsExecutingQuery(false);
         }
+    }
+
+    async function handlePreviewTable(databaseName: string, tableName: string, nextPage = 1) {
+        return handlePreviewTableWithSize(databaseName, tableName, nextPage, queryPageSize);
+    }
+
+    async function runSQLWithSize(statement: string, nextPage = 1, pageSize = queryPageSize) {
+        if (!selectedConnection) {
+            setQueryNotice({ tone: "error", message: "请先选择一个连接。" });
+            return;
+        }
+
+        try {
+            setIsExecutingQuery(true);
+            const result = (await ExecuteQuery({
+                connectionId: selectedConnection.id,
+                database: selectedDatabase,
+                sql: statement,
+                page: nextPage,
+                pageSize: pageSize,
+            })) as QueryResult;
+            setPreviewContext(null);
+            setQueryPage(nextPage);
+            setQueryResult(result);
+            setLastExecutedSQL(statement);
+            setQueryErrorDetail("");
+            setSQLAnalysis(result.analysis);
+            setQueryNotice({ tone: "success", message: result.message });
+            await loadHistory(selectedConnection.id);
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setQueryResult(null);
+            setQueryErrorDetail(message);
+            setQueryNotice({ tone: "error", message });
+        } finally {
+            setIsExecutingQuery(false);
+        }
+    }
+
+    async function runSQL(statement: string, nextPage = 1) {
+        return runSQLWithSize(statement, nextPage, queryPageSize);
     }
 
     function openTableDesigner(databaseName: string, tableName: string) {
@@ -2177,39 +2218,6 @@ function App() {
                 }, 60);
             }
         });
-    }
-
-    async function runSQL(statement: string, nextPage = 1) {
-        if (!selectedConnection) {
-            setQueryNotice({ tone: "error", message: "请先选择一个连接。" });
-            return;
-        }
-
-        try {
-            setIsExecutingQuery(true);
-            const result = (await ExecuteQuery({
-                connectionId: selectedConnection.id,
-                database: selectedDatabase,
-                sql: statement,
-                page: nextPage,
-                pageSize: queryPageSize,
-            })) as QueryResult;
-            setPreviewContext(null);
-            setQueryPage(nextPage);
-            setQueryResult(result);
-            setLastExecutedSQL(statement);
-            setQueryErrorDetail("");
-            setSQLAnalysis(result.analysis);
-            setQueryNotice({ tone: "success", message: result.message });
-            await loadHistory(selectedConnection.id);
-        } catch (error) {
-            const message = getErrorMessage(error);
-            setQueryResult(null);
-            setQueryErrorDetail(message);
-            setQueryNotice({ tone: "error", message });
-        } finally {
-            setIsExecutingQuery(false);
-        }
     }
 
     async function handleExecuteQuery(nextPage = 1) {
@@ -3610,11 +3618,11 @@ function App() {
                                             const newSize = Number(e.target.value);
                                             setQueryPageSize(newSize);
                                             localStorage.setItem("sql-compass-query-page-size", String(newSize));
-                                            // 重新查询第一页
+                                            // 重新查询第一页，使用新的 pageSize
                                             if (previewContext) {
-                                                handlePreviewTable(previewContext.database, previewContext.table, 1).catch(() => undefined);
+                                                handlePreviewTableWithSize(previewContext.database, previewContext.table, 1, newSize).catch(() => undefined);
                                             } else {
-                                                runSQL(lastExecutedSQL || sqlText, 1).catch(() => undefined);
+                                                runSQLWithSize(lastExecutedSQL || sqlText, 1, newSize).catch(() => undefined);
                                             }
                                         }}
                                         disabled={isExecutingQuery}
