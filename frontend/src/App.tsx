@@ -4,7 +4,6 @@ import type { IDisposable, editor as MonacoEditorNS } from "monaco-editor";
 import {
     AnalyzeSQL,
     BeautifySQL,
-    ChatWithDatabase,
     ClearAIAPIKey,
     DeleteConnection,
     ExecuteQuery,
@@ -19,7 +18,6 @@ import {
     GetWorkspaceState,
     OptimizeSQL,
     PreviewTableData,
-    RepairChatSQL,
     RenameTable,
     SaveAISettings,
     SaveConnection,
@@ -32,8 +30,35 @@ import { AIPage } from "./pages/AIPage";
 import { ThemePage } from "./pages/ThemePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ConnectionsPage } from "./pages/ConnectionsPage";
-import { engineLabels, defaultPortForEngine } from "./lib/engine";
-import { copyText, toEditorValue, fromEditorValue, escapeHTML } from "./lib/utils";
+import {
+    copyText,
+    toEditorValue,
+    fromEditorValue,
+    escapeHTML,
+    browserStorageKey,
+    emptyWorkspaceState,
+    hasWailsBridge,
+    loadBrowserWorkspaceState,
+    saveBrowserWorkspaceState,
+    browserGeneratedID,
+    createConnectionDraft,
+    createAIForm,
+    upsertBrowserConnection,
+    removeBrowserConnection,
+    updateBrowserAIState,
+    clamp,
+    stringifySQLValue,
+    getErrorMessage,
+    stringifyResultSQLValue,
+    buildInsertStatement,
+    buildRowSelectionKey,
+    buildFieldDefinition,
+    fieldSignature,
+    buildAlterSQL,
+    csvFromRows,
+    downloadText,
+    excelFromRows,
+} from "./lib/utils";
 import { HistoryPage } from "./pages/HistoryPage";
 import { SchemaPage } from "./pages/SchemaPage";
 import { QueryPage } from "./pages/QueryPage";
@@ -41,7 +66,12 @@ import { ChatPage } from "./pages/ChatPage";
 import { OptimizeReviewModal } from "./pages/OptimizeReviewModal";
 import { SplashScreen } from "./components/SplashScreen";
 import { Sidebar } from "./components/Sidebar";
-import { WORKBENCH_PAGES, type NoticeTone, type WorkbenchPage, type WorkMode, type ThemeMode } from "./lib/constants";
+import { WorkbenchRouter } from "./components/WorkbenchRouter";
+import { useChat } from "./hooks/useChat";
+import { useConnections } from "./hooks/useConnections";
+import { useSchema } from "./hooks/useSchema";
+import { useAISettings } from "./hooks/useAISettings";
+import { WORKBENCH_PAGES, SLASH_COMMANDS, SLASH_PAGE_SIZE, type NoticeTone, type WorkbenchPage, type WorkMode, type ThemeMode } from "./lib/constants";
 import { CellEditorModal } from "./pages/CellEditorModal";
 import { DeleteDialogModal } from "./pages/DeleteDialogModal";
 import type {
@@ -64,6 +94,11 @@ import type {
     StorageInfoView,
     TableDetail,
     TableField,
+    SchemaDraftField,
+    ChatDisplayMode,
+    ChatEntry,
+    ChatPendingAction,
+    ChatDropPayload,
 } from "./types/runtime";
 
 type CustomTheme = {
@@ -74,8 +109,6 @@ type CustomTheme = {
     backgroundColor: string;
     backgroundImage: string | null;
 };
-type ChatDisplayMode = "summary" | "table";
-
 type Notice = {
     tone: NoticeTone;
     message: string;
@@ -86,13 +119,6 @@ type Toast = {
     tone: NoticeTone;
     title: string;
     message: string;
-};
-
-type SchemaDraftField = TableField & {
-    id: string;
-    originName: string;
-    needsAiComment: boolean;
-    aiLoading: boolean;
 };
 
 type PreviewContext = {
@@ -136,31 +162,6 @@ type OptimizeReviewState = {
     analysis: SQLAnalysis;
 };
 
-type ChatEntry = {
-    id: string;
-    role: "user" | "assistant";
-    content: string;
-    sql?: string;
-    reasoning?: string;
-    result?: QueryResult | null;
-    displayMode?: ChatDisplayMode;
-};
-
-type ChatPendingAction = {
-    reply: string;
-    sql: string;
-    analysis: SQLAnalysis;
-    displayMode: ChatDisplayMode;
-    reasoning: string;
-    userMessage: string;
-};
-
-type ChatDropPayload = {
-    kind: "database" | "table";
-    database: string;
-    table?: string;
-};
-
 type CellEditorState = {
     rowKey: string;
     row: Record<string, string>;
@@ -170,30 +171,10 @@ type CellEditorState = {
     nextValue: string;
 };
 
-const browserStorageKey = "sql-compass-browser-workspace";
 const themeStorageKey = "sql-compass-theme";
 const previewPageSize = 30;
 const DEFAULT_QUERY_PAGE_SIZE = 20;
 const QUERY_PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200];
-const SLASH_COMMANDS = [
-    { key: "database", label: "/database", desc: "选择数据库" },
-    { key: "table", label: "/table", desc: "选择数据表" },
-] as const;
-const SLASH_PAGE_SIZE = 20;
-
-const emptyWorkspaceState: WorkspaceState = {
-    connections: [],
-    ai: {
-        baseUrl: "https://api.siliconflow.cn/v1",
-        modelName: "deepseek-ai/DeepSeek-V3.2",
-        apiKeyConfigured: false,
-        apiKeySource: "等待本地配置",
-        apiKeyPreview: "",
-        storageMode: "本地安全存储",
-    },
-    storagePath: "",
-};
-
 const mysqlFieldTypes = [
     "bit",
     "tinyint",
@@ -301,334 +282,6 @@ const sqlKeywordSpecs: SQLCompletionSpec[] = [
     { label: "*", insertText: "*", detail: "所有字段", kind: "keyword" },
 ];
 
-function hasWailsBridge(): boolean {
-    if (typeof window === "undefined") {
-        return false;
-    }
-
-    const runtime = window as Window & {
-        go?: {
-            main?: {
-                App?: Record<string, unknown>;
-            };
-        };
-    };
-
-    return Boolean(runtime.go?.main?.App);
-}
-
-function loadBrowserWorkspaceState(): WorkspaceState {
-    if (typeof window === "undefined") {
-        return emptyWorkspaceState;
-    }
-
-    try {
-        const raw = window.localStorage.getItem(browserStorageKey);
-        if (!raw) {
-            return emptyWorkspaceState;
-        }
-
-        const parsed = JSON.parse(raw) as Partial<WorkspaceState>;
-        return {
-            connections: parsed.connections ?? [],
-            ai: parsed.ai ?? emptyWorkspaceState.ai,
-            storagePath: "浏览器本地预览",
-        };
-    } catch {
-        return emptyWorkspaceState;
-    }
-}
-
-function saveBrowserWorkspaceState(state: WorkspaceState) {
-    if (typeof window === "undefined") {
-        return;
-    }
-
-    window.localStorage.setItem(
-        browserStorageKey,
-        JSON.stringify({
-            connections: state.connections,
-            ai: state.ai,
-        }),
-    );
-}
-
-function browserGeneratedID(): string {
-    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-        return crypto.randomUUID();
-    }
-
-    return `browser-${Date.now()}`;
-}
-
-function createConnectionDraft(engine = "mysql"): ConnectionInput {
-    return {
-        id: "",
-        name: "",
-        engine,
-        host: engine === "sqlite" ? "" : "127.0.0.1",
-        port: defaultPortForEngine(engine),
-        username: "",
-        password: "",
-        database: "",
-        filePath: "",
-        url: "",
-        notes: "",
-        group: "默认分组",
-        groupColor: "",
-    };
-}
-
-function createAIForm(state: WorkspaceState): AISettingsInput {
-    return {
-        baseUrl: state.ai.baseUrl,
-        modelName: state.ai.modelName,
-        apiKey: "",
-    };
-}
-
-function upsertBrowserConnection(state: WorkspaceState, input: ConnectionInput): WorkspaceState {
-    const now = new Date().toISOString();
-    const existing = state.connections.find((item) => item.id === input.id);
-    const profile: ConnectionProfile = {
-        id: input.id || browserGeneratedID(),
-        name: input.name || `${engineLabels[input.engine] ?? input.engine} 连接`,
-        engine: input.engine,
-        host: input.host,
-        port: input.port,
-        username: input.username,
-        database: input.database,
-        filePath: input.filePath,
-        url: input.url,
-        notes: input.notes,
-        group: input.group || "默认分组",
-        groupColor: input.groupColor || "",
-        passwordSet: input.password.length > 0 || existing?.passwordSet === true,
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-    };
-
-    return {
-        ...state,
-        connections: [profile, ...state.connections.filter((item) => item.id !== profile.id)],
-    };
-}
-
-function removeBrowserConnection(state: WorkspaceState, id: string): WorkspaceState {
-    return {
-        ...state,
-        connections: state.connections.filter((item) => item.id !== id),
-    };
-}
-
-function updateBrowserAIState(state: WorkspaceState, form: AISettingsInput): WorkspaceState {
-    return {
-        ...state,
-        ai: {
-            baseUrl: form.baseUrl,
-            modelName: form.modelName,
-            apiKeyConfigured: form.apiKey.trim().length > 0 || state.ai.apiKeyConfigured,
-            apiKeySource: form.apiKey.trim().length > 0 ? "浏览器预览表单" : state.ai.apiKeySource,
-            apiKeyPreview: form.apiKey.trim().length > 0 ? "已写入浏览器本地存储" : state.ai.apiKeyPreview,
-            storageMode: "浏览器本地预览",
-        },
-    };
-}
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.min(Math.max(value, min), max);
-}
-
-function stripSlashCommand(input: string, slashStart: number): string {
-    return input.substring(0, slashStart).replace(/\s+$/, "");
-}
-
-function summarizeChatResult(result: QueryResult): string {
-    if (result.rows.length === 0) {
-        return result.message?.trim() || "已执行完成，但没有返回数据。";
-    }
-
-    const firstRow = result.rows[0] ?? {};
-    const highlights = result.columns
-        .slice(0, 3)
-        .map((column) => `${column}: ${firstRow[column] ?? ""}`)
-        .join("，");
-
-    return `${result.message?.trim() || `共返回 ${result.rows.length} 行`}。${highlights ? ` 首行结果：${highlights}` : ""}`;
-}
-
-function appendUnique(items: string[], value: string): string[] {
-    return items.includes(value) ? items : [...items, value];
-}
-
-function stringifySQLValue(value: string): string {
-    if (value === "") {
-        return "NULL";
-    }
-
-    if (/^-?\d+(\.\d+)?$/.test(value)) {
-        return value;
-    }
-
-    if (value.toUpperCase() === "CURRENT_TIMESTAMP") {
-        return value;
-    }
-
-    return `'${value.replace(/'/g, "''")}'`;
-}
-
-    function stringifyResultSQLValue(value: string): string {
-        const normalized = value ?? "";
-        if (/^-?\d+(\.\d+)?$/.test(normalized)) {
-            return normalized;
-        }
-
-        return `'${normalized.replace(/'/g, "''")}'`;
-    }
-
-    function buildInsertStatement(tableName: string, columns: string[], rows: Record<string, string>[]): string {
-        const escapedColumns = columns.map((column) => `\`${column}\``).join(", ");
-        const values = rows
-            .map((row) => `(${columns.map((column) => stringifyResultSQLValue(row[column] ?? "")).join(", ")})`)
-            .join(",\n");
-
-        return `INSERT INTO \`${tableName}\` (${escapedColumns})\nVALUES\n${values};`;
-    }
-
-function buildRowSelectionKey(page: number, columns: string[], row: Record<string, string>, rowIndex: number): string {
-    const signature = columns.map((column) => `${column}:${row[column] ?? ""}`).join("\u241f");
-    return `${page}:${rowIndex}:${signature}`;
-}
-
-
-
-function buildFieldDefinition(field: SchemaDraftField): string {
-    const parts = [`\`${field.name || "new_column"}\``, field.type || "varchar(255)"];
-    parts.push(field.nullable ? "NULL" : "NOT NULL");
-
-    if (field.defaultValue.trim()) {
-        parts.push(`DEFAULT ${stringifySQLValue(field.defaultValue.trim())}`);
-    }
-
-    if (field.autoIncrement) {
-        parts.push("AUTO_INCREMENT");
-    }
-
-    if (field.comment.trim()) {
-        parts.push(`COMMENT '${field.comment.replace(/'/g, "''")}'`);
-    }
-
-    return parts.join(" ");
-}
-
-function fieldSignature(field: SchemaDraftField | TableField): string {
-    return [
-        field.name.trim(),
-        field.type.trim(),
-        field.nullable ? "1" : "0",
-        field.defaultValue.trim(),
-        field.comment.trim(),
-        field.primary ? "1" : "0",
-        field.autoIncrement ? "1" : "0",
-    ].join("|");
-}
-
-function buildAlterSQL(tableDetail: TableDetail | null, tableName: string, draftFields: SchemaDraftField[]): string {
-    if (!tableDetail) {
-        return "-- 请选择一张真实表";
-    }
-
-    const statements: string[] = [];
-    const originals = new Map(tableDetail.fields.map((field) => [field.name, field]));
-    const draftNames = new Set(draftFields.map((field) => field.originName || field.name));
-
-    tableDetail.fields.forEach((field) => {
-        if (!draftNames.has(field.name)) {
-            statements.push(`DROP COLUMN \`${field.name}\``);
-        }
-    });
-
-    draftFields.forEach((field) => {
-        if (!field.originName) {
-            statements.push(`ADD COLUMN ${buildFieldDefinition(field)}`);
-            return;
-        }
-
-        const original = originals.get(field.originName);
-        if (!original) {
-            statements.push(`ADD COLUMN ${buildFieldDefinition(field)}`);
-            return;
-        }
-
-        if (original.name !== field.name) {
-            statements.push(`CHANGE COLUMN \`${original.name}\` ${buildFieldDefinition(field)}`);
-            return;
-        }
-
-        if (fieldSignature(original) !== fieldSignature(field)) {
-            statements.push(`MODIFY COLUMN ${buildFieldDefinition(field)}`);
-        }
-    });
-
-    if (statements.length === 0) {
-        return "-- 当前没有结构变更";
-    }
-
-    return `ALTER TABLE \`${tableName}\`\n  ${statements.join(",\n  ")};`;
-}
-
-function csvFromRows(columns: string[], rows: Record<string, string>[]): string {
-    const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
-    const lines = [columns.map(escape).join(",")];
-    rows.forEach((row) => {
-        lines.push(columns.map((column) => escape(row[column] ?? "")).join(","));
-    });
-    return lines.join("\n");
-}
-
-function downloadText(filename: string, content: string, mimeType: string) {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-}
-
-function excelFromRows(sheetName: string, columns: string[], rows: Record<string, string>[]): string {
-    const headerCells = columns.map((column) => `<th>${escapeHTML(column)}</th>`).join("");
-    const bodyRows = rows
-        .map(
-            (row) =>
-                `<tr>${columns
-                    .map((column) => `<td>${escapeHTML(row[column] ?? "")}</td>`)
-                    .join("")}</tr>`,
-        )
-        .join("");
-
-    return `<!DOCTYPE html>
-<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="ProgId" content="Excel.Sheet" />
-    <style>
-        table { border-collapse: collapse; width: 100%; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
-        th, td { border: 1px solid #d8e0ef; padding: 8px 10px; text-align: left; white-space: nowrap; }
-        th { background: #eef4ff; font-weight: 700; }
-    </style>
-</head>
-<body>
-    <table data-sheet-name="${escapeHTML(sheetName)}">
-        <thead><tr>${headerCells}</tr></thead>
-        <tbody>${bodyRows}</tbody>
-    </table>
-</body>
-</html>`;
-}
-
 function App() {
     const browserPreview = !hasWailsBridge();
     const sqlFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -661,7 +314,6 @@ function App() {
         return { navFontSize: 14, resultFontSize: 14, fontColor: "#1f2937", accentColor: "#3b82f6", backgroundColor: "#f8fcfb", backgroundImage: null };
     });
     const [sidebarView, setSidebarView] = useState<"database" | "workbench">("database");
-    const [chatDisplayMode, setChatDisplayMode] = useState<ChatDisplayMode>("summary");
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [workbenchExpanded, setWorkbenchExpanded] = useState(false);
 
@@ -723,9 +375,6 @@ function App() {
     const [tablePageByDatabase, setTablePageByDatabase] = useState<Record<string, number>>({});
     const [expandedDatabases, setExpandedDatabases] = useState<Record<string, boolean>>({});
 
-    const [connectionDraft, setConnectionDraft] = useState<ConnectionInput>(createConnectionDraft("mysql"));
-    const [showPassword, setShowPassword] = useState(false);
-    const [aiForm, setAIForm] = useState<AISettingsInput>(createAIForm(emptyWorkspaceState));
     const [sqlText, setSQLText] = useState("");
     const [sqlEditorCollapsed, setSQLEditorCollapsed] = useState(false);
     const [selectedSnippet, setSelectedSnippet] = useState<SelectedSnippet | null>(null);
@@ -745,57 +394,22 @@ function App() {
     const [jumpPageInput, setJumpPageInput] = useState("");
     const [historyPage, setHistoryPage] = useState(1);
     const historyPageSize = 20;
-    const [schemaDraftFields, setSchemaDraftFields] = useState<SchemaDraftField[]>([]);
-    const [renameModalOpen, setRenameModalOpen] = useState(false);
-    const [renameTableName, setRenameTableName] = useState("");
     const [previewContext, setPreviewContext] = useState<PreviewContext | null>(null);
     const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
     const [tableContextMenu, setTableContextMenu] = useState<TableContextMenuState | null>(null);
     const [cellEditor, setCellEditor] = useState<CellEditorState | null>(null);
-    const [chatInput, setChatInput] = useState("");
-    const [chatMessages, setChatMessages] = useState<ChatEntry[]>([]);
-    const [chatPendingAction, setChatPendingAction] = useState<ChatPendingAction | null>(null);
-    const [chatContextDatabase, setChatContextDatabase] = useState("");
-    const [chatContextTables, setChatContextTables] = useState<string[]>([]);
-    const [chatDropActive, setChatDropActive] = useState(false);
-    const [slashMenuOpen, setSlashMenuOpen] = useState(false);
-    const [slashMenuType, setSlashMenuType] = useState<"command" | "database" | "table">("command");
-    const [slashMenuFilter, setSlashMenuFilter] = useState("");
-    const [slashMenuPage, setSlashMenuPage] = useState(0);
-    const [slashMenuDB, setSlashMenuDB] = useState("");
-    const [slashMenuStart, setSlashMenuStart] = useState(0); // cursor position where / was typed
-    const [slashMenuActiveIndex, setSlashMenuActiveIndex] = useState(0);
 
     const [workspaceNotice, setWorkspaceNotice] = useState<Notice | null>(null);
-    const [connectionNotice, setConnectionNotice] = useState<Notice | null>(null);
     const [queryNotice, setQueryNotice] = useState<Notice | null>(null);
-    const [schemaNotice, setSchemaNotice] = useState<Notice | null>(null);
     const [transferNotice, setTransferNotice] = useState<Notice | null>(null);
-    const [aiNotice, setAINotice] = useState<Notice | null>(null);
-    const [connectionTest, setConnectionTest] = useState<ConnectionTestResult | null>(null);
     const [toast, setToast] = useState<Toast | null>(null);
 
-    const [isSavingConnection, setIsSavingConnection] = useState(false);
-    const [isTestingConnection, setIsTestingConnection] = useState(false);
     const [isExecutingQuery, setIsExecutingQuery] = useState(false);
     const [isOptimizingSQL, setIsOptimizingSQL] = useState(false);
-    const [isRenamingTable, setIsRenamingTable] = useState(false);
-    const [isSavingAI, setIsSavingAI] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
-    const [isRunningChat, setIsRunningChat] = useState(false);
     const [isSavingCell, setIsSavingCell] = useState(false);
 
     const selectedConnection = workspaceState.connections.find((item) => item.id === selectedConnectionId) ?? null;
-    const activeEngine = selectedConnection?.engine ?? connectionDraft.engine;
-    const currentAlterSQL = useMemo(() => buildAlterSQL(tableDetail, selectedTable, schemaDraftFields), [tableDetail, selectedTable, schemaDraftFields]);
-    const historyFocusItem = useMemo(
-        () => historyItems.find((item) => item.id === historyFocusId) ?? historyItems[0] ?? null,
-        [historyFocusId, historyItems],
-    );
-    const mysqlTypeOptions = useMemo(() => {
-        const dynamicTypes = schemaDraftFields.map((item) => item.type).filter(Boolean);
-        return [...new Set([...mysqlFieldTypes, ...dynamicTypes])];
-    }, [schemaDraftFields]);
     const primaryFieldNames = useMemo(() => tableDetail?.fields.filter((field) => field.primary).map((field) => field.name) ?? [], [tableDetail]);
     const resultRowKeys = useMemo(
         () => (queryResult ? queryResult.rows.map((row, rowIndex) => buildRowSelectionKey(queryResult.page, queryResult.columns, row, rowIndex)) : []),
@@ -860,67 +474,63 @@ function App() {
             return true;
         });
     }, [explorerTree, selectedDatabase, tableDetail]);
-    const slashMenuItems = useMemo(() => {
-        if (slashMenuType === "command") {
-            return SLASH_COMMANDS.filter((c) => c.key.includes(slashMenuFilter)).map((item) => ({
-                key: item.key,
-                label: item.label,
-                desc: item.desc,
-                tone: "command" as const,
-            }));
-        }
 
-        if (slashMenuType === "database" && explorerTree) {
-            return explorerTree.databases
-                .filter((db) => !db.isSystem && db.name.toLowerCase().includes(slashMenuFilter))
-                .map((db) => ({
-                    key: db.name,
-                    label: db.name,
-                    desc: `${db.tableCount} 张表`,
-                    tone: "database" as const,
-                }));
-        }
+    const chat = useChat({
+        selectedConnection,
+        selectedDatabase,
+        selectedTable,
+        queryPageSize,
+        previewPageSize,
+        explorerTree,
+        pushToast,
+        setQueryResult,
+        setLastExecutedSQL,
+        setQueryPage,
+        setPreviewContext,
+        setSQLAnalysis,
+        setQueryErrorDetail,
+        loadHistory,
+        handleSelectDatabase,
+    });
 
-        if (slashMenuType === "table" && explorerTree) {
-            const dbName = slashMenuDB || selectedDatabase;
-            if (!dbName) {
-                return explorerTree.databases
-                    .filter((db) => !db.isSystem)
-                    .flatMap((db) =>
-                        db.tables
-                            .filter((table) => table.name.toLowerCase().includes(slashMenuFilter))
-                            .map((table) => ({
-                                key: `${db.name}.${table.name}`,
-                                label: table.name,
-                                desc: `${db.name} · ${table.rows === -1 ? "..." : table.rows >= 0 ? table.rows.toLocaleString() : "-"} 行`,
-                                tone: "table" as const,
-                            })),
-                    );
-            }
+    const conn = useConnections({
+        workspaceState,
+        setWorkspaceState,
+        selectedConnectionId,
+        setSelectedConnectionId,
+        selectedConnection,
+        browserPreview,
+        pushToast,
+        refreshWorkspaceState,
+        setWorkspaceNotice,
+        setActivePage: setActivePage as (page: string) => void,
+    });
 
-            const db = explorerTree.databases.find((item) => item.name === dbName);
-            if (!db) {
-                return [];
-            }
+    const activeEngine = selectedConnection?.engine ?? conn.connectionDraft.engine;
 
-            return db.tables
-                .filter((table) => table.name.toLowerCase().includes(slashMenuFilter))
-                .map((table) => ({
-                    key: table.name,
-                    label: table.name,
-                    desc: `${table.rows === -1 ? "..." : table.rows >= 0 ? table.rows.toLocaleString() : "-"} 行`,
-                    tone: "table" as const,
-                }));
-        }
+    const schema = useSchema({
+        browserPreview,
+        activeEngine,
+        selectedConnection,
+        selectedDatabase,
+        selectedTable,
+        tableDetail,
+        pushToast,
+        setTransferNotice,
+        setSelectedTable,
+        loadExplorer,
+        loadTable,
+        exportTextFile,
+    });
 
-        return [];
-    }, [explorerTree, selectedDatabase, slashMenuDB, slashMenuFilter, slashMenuType]);
-    const slashMenuTotalPages = Math.max(1, Math.ceil(slashMenuItems.length / SLASH_PAGE_SIZE));
-    const slashMenuPageSafe = Math.min(slashMenuPage, slashMenuTotalPages - 1);
-    const pagedSlashMenuItems = useMemo(
-        () => slashMenuItems.slice(slashMenuPageSafe * SLASH_PAGE_SIZE, (slashMenuPageSafe + 1) * SLASH_PAGE_SIZE),
-        [slashMenuItems, slashMenuPageSafe],
-    );
+    const ai = useAISettings({
+        browserPreview,
+        workspaceState,
+        setWorkspaceState,
+        emptyWorkspaceState,
+        refreshWorkspaceState,
+    });
+
 
     function pushToast(tone: NoticeTone, title: string, message: string) {
         setToast({
@@ -955,38 +565,17 @@ function App() {
         }
     }
 
-    function getErrorMessage(error: unknown): string {
-        if (error instanceof Error && error.message.trim()) {
-            return error.message;
-        }
-
-        if (typeof error === "string" && error.trim()) {
-            return error;
-        }
-
-        try {
-            const serialized = JSON.stringify(error);
-            if (serialized && serialized !== "{}") {
-                return serialized;
-            }
-        } catch {
-            return "未知错误";
-        }
-
-        return "未知错误";
-    }
-
     async function refreshWorkspaceState() {
         if (browserPreview) {
             const state = loadBrowserWorkspaceState();
             setWorkspaceState(state);
-            setAIForm(createAIForm(state));
+            ai.setAIForm(createAIForm(state));
             return;
         }
 
         const state = (await GetWorkspaceState()) as WorkspaceState;
         setWorkspaceState(state);
-        setAIForm(createAIForm(state));
+        ai.setAIForm(createAIForm(state));
     }
 
     async function loadExplorer(connectionId: string, preferredDatabase = "") {
@@ -1092,14 +681,14 @@ function App() {
     async function loadTable(connectionId: string, database: string, table: string) {
         if (browserPreview || !connectionId || !database || !table) {
             setTableDetail(null);
-            setSchemaDraftFields([]);
+            schema.setSchemaDraftFields([]);
             return;
         }
 
         const detail = (await GetTableDetail({ connectionId, database, table })) as TableDetail;
         setTableDetail(detail);
-        setRenameTableName(detail.table);
-        setSchemaDraftFields(
+        schema.setRenameTableName(detail.table);
+        schema.setSchemaDraftFields(
             detail.fields.map((field) => ({
                 ...field,
                 id: browserGeneratedID(),
@@ -1348,7 +937,7 @@ function App() {
         if (browserPreview) {
             const state = loadBrowserWorkspaceState();
             setWorkspaceState(state);
-            setAIForm(createAIForm(state));
+            ai.setAIForm(createAIForm(state));
             setBackendState("浏览器预览模式");
             return;
         }
@@ -1399,16 +988,16 @@ function App() {
         setSelectedTable("");
         setExplorerTree(null);
         setTableDetail(null);
-        setSchemaDraftFields([]);
+        schema.setSchemaDraftFields([]);
         setQueryResult(null);
         setQueryErrorDetail("");
         setLastExecutedSQL("");
         setQueryPage(1);
         setPreviewContext(null);
-        setChatMessages([]);
-        setChatPendingAction(null);
-        setChatContextDatabase("");
-        setChatContextTables([]);
+        chat.setChatMessages([]);
+        chat.setChatPendingAction(null);
+        chat.setChatContextDatabase("");
+        chat.setChatContextTables([]);
         setTablePageByDatabase({});
         setExpandedDatabases({});
         setSelectedSnippet(null);
@@ -1427,13 +1016,13 @@ function App() {
     useEffect(() => {
         if (!selectedConnectionId || !selectedDatabase || !selectedTable) {
             setTableDetail(null);
-            setSchemaDraftFields([]);
+            schema.setSchemaDraftFields([]);
             return;
         }
 
         loadTable(selectedConnectionId, selectedDatabase, selectedTable).catch((error: unknown) => {
             const message = error instanceof Error ? error.message : "读取表结构失败";
-            setSchemaNotice({ tone: "error", message });
+            schema.setSchemaNotice({ tone: "error", message });
         });
     }, [selectedConnectionId, selectedDatabase, selectedTable]);
 
@@ -1470,83 +1059,34 @@ function App() {
         }
 
         element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
-    }, [chatMessages, isRunningChat, chatPendingAction]);
+    }, [chat.chatMessages, chat.isRunningChat, chat.chatPendingAction]);
 
     useEffect(() => {
-        if (!slashMenuOpen) {
+        if (!chat.slashMenuOpen) {
             return;
         }
 
-        setSlashMenuPage(0);
-        setSlashMenuActiveIndex(0);
-    }, [slashMenuFilter, slashMenuOpen, slashMenuType]);
+        chat.setSlashMenuPage(0);
+        chat.setSlashMenuActiveIndex(0);
+    }, [chat.slashMenuFilter, chat.slashMenuOpen, chat.slashMenuType]);
 
     useEffect(() => {
-        if (!slashMenuOpen) {
+        if (!chat.slashMenuOpen) {
             return;
         }
 
-        const maxIndex = Math.max(0, pagedSlashMenuItems.length - 1);
-        setSlashMenuActiveIndex((current) => clamp(current, 0, maxIndex));
-    }, [pagedSlashMenuItems, slashMenuOpen]);
-
-    function updateConnectionField<K extends keyof ConnectionInput>(key: K, value: ConnectionInput[K]) {
-        setConnectionDraft((current) => {
-            if (key === "engine") {
-                const nextEngine = String(value);
-                return {
-                    ...createConnectionDraft(nextEngine),
-                    id: current.id,
-                    name: current.name,
-                    notes: current.notes,
-                };
-            }
-
-            return {
-                ...current,
-                [key]: value,
-            };
-        });
-    }
-
-    function resetConnectionForm(engine = selectedConnection?.engine ?? "mysql") {
-        setConnectionDraft(createConnectionDraft(engine));
-        setConnectionTest(null);
-    }
-
-    function fillConnectionDraft(profile: ConnectionProfile) {
-        setConnectionDraft({
-            id: profile.id,
-            name: profile.name,
-            engine: profile.engine,
-            host: profile.host,
-            port: profile.port,
-            username: profile.username,
-            password: "",
-            database: profile.database,
-            filePath: profile.filePath,
-            url: profile.url,
-            notes: profile.notes,
-            group: profile.group || "默认分组",
-            groupColor: profile.groupColor || "",
-        });
-        setActivePage("connections");
-    }
-
-    function handleSelectConnection(profile: ConnectionProfile) {
-        setSelectedConnectionId(profile.id);
-        setWorkspaceNotice(null);
-        pushToast("success", "已定位连接", `当前连接：${profile.name}`);
-    }
+        const maxIndex = Math.max(0, chat.pagedSlashMenuItems.length - 1);
+        chat.setSlashMenuActiveIndex((current) => clamp(current, 0, maxIndex));
+    }, [chat.pagedSlashMenuItems, chat.slashMenuOpen]);
 
     function handleSelectDatabase(databaseName: string) {
         setSelectedDatabase(databaseName);
-        setChatContextDatabase(databaseName);
-        setChatContextTables([]);
+        chat.setChatContextDatabase(databaseName);
+        chat.setChatContextTables([]);
         setTableSearch("");
         setSelectedTable("");
         setTableDetail(null);
-        setSchemaDraftFields([]);
+        schema.setSchemaDraftFields([]);
         setLastExecutedSQL("");
         setPreviewContext(null);
         setTableContextMenu(null);
@@ -1661,75 +1201,6 @@ function App() {
             [databaseName]: true,
         }));
         setTableContextMenu(null);
-    }
-
-    async function handleSaveConnection() {
-        try {
-            setIsSavingConnection(true);
-            if (browserPreview) {
-                const nextState = upsertBrowserConnection(workspaceState, connectionDraft);
-                saveBrowserWorkspaceState(nextState);
-                setWorkspaceState(nextState);
-                setSelectedConnectionId(nextState.connections[0]?.id ?? "");
-                setConnectionNotice({ tone: "success", message: "连接已保存到浏览器预览存储。" });
-                resetConnectionForm(connectionDraft.engine);
-                return;
-            }
-
-            const profile = (await SaveConnection(connectionDraft)) as ConnectionProfile;
-            await refreshWorkspaceState();
-            setSelectedConnectionId(profile.id);
-            setConnectionNotice({ tone: "success", message: `连接已保存：${profile.name}` });
-            pushToast("success", "连接已保存", profile.name);
-            resetConnectionForm(profile.engine);
-        } catch (error) {
-            const message = error instanceof Error ? error.message : "保存连接失败";
-            setConnectionNotice({ tone: "error", message });
-        } finally {
-            setIsSavingConnection(false);
-        }
-    }
-
-    async function handleDeleteConnection(profile: ConnectionProfile) {
-        if (!window.confirm(`确认删除连接“${profile.name}”吗？`)) {
-            return;
-        }
-
-        try {
-            if (browserPreview) {
-                const nextState = removeBrowserConnection(workspaceState, profile.id);
-                saveBrowserWorkspaceState(nextState);
-                setWorkspaceState(nextState);
-                setConnectionNotice({ tone: "success", message: `连接已删除：${profile.name}` });
-                return;
-            }
-
-            await DeleteConnection(profile.id);
-            await refreshWorkspaceState();
-            setConnectionNotice({ tone: "success", message: `连接已删除：${profile.name}` });
-        } catch (error) {
-            const message = error instanceof Error ? error.message : "删除连接失败";
-            setConnectionNotice({ tone: "error", message });
-        }
-    }
-
-    async function handleTestConnection() {
-        try {
-            setIsTestingConnection(true);
-            if (browserPreview) {
-                setConnectionNotice({ tone: "info", message: "浏览器预览模式不支持真实数据库测试。" });
-                return;
-            }
-
-            const result = (await TestConnection(connectionDraft)) as ConnectionTestResult;
-            setConnectionTest(result);
-            setConnectionNotice({ tone: result.success ? "success" : "error", message: result.detail });
-        } catch (error) {
-            const message = error instanceof Error ? error.message : "测试连接失败";
-            setConnectionNotice({ tone: "error", message });
-        } finally {
-            setIsTestingConnection(false);
-        }
     }
 
     function syncSelectedSnippet() {
@@ -2041,246 +1512,6 @@ function App() {
         await requestOptimizeSQL(optimizeReview.target, originalSQL, optimizeReview.prompt);
     }
 
-    async function handleSaveAISettings() {
-        try {
-            setIsSavingAI(true);
-            if (browserPreview) {
-                const nextState = updateBrowserAIState(workspaceState, aiForm);
-                saveBrowserWorkspaceState(nextState);
-                setWorkspaceState(nextState);
-                setAINotice({ tone: "success", message: "AI 设置已保存到浏览器预览存储。" });
-                return;
-            }
-
-            await SaveAISettings(aiForm);
-            await refreshWorkspaceState();
-            setAIForm((current) => ({ ...current, apiKey: "" }));
-            setAINotice({ tone: "success", message: "AI 设置已保存。" });
-        } catch (error) {
-            const message = error instanceof Error ? error.message : "保存 AI 设置失败";
-            setAINotice({ tone: "error", message });
-        } finally {
-            setIsSavingAI(false);
-        }
-    }
-
-    async function handleClearAPIKey() {
-        try {
-            setIsSavingAI(true);
-            if (browserPreview) {
-                const nextState: WorkspaceState = {
-                    ...workspaceState,
-                    ai: {
-                        ...workspaceState.ai,
-                        apiKeyConfigured: false,
-                        apiKeySource: "未配置",
-                        apiKeyPreview: "",
-                        storageMode: "浏览器本地预览",
-                    },
-                };
-                saveBrowserWorkspaceState(nextState);
-                setWorkspaceState(nextState);
-                setAINotice({ tone: "success", message: "AI Key 已清空。" });
-                return;
-            }
-
-            await ClearAIAPIKey();
-            await refreshWorkspaceState();
-            setAINotice({ tone: "success", message: "AI Key 已清空。" });
-        } catch (error) {
-            const message = error instanceof Error ? error.message : "清空 AI Key 失败";
-            setAINotice({ tone: "error", message });
-        } finally {
-            setIsSavingAI(false);
-        }
-    }
-
-    async function applyFieldSuggestion(index: number, fieldName: string) {
-        if (!fieldName.trim()) {
-            return;
-        }
-
-        try {
-            if (browserPreview) {
-                setSchemaDraftFields((current) =>
-                    current.map((field, itemIndex) =>
-                        itemIndex === index
-                            ? {
-                                  ...field,
-                                  needsAiComment: true,
-                              }
-                            : field,
-                    ),
-                );
-                return;
-            }
-
-            const suggestion = (await GetFieldDictionarySuggestion({
-                engine: activeEngine,
-                fieldName,
-            })) as FieldDictionarySuggestion;
-
-            setSchemaDraftFields((current) =>
-                current.map((field, itemIndex) =>
-                    itemIndex === index
-                        ? {
-                              ...field,
-                              type: suggestion.type || field.type,
-                              comment: field.comment.trim() || suggestion.comment,
-                              needsAiComment: suggestion.needsAiComment && !suggestion.comment,
-                          }
-                        : field,
-                ),
-            );
-        } catch {
-            setSchemaDraftFields((current) =>
-                current.map((field, itemIndex) =>
-                    itemIndex === index
-                        ? {
-                              ...field,
-                              needsAiComment: true,
-                          }
-                        : field,
-                ),
-            );
-        }
-    }
-
-    async function handleGenerateFieldComment(index: number) {
-        const field = schemaDraftFields[index];
-        if (!field?.name.trim()) {
-            return;
-        }
-
-        try {
-            setSchemaDraftFields((current) =>
-                current.map((item, itemIndex) =>
-                    itemIndex === index
-                        ? {
-                              ...item,
-                              aiLoading: true,
-                          }
-                        : item,
-                ),
-            );
-
-            const result = (await GenerateFieldComment({ fieldName: field.name })) as AIFieldCommentResult;
-            setSchemaDraftFields((current) =>
-                current.map((item, itemIndex) =>
-                    itemIndex === index
-                        ? {
-                              ...item,
-                              comment: result.comment,
-                              needsAiComment: false,
-                              aiLoading: false,
-                          }
-                        : item,
-                ),
-            );
-        } catch (error) {
-            const message = error instanceof Error ? error.message : "生成字段注释失败";
-            setSchemaNotice({ tone: "error", message });
-            setSchemaDraftFields((current) =>
-                current.map((item, itemIndex) =>
-                    itemIndex === index
-                        ? {
-                              ...item,
-                              aiLoading: false,
-                          }
-                        : item,
-                ),
-            );
-        }
-    }
-
-    function updateDraftField<K extends keyof SchemaDraftField>(index: number, key: K, value: SchemaDraftField[K]) {
-        setSchemaDraftFields((current) =>
-            current.map((field, itemIndex) =>
-                itemIndex === index
-                    ? {
-                          ...field,
-                          [key]: value,
-                      }
-                    : field,
-            ),
-        );
-    }
-
-    function handleAddField() {
-        setSchemaDraftFields((current) => [
-            ...current,
-            {
-                id: browserGeneratedID(),
-                originName: "",
-                name: "",
-                type: "varchar(255)",
-                nullable: true,
-                defaultValue: "",
-                comment: "",
-                primary: false,
-                autoIncrement: false,
-                needsAiComment: true,
-                aiLoading: false,
-            },
-        ]);
-    }
-
-    function handleDeleteDraftField(index: number) {
-        setSchemaDraftFields((current) => current.filter((_, itemIndex) => itemIndex !== index));
-    }
-
-    async function handleRenameTable() {
-        if (!selectedConnection || !selectedDatabase || !selectedTable || !renameTableName.trim()) {
-            return;
-        }
-
-        if (renameTableName.trim() === selectedTable) {
-            setSchemaNotice({ tone: "info", message: "表名未变化。" });
-            setRenameModalOpen(false);
-            return;
-        }
-
-        try {
-            setIsRenamingTable(true);
-            await RenameTable({
-                connectionId: selectedConnection.id,
-                database: selectedDatabase,
-                oldName: selectedTable,
-                newName: renameTableName.trim(),
-            });
-            setSchemaNotice({ tone: "success", message: "表已重命名。" });
-            setRenameModalOpen(false);
-            setSelectedTable(renameTableName.trim());
-            await loadExplorer(selectedConnection.id, selectedDatabase);
-            await loadTable(selectedConnection.id, selectedDatabase, renameTableName.trim());
-        } catch (error) {
-            const message = error instanceof Error ? error.message : "重命名表失败";
-            setSchemaNotice({ tone: "error", message });
-        } finally {
-            setIsRenamingTable(false);
-        }
-    }
-
-    async function handleExportDDL() {
-        if (!tableDetail) {
-            setTransferNotice({ tone: "info", message: "请先选择一张真实表。" });
-            return;
-        }
-
-        await exportTextFile("sql", `${tableDetail.table}.sql`, tableDetail.ddl, "导出表 DDL");
-    }
-
-    function handleCopyDDL() {
-        if (!tableDetail?.ddl.trim()) {
-            setSchemaNotice({ tone: "info", message: "当前没有可复制的 DDL。" });
-            return;
-        }
-
-        copyText(tableDetail.ddl)
-            .then(() => pushToast("success", "已复制 DDL", tableDetail.table))
-            .catch(() => pushToast("error", "复制失败", "请稍后重试"));
-    }
-
     async function handleExportQuerySQL() {
         if (!queryResult?.effectiveSql.trim()) {
             setTransferNotice({ tone: "info", message: "当前没有可导出的 SQL。" });
@@ -2469,612 +1700,7 @@ function App() {
         }
     }
 
-    async function handleSendChatMessage(rawMessage?: string) {
-        const message = (rawMessage ?? chatInput).trim();
-        if (!message || !selectedConnection) {
-            return;
-        }
 
-        const effectiveDatabase = chatContextDatabase || selectedDatabase;
-        const effectiveTables = chatContextTables.length > 0 ? chatContextTables : selectedTable ? [selectedTable] : [];
-        const selectedTableText = effectiveTables.join(", ");
-        const contextualMessage = [
-            effectiveDatabase ? `当前数据库：${effectiveDatabase}` : "",
-            selectedTableText ? `限定数据表：${selectedTableText}` : "",
-            message,
-        ]
-            .filter(Boolean)
-            .join("\n");
-
-        const nextUserMessage: ChatEntry = {
-            id: browserGeneratedID(),
-            role: "user",
-            content: message,
-        };
-        const nextHistory: ChatMessage[] = [...chatMessages, nextUserMessage].slice(-8).map((item) => ({
-            role: item.role,
-            content: item.content,
-        }));
-
-        setChatMessages((current) => [...current, nextUserMessage]);
-        setChatInput("");
-        setIsRunningChat(true);
-
-        try {
-            const response = (await ChatWithDatabase({
-                connectionId: selectedConnection.id,
-                database: effectiveDatabase,
-                selectedTable: selectedTableText,
-                message: contextualMessage,
-                history: nextHistory,
-                displayMode: chatDisplayMode,
-            })) as ChatDatabaseResponse;
-
-            if (response.sql && !response.requiresConfirm) {
-                await executeChatSQL(response.sql, response.displayMode as ChatDisplayMode, response.reply, contextualMessage, response.reasoning, 0);
-                return;
-            }
-
-            const assistantMessage: ChatEntry = {
-                id: browserGeneratedID(),
-                role: "assistant",
-                content: response.reply || "AI 已完成本轮分析。",
-                sql: response.sql,
-                reasoning: response.reasoning,
-                displayMode: (response.displayMode as ChatDisplayMode) || chatDisplayMode,
-            };
-            setChatMessages((current) => [...current, assistantMessage]);
-
-            if (response.sql && response.requiresConfirm) {
-                setChatPendingAction({
-                    reply: response.reply,
-                    sql: response.sql,
-                    analysis: response.analysis,
-                    displayMode: (response.displayMode as ChatDisplayMode) || "summary",
-                    reasoning: response.reasoning,
-                    userMessage: contextualMessage,
-                });
-            }
-        } catch (error) {
-            const messageText = getErrorMessage(error);
-            setChatMessages((current) => [
-                ...current,
-                {
-                    id: browserGeneratedID(),
-                    role: "assistant",
-                    content: `处理失败：${messageText}`,
-                },
-            ]);
-        } finally {
-            setIsRunningChat(false);
-        }
-    }
-
-    // Chat action helpers: copy, edit, format
-    async function handleCopyText(text: string, label?: string) {
-        try {
-            await copyText(text);
-            pushToast("success", "已复制", label ? `${label} 已复制到剪贴板` : "内容已复制到剪贴板");
-        } catch {
-            pushToast("error", "复制失败", "请稍后重试");
-        }
-    }
-
-    function handleCopyUserMessage(item: ChatEntry) {
-        handleCopyText(item.content, "消息");
-    }
-
-    function handleEditUserMessage(item: ChatEntry) {
-        setChatInput(item.content);
-        const textarea = document.querySelector(".chat-composer textarea") as HTMLTextAreaElement;
-        if (textarea) {
-            textarea.focus();
-            textarea.selectionStart = item.content.length;
-            textarea.selectionEnd = item.content.length;
-        }
-    }
-
-    async function handleCopyChatMessage(item: ChatEntry) {
-        let text = "";
-        if (item.role === "assistant") {
-            const parts: string[] = [item.content];
-            if (item.sql) parts.push(`\n--- SQL ---\n${item.sql}`);
-            if (item.result) {
-                parts.push(`\n--- 查询结果 (${item.result.statementType || "SELECT"} | ${item.result.rows.length} 行 | ${item.result.durationMs}ms) ---`);
-                const header = (item.result.columns ?? []).join("\t");
-                const rows = item.result.rows.slice(0, 20).map((r: Record<string, string>) => (item.result?.columns ?? []).map((c: string) => r[c] ?? "").join("\t"));
-                parts.push([header, ...rows].join("\n"));
-                if (item.result.rows.length > 20) {
-                    parts.push(`\n... 共 ${item.result.rows.length} 行，仅展示前 20 行 ...`);
-                }
-            }
-            text = parts.join("\n\n");
-        } else {
-            text = item.content;
-        }
-        await handleCopyText(text, item.role === "assistant" ? "对话" : "消息");
-    }
-
-    async function handleCopyChatResult(item: ChatEntry) {
-        if (!item.result) return;
-        const cols = item.result.columns ?? [];
-        const header = cols.join("\t");
-        const rows = item.result.rows.slice(0, 50).map((r: Record<string, string>) => cols.map((c: string) => r[c] ?? "").join("\t"));
-        const lines = [`查询类型：${item.result.statementType || "SELECT"}`, `耗时：${item.result.durationMs} ms`, `行数：${item.result.rows.length}`, "", header, ...rows];
-        if (item.result.rows.length > 50) {
-            lines.push("", `... 共 ${item.result.rows.length} 行，仅展示前 50 行 ...`);
-        }
-        await handleCopyText(lines.join("\n"), "查询结果");
-    }
-
-    async function executeChatSQL(statement: string, displayMode: ChatDisplayMode, replyPrefix = "", userMessage = "", previousReason = "", repairAttempt = 0) {
-        if (!selectedConnection) {
-            return;
-        }
-
-        const effectiveDatabase = chatContextDatabase || selectedDatabase;
-        const selectedTableText = chatContextTables.length > 0 ? chatContextTables.join(", ") : selectedTable;
-
-        try {
-            const result = (await ExecuteQuery({
-                connectionId: selectedConnection.id,
-                database: effectiveDatabase,
-                sql: statement,
-                page: 1,
-                pageSize: displayMode === "table" ? previewPageSize : queryPageSize,
-            })) as QueryResult;
-
-            setQueryResult(result);
-            setLastExecutedSQL(statement);
-            setQueryPage(1);
-            setPreviewContext(null);
-            setSQLAnalysis(result.analysis);
-            setQueryErrorDetail("");
-
-            setChatMessages((current) => [
-                ...current,
-                {
-                    id: browserGeneratedID(),
-                    role: "assistant",
-                    content:
-                        displayMode === "table"
-                            ? `${replyPrefix || "已执行 SQL。"} 已为你展示结果表格。`
-                            : `${replyPrefix || "已执行 SQL。"} ${summarizeChatResult(result)} 耗时 ${result.durationMs} ms。`,
-                    sql: statement,
-                    result,
-                    reasoning: previousReason,
-                    displayMode,
-                },
-            ]);
-            await loadHistory(selectedConnection.id);
-        } catch (error) {
-            const message = getErrorMessage(error);
-            if (repairAttempt < 2) {
-                try {
-                    const repairHistory: ChatMessage[] = chatMessages.slice(-8).map((item) => ({
-                        role: item.role,
-                        content: item.content,
-                    }));
-                    const repair = (await RepairChatSQL({
-                        connectionId: selectedConnection.id,
-                        database: effectiveDatabase,
-                        selectedTable: selectedTableText,
-                        message: userMessage || statement,
-                        attemptedSql: statement,
-                        errorMessage: message,
-                        previousReason: previousReason,
-                        history: repairHistory,
-                        displayMode,
-                    })) as ChatDatabaseResponse;
-
-                    setChatMessages((current) => [
-                        ...current,
-                        {
-                            id: browserGeneratedID(),
-                            role: "assistant",
-                            content: repair.reply || `上一条 SQL 执行失败，我已根据报错继续修正。`,
-                            sql: repair.sql || statement,
-                            reasoning: repair.reasoning,
-                        },
-                    ]);
-
-                    const repairedSQL = repair.sql?.trim() ?? "";
-                    if (repairedSQL && repairedSQL !== statement.trim()) {
-                        if (repair.requiresConfirm) {
-                            setChatPendingAction({
-                                reply: repair.reply,
-                                sql: repairedSQL,
-                                analysis: repair.analysis,
-                                displayMode: (repair.displayMode as ChatDisplayMode) || displayMode,
-                                reasoning: repair.reasoning,
-                                userMessage: userMessage || statement,
-                            });
-                            return;
-                        }
-
-                        await executeChatSQL(
-                            repairedSQL,
-                            (repair.displayMode as ChatDisplayMode) || displayMode,
-                            repair.reply || replyPrefix,
-                            userMessage || statement,
-                            repair.reasoning,
-                            repairAttempt + 1,
-                        );
-                        return;
-                    }
-
-                    if (repair.mode === "ask" || !repairedSQL) {
-                        return;
-                    }
-                } catch (repairError) {
-                    const repairMessage = getErrorMessage(repairError);
-                    setChatMessages((current) => [
-                        ...current,
-                        {
-                            id: browserGeneratedID(),
-                            role: "assistant",
-                            content: `SQL 执行失败：${message}\n继续修正时又失败：${repairMessage}`,
-                            sql: statement,
-                        },
-                    ]);
-                    return;
-                }
-            }
-
-            setChatMessages((current) => [
-                ...current,
-                {
-                    id: browserGeneratedID(),
-                    role: "assistant",
-                    content: `SQL 执行失败：${message}`,
-                    sql: statement,
-                },
-            ]);
-        } finally {
-            setChatPendingAction(null);
-        }
-    }
-
-    function handleChatInputChange(value: string, cursorPos?: number) {
-        setChatInput(value);
-        const pos = cursorPos ?? value.length;
-        const textBeforeCursor = value.substring(0, pos);
-        const lastSlash = textBeforeCursor.lastIndexOf("/");
-        const charBefore = lastSlash > 0 ? textBeforeCursor[lastSlash - 1] : "";
-
-        if (lastSlash >= 0 && (lastSlash === 0 || /\s/.test(charBefore))) {
-            const afterSlash = textBeforeCursor.substring(lastSlash + 1);
-            const lowerAfter = afterSlash.toLowerCase();
-
-            // Check if afterSlash starts with a known command keyword followed by space
-            // e.g. "/database myfilter" → command is "database", filter is "myfilter"
-            const commandWithFilter = SLASH_COMMANDS.find((c) =>
-                lowerAfter === c.key || lowerAfter.startsWith(c.key + " ")
-            );
-
-            if (commandWithFilter) {
-                setSlashMenuStart(lastSlash);
-                const filterText = lowerAfter.startsWith(commandWithFilter.key + " ")
-                    ? lowerAfter.substring(commandWithFilter.key.length + 1).trim()
-                    : "";
-                if (commandWithFilter.key === "database") {
-                    setSlashMenuType("database");
-                } else {
-                    setSlashMenuType("table");
-                }
-                setSlashMenuFilter(filterText);
-                setSlashMenuOpen(true);
-                setSlashMenuPage(0);
-                return;
-            }
-
-            // No space after slash — typing a command or filter
-            if (!afterSlash.includes(" ")) {
-                setSlashMenuStart(lastSlash);
-
-                // Exact command match
-                const exactMatch = SLASH_COMMANDS.find((c) => c.key === lowerAfter);
-                if (exactMatch) {
-                    if (exactMatch.key === "database") {
-                        setSlashMenuType("database");
-                    } else {
-                        setSlashMenuType("table");
-                    }
-                    setSlashMenuFilter("");
-                    setSlashMenuOpen(true);
-                    setSlashMenuPage(0);
-                    return;
-                }
-
-                // Partial command match
-                const matchingCmds = SLASH_COMMANDS.filter((c) => c.key.startsWith(lowerAfter));
-                if (matchingCmds.length === 1) {
-                    // Single matching command — show its sub-menu
-                    if (matchingCmds[0].key === "database") {
-                        setSlashMenuType("database");
-                    } else {
-                        setSlashMenuType("table");
-                    }
-                    setSlashMenuFilter("");
-                } else if (slashMenuOpen && (slashMenuType === "database" || slashMenuType === "table")) {
-                    // Already in a sub-menu — use text as filter
-                    setSlashMenuFilter(lowerAfter);
-                } else {
-                    // Show command list
-                    setSlashMenuType("command");
-                    setSlashMenuFilter(lowerAfter);
-                }
-                setSlashMenuOpen(true);
-                setSlashMenuPage(0);
-                return;
-            }
-        }
-        setSlashMenuOpen(false);
-    }
-
-    function handleSlashSelect(item: string) {
-        if (slashMenuType === "command") {
-            // Replace from slash start to end with the command + space
-            const before = chatInput.substring(0, slashMenuStart);
-            const newText = before + "/" + item + " ";
-            setChatInput(newText);
-            if (item === "database") {
-                setSlashMenuType("database");
-                setSlashMenuFilter("");
-            } else if (item === "table") {
-                setSlashMenuType("table");
-                setSlashMenuFilter("");
-            }
-            setSlashMenuOpen(true);
-            setSlashMenuPage(0);
-            setSlashMenuDB("");
-        } else if (slashMenuType === "database") {
-            const baseText = stripSlashCommand(chatInput, slashMenuStart);
-            setChatInput(baseText ? `${baseText} ` : "");
-            handleSelectDatabase(item);
-            setSlashMenuOpen(false);
-            setSlashMenuDB(item);
-        } else if (slashMenuType === "table") {
-            const baseText = stripSlashCommand(chatInput, slashMenuStart);
-            setChatInput(baseText ? `${baseText} ` : "");
-            if (item.includes(".")) {
-                const [databaseName, tableName] = item.split(".", 2);
-                handleSelectDatabase(databaseName);
-                setChatContextTables((current) => appendUnique(current.filter((name) => name !== tableName), tableName));
-                setSlashMenuDB(databaseName);
-            } else {
-                setChatContextTables((current) => appendUnique(current, item));
-            }
-            setSlashMenuOpen(false);
-        }
-    }
-
-    function handleChatDrop(payload: ChatDropPayload) {
-        if (payload.kind === "database") {
-            handleSelectDatabase(payload.database);
-            return;
-        }
-
-        if (!payload.table) {
-            return;
-        }
-
-        const tableName = payload.table;
-
-        setChatContextDatabase(payload.database);
-        setChatContextTables((current) => (chatContextDatabase && chatContextDatabase !== payload.database ? [tableName] : appendUnique(current, tableName)));
-    }
-
-
-    function renderCurrentPage() {
-        if (workMode === "chat") {
-            return (
-                <ChatPage
-                    selectedConnection={selectedConnection}
-                    chatDisplayMode={chatDisplayMode}
-                    setChatDisplayMode={setChatDisplayMode}
-                    chatStreamRef={chatStreamRef}
-                    chatMessages={chatMessages}
-                    isRunningChat={isRunningChat}
-                    handleCopyUserMessage={handleCopyUserMessage}
-                    handleEditUserMessage={handleEditUserMessage}
-                    handleCopyText={handleCopyText}
-                    handleCopyChatResult={handleCopyChatResult}
-                    handleCopyChatMessage={handleCopyChatMessage}
-                    chatPendingAction={chatPendingAction}
-                    setChatPendingAction={setChatPendingAction}
-                    executeChatSQL={executeChatSQL}
-                    isExecutingQuery={isExecutingQuery}
-                    chatDropActive={chatDropActive}
-                    setChatDropActive={setChatDropActive}
-                    chatContextDatabase={chatContextDatabase}
-                    setChatContextDatabase={setChatContextDatabase}
-                    chatContextTables={chatContextTables}
-                    setChatContextTables={setChatContextTables}
-                    chatInput={chatInput}
-                    setChatInput={setChatInput}
-                    handleSendChatMessage={handleSendChatMessage}
-                    handleChatInputChange={handleChatInputChange}
-                    handleSlashSelect={handleSlashSelect}
-                    handleChatDrop={handleChatDrop}
-                    slashMenuOpen={slashMenuOpen}
-                    slashMenuItems={slashMenuItems}
-                    slashMenuTotalPages={slashMenuTotalPages}
-                    slashMenuPageSafe={slashMenuPageSafe}
-                    pagedSlashMenuItems={pagedSlashMenuItems}
-                    slashMenuActiveIndex={slashMenuActiveIndex}
-                    setSlashMenuPage={setSlashMenuPage}
-                    setSlashMenuActiveIndex={setSlashMenuActiveIndex}
-                    setSlashMenuOpen={setSlashMenuOpen}
-                    slashMenuType={slashMenuType}
-                />
-            );
-        }
-
-        switch (activePage) {
-            case "connections":
-                return (
-                    <ConnectionsPage
-                        connectionNotice={connectionNotice}
-                        workspaceState={workspaceState}
-                        selectedConnectionId={selectedConnectionId}
-                        connectionDraft={connectionDraft}
-                        setConnectionDraft={setConnectionDraft}
-                        showPassword={showPassword}
-                        setShowPassword={setShowPassword}
-                        connectionTest={connectionTest}
-                        isTestingConnection={isTestingConnection}
-                        isSavingConnection={isSavingConnection}
-                        handleSelectConnection={handleSelectConnection}
-                        fillConnectionDraft={fillConnectionDraft}
-                        handleDeleteConnection={handleDeleteConnection}
-                        handleTestConnection={handleTestConnection}
-                        handleSaveConnection={handleSaveConnection}
-                        updateConnectionField={updateConnectionField}
-                        pushToast={pushToast}
-                    />
-                );
-            case "query":
-                return (
-                    <QueryPage
-                        isExecutingQuery={isExecutingQuery}
-                        handleExecuteQuery={handleExecuteQuery}
-                        handleBeautifySQL={handleBeautifySQL}
-                        isOptimizingSQL={isOptimizingSQL}
-                        sqlText={sqlText}
-                        handleOptimizeSQL={handleOptimizeSQL}
-                        sqlFileInputRef={sqlFileInputRef}
-                        queryNotice={queryNotice}
-                        sqlEditorCollapsed={sqlEditorCollapsed}
-                        setSQLEditorCollapsed={setSQLEditorCollapsed}
-                        selectedSnippet={selectedSnippet}
-                        setSelectedSnippet={setSelectedSnippet}
-                        handleExecuteSelectedSQL={handleExecuteSelectedSQL}
-                        handleBeautifySelectedSQL={handleBeautifySelectedSQL}
-                        handleOptimizeSelectedSQL={handleOptimizeSelectedSQL}
-                        handleEditorDidMount={handleEditorDidMount}
-                        setSQLText={setSQLText}
-                        queryErrorDetail={queryErrorDetail}
-                        setQueryErrorDetail={setQueryErrorDetail}
-                        queryResult={queryResult}
-                        queryPageSize={queryPageSize}
-                        setQueryPageSize={setQueryPageSize}
-                        previewContext={previewContext}
-                        handlePreviewTableWithSize={handlePreviewTableWithSize}
-                        handlePreviewTable={handlePreviewTable}
-                        runSQLWithSize={runSQLWithSize}
-                        runSQL={runSQL}
-                        lastExecutedSQL={lastExecutedSQL}
-                        queryPage={queryPage}
-                        hasNextQueryPage={hasNextQueryPage}
-                        jumpPageInput={jumpPageInput}
-                        setJumpPageInput={setJumpPageInput}
-                        selectedResultRows={selectedResultRows}
-                        allVisibleRowsSelected={allVisibleRowsSelected}
-                        handleToggleAllResultRows={handleToggleAllResultRows}
-                        handleToggleResultRow={handleToggleResultRow}
-                        selectedResultRowKeys={selectedResultRowKeys}
-                        buildRowSelectionKey={buildRowSelectionKey}
-                        tableDetail={tableDetail}
-                        openCellEditor={openCellEditor}
-                        handleCopySQL={handleCopySQL}
-                        handleExportQuerySQL={handleExportQuerySQL}
-                        handleExportQueryCSV={handleExportQueryCSV}
-                        handleExportQueryExcel={handleExportQueryExcel}
-                        handleExportSelectedRows={handleExportSelectedRows}
-                        isExporting={isExporting}
-                        canDeleteSelectedRows={canDeleteSelectedRows}
-                        handleRequestDeleteSelectedRows={handleRequestDeleteSelectedRows}
-                        queryPageSizeOptions={QUERY_PAGE_SIZE_OPTIONS}
-                    />
-                );
-            case "history":
-                return (
-                    <HistoryPage
-                        selectedConnection={selectedConnection}
-                        historyItems={historyItems}
-                        setHistoryItems={setHistoryItems}
-                        historyPage={historyPage}
-                        setHistoryPage={setHistoryPage}
-                        pushToast={pushToast}
-                        setSQLText={setSQLText}
-                        setPreviewContext={setPreviewContext}
-                        handleSelectDatabase={handleSelectDatabase}
-                        setExpandedDatabases={setExpandedDatabases}
-                        setSelectedTable={setSelectedTable}
-                        setActivePage={setActivePage}
-                        setSidebarView={setSidebarView}
-                        setQueryNotice={setQueryNotice}
-                    />
-                );
-            case "schema":
-                return (
-                    <SchemaPage
-                        selectedTable={selectedTable}
-                        tableDetail={tableDetail}
-                        schemaNotice={schemaNotice}
-                        schemaDraftFields={schemaDraftFields}
-                        mysqlTypeOptions={mysqlTypeOptions}
-                        updateDraftField={updateDraftField}
-                        applyFieldSuggestion={applyFieldSuggestion}
-                        handleGenerateFieldComment={handleGenerateFieldComment}
-                        handleDeleteDraftField={handleDeleteDraftField}
-                        handleAddField={handleAddField}
-                        setRenameModalOpen={setRenameModalOpen}
-                        handleExportDDL={handleExportDDL}
-                        isExporting={isExporting}
-                        handleCopyDDL={handleCopyDDL}
-                        currentAlterSQL={currentAlterSQL}
-                        renameModalOpen={renameModalOpen}
-                        renameTableName={renameTableName}
-                        setRenameTableName={setRenameTableName}
-                        handleRenameTable={handleRenameTable}
-                        isRenamingTable={isRenamingTable}
-                    />
-                );
-            case "ai":
-                return (
-                    <AIPage
-                        aiNotice={aiNotice}
-                        aiForm={aiForm}
-                        setAIForm={setAIForm}
-                        isSavingAI={isSavingAI}
-                        onSave={handleSaveAISettings}
-                        onClear={handleClearAPIKey}
-                        aiState={workspaceState.ai}
-                        selectedConnectionName={selectedConnection?.name || ""}
-                    />
-                );
-            case "theme":
-                return (
-                    <ThemePage
-                        themeMode={themeMode}
-                        setThemeMode={setThemeMode}
-                        customTheme={customTheme}
-                        setCustomTheme={setCustomTheme}
-                        pushToast={pushToast}
-                    />
-                );
-            case "settings":
-                return (
-                    <SettingsPage
-                        browserPreview={browserPreview}
-                        newStoragePath={newStoragePath}
-                        setNewStoragePath={setNewStoragePath}
-                        storageInfo={storageInfo}
-                        setStorageInfo={setStorageInfo}
-                        showPermissionModal={showPermissionModal}
-                        setShowPermissionModal={setShowPermissionModal}
-                        showClearModal={showClearModal}
-                        setShowClearModal={setShowClearModal}
-                        pushToast={pushToast}
-                        refreshWorkspaceState={refreshWorkspaceState}
-                    />
-                );
-            default:
-                return null;
-        }
-    }
 
     return (
         <>
@@ -3122,7 +1748,163 @@ function App() {
             <main className="workbench">
                 <div className="workbench-body">
                     <NoticeBanner notice={workspaceNotice} />
-                    {renderCurrentPage()}
+                    <WorkbenchRouter
+                        workMode={workMode}
+                        activePage={activePage}
+                        selectedConnection={selectedConnection}
+                        chatDisplayMode={chat.chatDisplayMode}
+                        setChatDisplayMode={chat.setChatDisplayMode}
+                        chatStreamRef={chatStreamRef}
+                        chatMessages={chat.chatMessages}
+                        isRunningChat={chat.isRunningChat}
+                        handleCopyUserMessage={chat.handleCopyUserMessage}
+                        handleEditUserMessage={chat.handleEditUserMessage}
+                        handleCopyText={chat.handleCopyText}
+                        handleCopyChatResult={chat.handleCopyChatResult}
+                        handleCopyChatMessage={chat.handleCopyChatMessage}
+                        chatPendingAction={chat.chatPendingAction}
+                        setChatPendingAction={chat.setChatPendingAction}
+                        executeChatSQL={chat.executeChatSQL}
+                        isExecutingQuery={isExecutingQuery}
+                        chatDropActive={chat.chatDropActive}
+                        setChatDropActive={chat.setChatDropActive}
+                        chatContextDatabase={chat.chatContextDatabase}
+                        setChatContextDatabase={chat.setChatContextDatabase}
+                        chatContextTables={chat.chatContextTables}
+                        setChatContextTables={chat.setChatContextTables}
+                        chatInput={chat.chatInput}
+                        setChatInput={chat.setChatInput}
+                        handleSendChatMessage={chat.handleSendChatMessage}
+                        handleChatInputChange={chat.handleChatInputChange}
+                        handleSlashSelect={chat.handleSlashSelect}
+                        handleChatDrop={chat.handleChatDrop}
+                        slashMenuOpen={chat.slashMenuOpen}
+                        slashMenuItems={chat.slashMenuItems}
+                        slashMenuTotalPages={chat.slashMenuTotalPages}
+                        slashMenuPageSafe={chat.slashMenuPageSafe}
+                        pagedSlashMenuItems={chat.pagedSlashMenuItems}
+                        slashMenuActiveIndex={chat.slashMenuActiveIndex}
+                        setSlashMenuPage={chat.setSlashMenuPage}
+                        setSlashMenuActiveIndex={chat.setSlashMenuActiveIndex}
+                        setSlashMenuOpen={chat.setSlashMenuOpen}
+                        slashMenuType={chat.slashMenuType}
+                        connectionNotice={conn.connectionNotice}
+                        workspaceState={workspaceState}
+                        selectedConnectionId={selectedConnectionId}
+                        connectionDraft={conn.connectionDraft}
+                        setConnectionDraft={conn.setConnectionDraft}
+                        showPassword={conn.showPassword}
+                        setShowPassword={conn.setShowPassword}
+                        connectionTest={conn.connectionTest}
+                        isTestingConnection={conn.isTestingConnection}
+                        isSavingConnection={conn.isSavingConnection}
+                        handleSelectConnection={conn.handleSelectConnection}
+                        fillConnectionDraft={conn.fillConnectionDraft}
+                        handleDeleteConnection={conn.handleDeleteConnection}
+                        handleTestConnection={conn.handleTestConnection}
+                        handleSaveConnection={conn.handleSaveConnection}
+                        updateConnectionField={conn.updateConnectionField}
+                        pushToast={pushToast}
+                        isOptimizingSQL={isOptimizingSQL}
+                        sqlText={sqlText}
+                        sqlFileInputRef={sqlFileInputRef}
+                        queryNotice={queryNotice}
+                        sqlEditorCollapsed={sqlEditorCollapsed}
+                        setSQLEditorCollapsed={setSQLEditorCollapsed}
+                        selectedSnippet={selectedSnippet}
+                        setSelectedSnippet={setSelectedSnippet}
+                        handleExecuteSelectedSQL={handleExecuteSelectedSQL}
+                        handleBeautifySelectedSQL={handleBeautifySelectedSQL}
+                        handleOptimizeSelectedSQL={handleOptimizeSelectedSQL}
+                        handleEditorDidMount={handleEditorDidMount}
+                        setSQLText={setSQLText}
+                        queryErrorDetail={queryErrorDetail}
+                        setQueryErrorDetail={setQueryErrorDetail}
+                        queryResult={queryResult}
+                        queryPageSize={queryPageSize}
+                        setQueryPageSize={setQueryPageSize}
+                        previewContext={previewContext}
+                        handlePreviewTableWithSize={handlePreviewTableWithSize}
+                        handlePreviewTable={handlePreviewTable}
+                        runSQLWithSize={runSQLWithSize}
+                        runSQL={runSQL}
+                        lastExecutedSQL={lastExecutedSQL}
+                        queryPage={queryPage}
+                        hasNextQueryPage={hasNextQueryPage}
+                        jumpPageInput={jumpPageInput}
+                        setJumpPageInput={setJumpPageInput}
+                        selectedResultRows={selectedResultRows}
+                        allVisibleRowsSelected={allVisibleRowsSelected}
+                        handleToggleAllResultRows={handleToggleAllResultRows}
+                        handleToggleResultRow={handleToggleResultRow}
+                        selectedResultRowKeys={selectedResultRowKeys}
+                        buildRowSelectionKey={buildRowSelectionKey}
+                        tableDetail={tableDetail}
+                        openCellEditor={openCellEditor}
+                        handleCopySQL={handleCopySQL}
+                        handleExportQuerySQL={handleExportQuerySQL}
+                        handleExportQueryCSV={handleExportQueryCSV}
+                        handleExportQueryExcel={handleExportQueryExcel}
+                        handleExportSelectedRows={handleExportSelectedRows}
+                        isExporting={isExporting}
+                        canDeleteSelectedRows={canDeleteSelectedRows}
+                        handleRequestDeleteSelectedRows={handleRequestDeleteSelectedRows}
+                        queryPageSizeOptions={QUERY_PAGE_SIZE_OPTIONS}
+                        handleExecuteQuery={handleExecuteQuery}
+                        handleBeautifySQL={handleBeautifySQL}
+                        handleOptimizeSQL={handleOptimizeSQL}
+                        historyItems={historyItems}
+                        setHistoryItems={setHistoryItems}
+                        historyPage={historyPage}
+                        setHistoryPage={setHistoryPage}
+                        setPreviewContext={setPreviewContext}
+                        setExpandedDatabases={setExpandedDatabases}
+                        setSelectedTable={setSelectedTable}
+                        setActivePage={setActivePage}
+                        setSidebarView={setSidebarView}
+                        setQueryNotice={setQueryNotice}
+                        selectedTable={selectedTable}
+                        schemaNotice={schema.schemaNotice}
+                        schemaDraftFields={schema.schemaDraftFields}
+                        mysqlTypeOptions={schema.mysqlTypeOptions}
+                        updateDraftField={schema.updateDraftField}
+                        applyFieldSuggestion={schema.applyFieldSuggestion}
+                        handleGenerateFieldComment={schema.handleGenerateFieldComment}
+                        handleDeleteDraftField={schema.handleDeleteDraftField}
+                        handleAddField={schema.handleAddField}
+                        setRenameModalOpen={schema.setRenameModalOpen}
+                        handleExportDDL={schema.handleExportDDL}
+                        handleCopyDDL={schema.handleCopyDDL}
+                        currentAlterSQL={schema.currentAlterSQL}
+                        renameModalOpen={schema.renameModalOpen}
+                        renameTableName={schema.renameTableName}
+                        setRenameTableName={schema.setRenameTableName}
+                        handleRenameTable={schema.handleRenameTable}
+                        isRenamingTable={schema.isRenamingTable}
+                        aiNotice={ai.aiNotice}
+                        aiForm={ai.aiForm}
+                        setAIForm={ai.setAIForm}
+                        isSavingAI={ai.isSavingAI}
+                        handleSaveAISettings={ai.handleSaveAISettings}
+                        handleClearAPIKey={ai.handleClearAPIKey}
+                        workspaceStateAI={workspaceState.ai}
+                        selectedConnectionName={selectedConnection?.name || ""}
+                        themeMode={themeMode}
+                        setThemeMode={setThemeMode}
+                        customTheme={customTheme}
+                        setCustomTheme={setCustomTheme}
+                        browserPreview={browserPreview}
+                        newStoragePath={newStoragePath}
+                        setNewStoragePath={setNewStoragePath}
+                        storageInfo={storageInfo}
+                        setStorageInfo={setStorageInfo}
+                        showPermissionModal={showPermissionModal}
+                        setShowPermissionModal={setShowPermissionModal}
+                        showClearModal={showClearModal}
+                        setShowClearModal={setShowClearModal}
+                        refreshWorkspaceState={refreshWorkspaceState}
+                        handleSelectDatabase={handleSelectDatabase}
+                    />
                 </div>
             </main>
 

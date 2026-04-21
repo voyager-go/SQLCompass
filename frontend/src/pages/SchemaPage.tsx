@@ -1,14 +1,7 @@
 import { NoticeBanner } from "../components/NoticeBanner";
-import type { TableDetail, TableField } from "../types/runtime";
+import type { TableDetail, SchemaDraftField } from "../types/runtime";
 
 type NoticeTone = "success" | "error" | "info";
-
-type SchemaDraftField = TableField & {
-    id: string;
-    originName: string;
-    needsAiComment: boolean;
-    aiLoading: boolean;
-};
 
 interface SchemaPageProps {
     selectedTable: string;

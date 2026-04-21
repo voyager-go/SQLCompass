@@ -16,3 +16,12 @@ export const WORKBENCH_PAGES: PageEntry[] = [
     { id: "theme", label: "自定义主题", summary: "个性化外观设置" },
     { id: "settings", label: "系统设置", summary: "存储路径与数据管理" },
 ];
+
+export const SLASH_COMMANDS = [
+    { key: "database", label: "/database", desc: "选择数据库" },
+    { key: "table", label: "/table", desc: "选择数据表" },
+] as const;
+
+export const SLASH_PAGE_SIZE = 20;
+
+

@@ -1,31 +1,4 @@
-import type { QueryResult } from "../types/runtime";
-
-type ChatDisplayMode = "summary" | "table";
-
-type ChatEntry = {
-    id: string;
-    role: "user" | "assistant";
-    content: string;
-    sql?: string;
-    reasoning?: string;
-    result?: QueryResult | null;
-    displayMode?: ChatDisplayMode;
-};
-
-type ChatPendingAction = {
-    reply: string;
-    sql: string;
-    analysis: any;
-    displayMode: ChatDisplayMode;
-    reasoning: string;
-    userMessage: string;
-};
-
-type ChatDropPayload = {
-    kind: "database" | "table";
-    database: string;
-    table?: string;
-};
+import type { QueryResult, ChatEntry, ChatPendingAction, ChatDropPayload, ChatDisplayMode } from "../types/runtime";
 
 interface ChatPageProps {
     selectedConnection: { name: string } | null;

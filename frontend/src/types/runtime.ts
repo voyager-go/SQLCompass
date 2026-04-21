@@ -252,3 +252,37 @@ export type SetStoragePathResult = {
     newPath: string;
     message: string;
 };
+
+export type SchemaDraftField = TableField & {
+    id: string;
+    originName: string;
+    needsAiComment: boolean;
+    aiLoading: boolean;
+};
+
+export type ChatDisplayMode = "summary" | "table";
+
+export type ChatEntry = {
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+    sql?: string;
+    reasoning?: string;
+    result?: QueryResult | null;
+    displayMode?: ChatDisplayMode;
+};
+
+export type ChatPendingAction = {
+    reply: string;
+    sql: string;
+    analysis: SQLAnalysis;
+    displayMode: ChatDisplayMode;
+    reasoning: string;
+    userMessage: string;
+};
+
+export type ChatDropPayload = {
+    kind: "database" | "table";
+    database: string;
+    table?: string;
+};
