@@ -4,13 +4,9 @@ import type { IDisposable, editor as MonacoEditorNS } from "monaco-editor";
 import {
     AnalyzeSQL,
     BeautifySQL,
-    ClearAIAPIKey,
-    DeleteConnection,
     ExecuteQuery,
     ExportTextFile,
-    GenerateFieldComment,
     GetExplorerTree,
-    GetFieldDictionarySuggestion,
     GetQueryHistory,
     GetStorageInfo,
     GetTableDetail,
@@ -18,51 +14,26 @@ import {
     GetWorkspaceState,
     OptimizeSQL,
     PreviewTableData,
-    RenameTable,
-    SaveAISettings,
-    SaveConnection,
-    TestConnection,
 } from "../wailsjs/go/main/App";
 import "./App.css";
 import { NoticeBanner } from "./components/NoticeBanner";
 import { FloatingToast } from "./components/FloatingToast";
-import { AIPage } from "./pages/AIPage";
-import { ThemePage } from "./pages/ThemePage";
-import { SettingsPage } from "./pages/SettingsPage";
-import { ConnectionsPage } from "./pages/ConnectionsPage";
 import {
     copyText,
-    toEditorValue,
-    fromEditorValue,
-    escapeHTML,
-    browserStorageKey,
     emptyWorkspaceState,
     hasWailsBridge,
     loadBrowserWorkspaceState,
-    saveBrowserWorkspaceState,
     browserGeneratedID,
-    createConnectionDraft,
     createAIForm,
-    upsertBrowserConnection,
-    removeBrowserConnection,
-    updateBrowserAIState,
     clamp,
-    stringifySQLValue,
     getErrorMessage,
     stringifyResultSQLValue,
     buildInsertStatement,
     buildRowSelectionKey,
-    buildFieldDefinition,
-    fieldSignature,
-    buildAlterSQL,
     csvFromRows,
     downloadText,
     excelFromRows,
 } from "./lib/utils";
-import { HistoryPage } from "./pages/HistoryPage";
-import { SchemaPage } from "./pages/SchemaPage";
-import { QueryPage } from "./pages/QueryPage";
-import { ChatPage } from "./pages/ChatPage";
 import { OptimizeReviewModal } from "./pages/OptimizeReviewModal";
 import { SplashScreen } from "./components/SplashScreen";
 import { Sidebar } from "./components/Sidebar";
@@ -71,34 +42,21 @@ import { useChat } from "./hooks/useChat";
 import { useConnections } from "./hooks/useConnections";
 import { useSchema } from "./hooks/useSchema";
 import { useAISettings } from "./hooks/useAISettings";
-import { WORKBENCH_PAGES, SLASH_COMMANDS, SLASH_PAGE_SIZE, type NoticeTone, type WorkbenchPage, type WorkMode, type ThemeMode } from "./lib/constants";
+import { useCellEditor } from "./hooks/useCellEditor";
+import { type NoticeTone, type WorkbenchPage, type WorkMode, type ThemeMode } from "./lib/constants";
 import { CellEditorModal } from "./pages/CellEditorModal";
 import { DeleteDialogModal } from "./pages/DeleteDialogModal";
 import type {
-    AISettingsInput,
-    ConnectionInput,
-    ConnectionProfile,
-    ConnectionTestResult,
     WorkspaceState,
 } from "./types/workspace";
 import type {
-    AIFieldCommentResult,
-    ChatDatabaseResponse,
-    ChatMessage,
     ExplorerTree,
-    FieldDictionarySuggestion,
     HistoryItem,
     QueryResult,
     SQLAnalysis,
     SQLOptimizeResult,
     StorageInfoView,
     TableDetail,
-    TableField,
-    SchemaDraftField,
-    ChatDisplayMode,
-    ChatEntry,
-    ChatPendingAction,
-    ChatDropPayload,
 } from "./types/runtime";
 
 type CustomTheme = {
@@ -162,56 +120,10 @@ type OptimizeReviewState = {
     analysis: SQLAnalysis;
 };
 
-type CellEditorState = {
-    rowKey: string;
-    row: Record<string, string>;
-    column: string;
-    fieldType: string;
-    originalValue: string;
-    nextValue: string;
-};
-
 const themeStorageKey = "sql-compass-theme";
 const previewPageSize = 30;
 const DEFAULT_QUERY_PAGE_SIZE = 20;
 const QUERY_PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200];
-const mysqlFieldTypes = [
-    "bit",
-    "tinyint",
-    "smallint",
-    "mediumint",
-    "int",
-    "bigint",
-    "decimal(10,2)",
-    "float",
-    "double",
-    "char(16)",
-    "char(32)",
-    "varchar(16)",
-    "varchar(32)",
-    "varchar(64)",
-    "varchar(128)",
-    "varchar(255)",
-    "binary(16)",
-    "varbinary(255)",
-    "tinytext",
-    "text",
-    "mediumtext",
-    "longtext",
-    "tinyblob",
-    "blob",
-    "mediumblob",
-    "longblob",
-    "date",
-    "time",
-    "year",
-    "datetime",
-    "timestamp",
-    "json",
-    "enum('Y','N')",
-    "set('A','B')",
-];
-
 const sqlKeywordSpecs: SQLCompletionSpec[] = [
     // DML
     { label: "SELECT", insertText: "SELECT", detail: "查询字段", kind: "keyword" },
@@ -289,11 +201,10 @@ function App() {
     const monacoRef = useRef<Monaco | null>(null);
     const chatStreamRef = useRef<HTMLDivElement | null>(null);
     const completionDisposableRef = useRef<IDisposable | null>(null);
-    const completionPrimedRef = useRef(false);
     const [monacoReady, setMonacoReady] = useState(false);
 
     const [workspaceState, setWorkspaceState] = useState<WorkspaceState>(emptyWorkspaceState);
-    const [backendState, setBackendState] = useState("正在连接桌面后端");
+    const [, setBackendState] = useState("正在连接桌面后端");
     const [activePage, setActivePage] = useState<WorkbenchPage>("connections");
     const [workMode, setWorkMode] = useState<WorkMode>("normal");
     const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -315,7 +226,6 @@ function App() {
     });
     const [sidebarView, setSidebarView] = useState<"database" | "workbench">("database");
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-    const [workbenchExpanded, setWorkbenchExpanded] = useState(false);
 
     const [selectedConnectionId, setSelectedConnectionId] = useState("");
     const [selectedDatabase, setSelectedDatabase] = useState("");
@@ -382,10 +292,10 @@ function App() {
     const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
     const [queryErrorDetail, setQueryErrorDetail] = useState("");
     const [lastExecutedSQL, setLastExecutedSQL] = useState("");
-    const [sqlAnalysis, setSQLAnalysis] = useState<SQLAnalysis | null>(null);
+    const [, setSQLAnalysis] = useState<SQLAnalysis | null>(null);
     const [optimizeReview, setOptimizeReview] = useState<OptimizeReviewState | null>(null);
     const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
-    const [historyFocusId, setHistoryFocusId] = useState("");
+    const [, setHistoryFocusId] = useState("");
     const [queryPage, setQueryPage] = useState(1);
     const [queryPageSize, setQueryPageSize] = useState(() => {
         const saved = localStorage.getItem("sql-compass-query-page-size");
@@ -393,21 +303,18 @@ function App() {
     });
     const [jumpPageInput, setJumpPageInput] = useState("");
     const [historyPage, setHistoryPage] = useState(1);
-    const historyPageSize = 20;
     const [previewContext, setPreviewContext] = useState<PreviewContext | null>(null);
     const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
     const [tableContextMenu, setTableContextMenu] = useState<TableContextMenuState | null>(null);
-    const [cellEditor, setCellEditor] = useState<CellEditorState | null>(null);
 
     const [workspaceNotice, setWorkspaceNotice] = useState<Notice | null>(null);
     const [queryNotice, setQueryNotice] = useState<Notice | null>(null);
-    const [transferNotice, setTransferNotice] = useState<Notice | null>(null);
+    const [, setTransferNotice] = useState<Notice | null>(null);
     const [toast, setToast] = useState<Toast | null>(null);
 
     const [isExecutingQuery, setIsExecutingQuery] = useState(false);
     const [isOptimizingSQL, setIsOptimizingSQL] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
-    const [isSavingCell, setIsSavingCell] = useState(false);
 
     const selectedConnection = workspaceState.connections.find((item) => item.id === selectedConnectionId) ?? null;
     const primaryFieldNames = useMemo(() => tableDetail?.fields.filter((field) => field.primary).map((field) => field.name) ?? [], [tableDetail]);
@@ -435,18 +342,6 @@ function App() {
             primaryFieldNames.every((fieldName) => queryResult.columns.includes(fieldName)),
     );
 
-    const historyStats = useMemo(() => {
-        const dangerous = historyItems.filter((item) => item.riskLevel === "high" || item.riskLevel === "critical").length;
-        const avgDuration = historyItems.length
-            ? Math.round(historyItems.reduce((sum, item) => sum + item.durationMs, 0) / historyItems.length)
-            : 0;
-
-        return {
-            total: historyItems.length,
-            dangerous,
-            avgDuration,
-        };
-    }, [historyItems]);
     const sqlCompletionSpecs = useMemo(() => {
         const currentDatabase = explorerTree?.databases.find((item) => item.name === selectedDatabase) ?? null;
         const tableSpecs =
@@ -529,6 +424,20 @@ function App() {
         setWorkspaceState,
         emptyWorkspaceState,
         refreshWorkspaceState,
+    });
+
+    const cellEditorHook = useCellEditor({
+        previewContext,
+        tableDetail,
+        selectedTable,
+        primaryFieldNames,
+        selectedConnection,
+        selectedDatabase,
+        queryPageSize,
+        queryPage,
+        handlePreviewTable,
+        pushToast,
+        setQueryNotice,
     });
 
 
@@ -1461,6 +1370,7 @@ function App() {
                 database: selectedDatabase,
                 sql,
                 prompt,
+                table: selectedTable,
             })) as SQLOptimizeResult;
             setOptimizeReview({
                 target,
@@ -1647,61 +1557,6 @@ function App() {
         event.target.value = "";
     }
 
-    function openCellEditor(row: Record<string, string>, rowKey: string, column: string) {
-        if (!previewContext || !tableDetail || previewContext.table !== tableDetail.table) {
-            return;
-        }
-
-        const field = tableDetail.fields.find((item) => item.name === column);
-        if (!field) {
-            return;
-        }
-
-        setCellEditor({
-            rowKey,
-            row,
-            column,
-            fieldType: field.type,
-            originalValue: row[column] ?? "",
-            nextValue: toEditorValue(row[column] ?? "", field.type),
-        });
-    }
-
-    function buildCellUpdateStatement(editorState: CellEditorState): string {
-        const nextValue = fromEditorValue(editorState.nextValue, editorState.fieldType);
-        return `UPDATE \`${selectedTable}\`\nSET \`${editorState.column}\` = ${stringifySQLValue(nextValue)}\nWHERE ${primaryFieldNames
-            .map((fieldName) => `\`${fieldName}\` = ${stringifyResultSQLValue(editorState.row[fieldName] ?? "")}`)
-            .join(" AND ")};`;
-    }
-
-    async function handleConfirmCellEdit() {
-        if (!cellEditor || !selectedConnection || !selectedDatabase || !selectedTable) {
-            return;
-        }
-
-        try {
-            setIsSavingCell(true);
-            const statement = buildCellUpdateStatement(cellEditor);
-            await ExecuteQuery({
-                connectionId: selectedConnection.id,
-                database: selectedDatabase,
-                sql: statement,
-                page: 1,
-                pageSize: queryPageSize,
-            });
-            await handlePreviewTable(selectedDatabase, selectedTable, queryPage);
-            setCellEditor(null);
-            pushToast("success", "字段已更新", `${cellEditor.column} 已保存`);
-        } catch (error) {
-            const message = getErrorMessage(error);
-            setQueryNotice({ tone: "error", message });
-        } finally {
-            setIsSavingCell(false);
-        }
-    }
-
-
-
     return (
         <>
             {showSplash && <SplashScreen />}
@@ -1840,7 +1695,7 @@ function App() {
                         selectedResultRowKeys={selectedResultRowKeys}
                         buildRowSelectionKey={buildRowSelectionKey}
                         tableDetail={tableDetail}
-                        openCellEditor={openCellEditor}
+                        openCellEditor={cellEditorHook.openCellEditor}
                         handleCopySQL={handleCopySQL}
                         handleExportQuerySQL={handleExportQuerySQL}
                         handleExportQueryCSV={handleExportQueryCSV}
@@ -1917,10 +1772,10 @@ function App() {
             />
 
             <CellEditorModal
-                cellEditor={cellEditor}
-                setCellEditor={setCellEditor}
-                isSavingCell={isSavingCell}
-                handleConfirmCellEdit={handleConfirmCellEdit}
+                cellEditor={cellEditorHook.cellEditor}
+                setCellEditor={cellEditorHook.setCellEditor}
+                isSavingCell={cellEditorHook.isSavingCell}
+                handleConfirmCellEdit={cellEditorHook.handleConfirmCellEdit}
                 pushToast={pushToast}
             />
 

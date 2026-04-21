@@ -1,6 +1,7 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
     ClearStorageData,
+    GetCrashLogs,
     GetStorageInfo,
     GrantStoragePermission,
     SelectStorageDirectory,
@@ -9,6 +10,13 @@ import {
 import type { SetStoragePathResult, StorageInfoView } from "../types/runtime";
 
 type NoticeTone = "success" | "error" | "info";
+
+type CrashLogEntry = {
+    id: string;
+    message: string;
+    stack: string;
+    createdAt: string;
+};
 
 interface SettingsPageProps {
     browserPreview: boolean;
@@ -24,6 +32,26 @@ interface SettingsPageProps {
     refreshWorkspaceState: () => Promise<void>;
 }
 
+const fileCategoryMap: Record<string, { label: string; category: string; color: string }> = {
+    "app-state.json": { label: "连接配置", category: "connections", color: "#3b82f6" },
+    "config.json": { label: "软件配置", category: "config", color: "#8b5cf6" },
+    "query-history.json": { label: "SQL历史", category: "history", color: "#10b981" },
+    "crash-logs.json": { label: "崩溃日志", category: "crash", color: "#ef4444" },
+    "ai-snapshots.json": { label: "AI快照", category: "ai-snapshots", color: "#f59e0b" },
+};
+
+function getFileLabel(name: string) {
+    return fileCategoryMap[name]?.label ?? "数据文件";
+}
+
+function getFileCategory(name: string) {
+    return fileCategoryMap[name]?.category ?? "";
+}
+
+function getFileColor(name: string) {
+    return fileCategoryMap[name]?.color ?? "#6b7280";
+}
+
 export function SettingsPage({
     browserPreview,
     newStoragePath,
@@ -37,6 +65,9 @@ export function SettingsPage({
     pushToast,
     refreshWorkspaceState,
 }: SettingsPageProps) {
+    const [crashLogs, setCrashLogs] = useState<CrashLogEntry[]>([]);
+    const [showCrashLogModal, setShowCrashLogModal] = useState(false);
+
     const handleSetStoragePath = useCallback(async () => {
         if (browserPreview) return;
         const result = (await SetStoragePath(newStoragePath)) as SetStoragePathResult;
@@ -84,6 +115,34 @@ export function SettingsPage({
         }
     }, [browserPreview, setNewStoragePath]);
 
+    const handleViewCrashLogs = useCallback(async () => {
+        if (browserPreview) return;
+        try {
+            const logs = (await GetCrashLogs()) as CrashLogEntry[];
+            setCrashLogs(logs ?? []);
+            setShowCrashLogModal(true);
+        } catch {
+            pushToast("error", "读取失败", "无法读取崩溃日志");
+        }
+    }, [browserPreview, pushToast]);
+
+    const clearModalLabel = (() => {
+        switch (showClearModal) {
+            case "history":
+                return "所有SQL查询历史记录（仅保留近3天）";
+            case "crash":
+                return "所有崩溃日志";
+            case "ai-snapshots":
+                return "所有AI对话快照";
+            case "config":
+                return "所有软件与AI配置";
+            case "connections":
+                return "所有数据库连接配置";
+            default:
+                return "所选数据";
+        }
+    })();
+
     return (
         <section className="page-panel">
             <div className="page-headline">
@@ -116,11 +175,6 @@ export function SettingsPage({
                         应用配置
                     </button>
                 </div>
-                {storageInfo && (
-                    <div className="settings-path-hint">
-                        当前路径：<code>{storageInfo.dataDir}</code>
-                    </div>
-                )}
             </div>
 
             {/* Storage Overview */}
@@ -129,7 +183,7 @@ export function SettingsPage({
                     <div className="section-title">
                         <div>
                             <h3>存储概况</h3>
-                            <p>应用数据文件占用情况</p>
+                            <p>应用数据文件按类别独立存储，便于管理与清理</p>
                         </div>
                         <div className="settings-total-badge">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -162,39 +216,72 @@ export function SettingsPage({
                         {storageInfo.files.length === 0 ? (
                             <div className="settings-file-empty">暂无存储文件</div>
                         ) : (
-                            storageInfo.files.map((file, idx) => (
-                                <div key={idx} className="settings-file-item">
-                                    <div className="settings-file-icon">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            {file.name.endsWith("/") ? (
-                                                <>
-                                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                                    <polyline points="14 2 14 8 20 8"></polyline>
-                                                </>
+                            storageInfo.files.map((file, idx) => {
+                                const category = getFileCategory(file.name);
+                                const label = getFileLabel(file.name);
+                                const color = getFileColor(file.name);
+                                const isCrashLog = file.name === "crash-logs.json";
+                                return (
+                                    <div key={idx} className="settings-file-item">
+                                        <div className="settings-file-icon">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                {file.name.endsWith("/") ? (
+                                                    <>
+                                                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                                        <polyline points="14 2 14 8 20 8"></polyline>
+                                                    </>
+                                                )}
+                                            </svg>
+                                        </div>
+                                        <div className="settings-file-info">
+                                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                                                <span className="settings-file-name">{file.name}</span>
+                                                <span
+                                                    style={{
+                                                        fontSize: 11,
+                                                        padding: "1px 6px",
+                                                        borderRadius: 4,
+                                                        background: `${color}18`,
+                                                        color,
+                                                        fontWeight: 600,
+                                                        border: `1px solid ${color}30`,
+                                                    }}
+                                                >
+                                                    {label}
+                                                </span>
+                                            </div>
+                                            <span className="settings-file-path">{file.path}</span>
+                                        </div>
+                                        <div className="settings-file-size">{file.sizeHR}</div>
+                                        <div style={{ display: "flex", gap: 6 }}>
+                                            {isCrashLog && (
+                                                <button
+                                                    type="button"
+                                                    className="mini-ghost-button"
+                                                    onClick={handleViewCrashLogs}
+                                                    title="查看崩溃日志"
+                                                >
+                                                    查看
+                                                </button>
                                             )}
-                                        </svg>
+                                            {category && (
+                                                <button
+                                                    type="button"
+                                                    className="mini-ghost-button ghost-button--danger"
+                                                    onClick={() => setShowClearModal(category)}
+                                                    title={`清理${label}`}
+                                                >
+                                                    清理
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
-                                    <div className="settings-file-info">
-                                        <span className="settings-file-name">{file.name}</span>
-                                        <span className="settings-file-path">{file.path}</span>
-                                    </div>
-                                    <div className="settings-file-size">{file.sizeHR}</div>
-                                    {file.name === "app-state.json" && (
-                                        <button
-                                            type="button"
-                                            className="mini-ghost-button ghost-button--danger"
-                                            onClick={() => setShowClearModal("history")}
-                                            title="清除历史查询记录以减小文件大小"
-                                        >
-                                            清理
-                                        </button>
-                                    )}
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </div>
                 </div>
@@ -241,7 +328,7 @@ export function SettingsPage({
                         <div className="notice-banner notice-banner--error">
                             <span className="notice-banner__icon">!</span>
                             <span className="notice-banner__text">
-                                确定要清除{showClearModal === "history" ? "所有历史查询记录" : "所选数据"}吗？此操作不可撤销。
+                                确定要清除{clearModalLabel}吗？此操作不可撤销。
                             </span>
                         </div>
                         <div className="toolbar-actions toolbar-actions--end">
@@ -250,6 +337,44 @@ export function SettingsPage({
                             </button>
                             <button type="button" className="primary-button" style={{ background: "rgba(239, 68, 68, 0.9)", borderColor: "rgba(239, 68, 68, 0.6)" }} onClick={() => handleClearData(showClearModal)}>
                                 确认清理
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Crash Log Viewer Modal */}
+            {showCrashLogModal && (
+                <div className="modal-backdrop" onClick={() => setShowCrashLogModal(false)}>
+                    <div className="modal-card" style={{ maxWidth: 720, width: "90vw" }} onClick={(e) => e.stopPropagation()}>
+                        <div className="section-title">
+                            <div>
+                                <h3>崩溃日志</h3>
+                                <p>软件运行过程中捕获的异常与堆栈信息</p>
+                            </div>
+                        </div>
+                        {crashLogs.length === 0 ? (
+                            <div className="settings-file-empty" style={{ padding: "24px 0" }}>
+                                暂无崩溃日志
+                            </div>
+                        ) : (
+                            <div style={{ maxHeight: "60vh", overflow: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
+                                {crashLogs.map((log) => (
+                                    <div key={log.id} style={{ padding: 12, background: "rgba(239,68,68,0.06)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.15)" }}>
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                                            <span style={{ fontSize: 12, fontWeight: 600, color: "#ef4444" }}>{log.message}</span>
+                                            <span style={{ fontSize: 11, color: "#9ca3af" }}>{new Date(log.createdAt).toLocaleString()}</span>
+                                        </div>
+                                        <pre style={{ margin: 0, fontSize: 11, lineHeight: 1.5, color: "#6b7280", whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 200, overflow: "auto" }}>
+                                            {log.stack}
+                                        </pre>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <div className="toolbar-actions toolbar-actions--end" style={{ marginTop: 16 }}>
+                            <button type="button" className="ghost-button" onClick={() => setShowCrashLogModal(false)}>
+                                关闭
                             </button>
                         </div>
                     </div>

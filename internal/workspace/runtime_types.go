@@ -176,6 +176,7 @@ type SQLOptimizeRequest struct {
 	Database     string `json:"database"`
 	SQL          string `json:"sql"`
 	Prompt       string `json:"prompt"`
+	Table        string `json:"table"`
 }
 
 type SQLOptimizeResult struct {

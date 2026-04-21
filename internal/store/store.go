@@ -8,7 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
+
+const historyRetentionDays = 3
+
+// --- Data Models ---
 
 type AIState struct {
 	BaseURL   string `json:"baseUrl"`
@@ -49,10 +54,44 @@ type QueryHistoryRecord struct {
 	CreatedAt     string `json:"createdAt"`
 }
 
+type CrashLogEntry struct {
+	ID        string `json:"id"`
+	Message   string `json:"message"`
+	Stack     string `json:"stack"`
+	CreatedAt string `json:"createdAt"`
+}
+
+type AISnapshot struct {
+	ID          string `json:"id"`
+	SessionID   string `json:"sessionId"`
+	Summary     string `json:"summary"`
+	ContextHash string `json:"contextHash"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+// AppState holds connections only.
 type AppState struct {
-	AI          AIState              `json:"ai"`
-	Connections []ConnectionRecord   `json:"connections"`
-	History     []QueryHistoryRecord `json:"history"`
+	Connections []ConnectionRecord `json:"connections"`
+}
+
+// AppConfig holds AI and general settings.
+type AppConfig struct {
+	AI AIState `json:"ai"`
+}
+
+// QueryHistoryState holds query history.
+type QueryHistoryState struct {
+	History []QueryHistoryRecord `json:"history"`
+}
+
+// CrashLogsState holds crash logs.
+type CrashLogsState struct {
+	Logs []CrashLogEntry `json:"logs"`
+}
+
+// AISnapshotsState holds AI conversation snapshots.
+type AISnapshotsState struct {
+	Snapshots []AISnapshot `json:"snapshots"`
 }
 
 // StorageFileInfo describes a single storage file.
@@ -64,16 +103,21 @@ type StorageFileInfo struct {
 
 // StorageInfo is the summary of all storage files.
 type StorageInfo struct {
-	DataDir string            `json:"dataDir"`
-	Files   []StorageFileInfo `json:"files"`
-	Total   int64             `json:"total"`
-	Writable bool             `json:"writable"`
+	DataDir  string            `json:"dataDir"`
+	Files    []StorageFileInfo `json:"files"`
+	Total    int64             `json:"total"`
+	Writable bool              `json:"writable"`
 }
 
+// Store manages multiple files in the data directory.
 type Store struct {
-	filePath string
-	dataDir  string
-	mu       sync.Mutex
+	dataDir         string
+	connectionsPath string
+	configPath      string
+	historyPath     string
+	crashLogsPath   string
+	aiSnapshotsPath string
+	mu              sync.Mutex
 }
 
 func NewStore() (*Store, error) {
@@ -87,17 +131,21 @@ func NewStore() (*Store, error) {
 	}
 
 	return &Store{
-		filePath: filepath.Join(dataDir, "app-state.json"),
-		dataDir:  dataDir,
+		dataDir:         dataDir,
+		connectionsPath: filepath.Join(dataDir, "app-state.json"),
+		configPath:      filepath.Join(dataDir, "config.json"),
+		historyPath:     filepath.Join(dataDir, "query-history.json"),
+		crashLogsPath:   filepath.Join(dataDir, "crash-logs.json"),
+		aiSnapshotsPath: filepath.Join(dataDir, "ai-snapshots.json"),
 	}, nil
-}
-
-func (s *Store) Path() string {
-	return s.filePath
 }
 
 func (s *Store) DataDir() string {
 	return s.dataDir
+}
+
+func (s *Store) ConnectionsPath() string {
+	return s.connectionsPath
 }
 
 // SetDataDir changes the storage directory, migrating existing data.
@@ -119,27 +167,171 @@ func (s *Store) SetDataDir(newDir string) error {
 		return fmt.Errorf("cannot create directory: %w", err)
 	}
 
-	newFilePath := filepath.Join(absDir, "app-state.json")
+	files := map[string]string{
+		"app-state.json":  filepath.Join(absDir, "app-state.json"),
+		"config.json":     filepath.Join(absDir, "config.json"),
+		"query-history.json": filepath.Join(absDir, "query-history.json"),
+		"crash-logs.json": filepath.Join(absDir, "crash-logs.json"),
+		"ai-snapshots.json": filepath.Join(absDir, "ai-snapshots.json"),
+	}
 
-	// Migrate existing data if the old file exists and new one doesn't.
-	if _, err := os.Stat(s.filePath); err == nil {
-		if _, err := os.Stat(newFilePath); err != nil {
-			data, err := os.ReadFile(s.filePath)
-			if err != nil {
-				return fmt.Errorf("cannot read existing data: %w", err)
-			}
-			if err := os.WriteFile(newFilePath, data, 0o600); err != nil {
-				return fmt.Errorf("cannot write to new location: %w", err)
+	for oldName, oldPath := range map[string]string{
+		"app-state.json":  s.connectionsPath,
+		"config.json":     s.configPath,
+		"query-history.json": s.historyPath,
+		"crash-logs.json": s.crashLogsPath,
+		"ai-snapshots.json": s.aiSnapshotsPath,
+	} {
+		newPath := files[oldName]
+		if _, err := os.Stat(oldPath); err == nil {
+			if _, err := os.Stat(newPath); err != nil {
+				data, err := os.ReadFile(oldPath)
+				if err != nil {
+					return fmt.Errorf("cannot read %s: %w", oldName, err)
+				}
+				if err := os.WriteFile(newPath, data, 0o600); err != nil {
+					return fmt.Errorf("cannot write %s to new location: %w", oldName, err)
+				}
 			}
 		}
 	}
 
-	s.filePath = newFilePath
+	s.connectionsPath = files["app-state.json"]
+	s.configPath = files["config.json"]
+	s.historyPath = files["query-history.json"]
+	s.crashLogsPath = files["crash-logs.json"]
+	s.aiSnapshotsPath = files["ai-snapshots.json"]
 	s.dataDir = absDir
 	return nil
 }
 
-// GetStorageInfo returns information about app-owned storage files only.
+// --- Connections ---
+
+func (s *Store) LoadConnections() (AppState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.loadConnectionsUnlocked()
+}
+
+func (s *Store) loadConnectionsUnlocked() (AppState, error) {
+	return loadJSON[AppState](s.connectionsPath)
+}
+
+func (s *Store) SaveConnections(state AppState) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return saveJSON(s.connectionsPath, state)
+}
+
+// --- Config ---
+
+func (s *Store) LoadConfig() (AppConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return loadJSON[AppConfig](s.configPath)
+}
+
+func (s *Store) SaveConfig(config AppConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return saveJSON(s.configPath, config)
+}
+
+// --- Query History ---
+
+func (s *Store) LoadHistory() (QueryHistoryState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return loadJSON[QueryHistoryState](s.historyPath)
+}
+
+func (s *Store) SaveHistory(state QueryHistoryState) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state.History = s.filterOldHistory(state.History)
+	return saveJSON(s.historyPath, state)
+}
+
+func (s *Store) AppendHistory(record QueryHistoryRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, _ := loadJSON[QueryHistoryState](s.historyPath)
+	state.History = append([]QueryHistoryRecord{record}, state.History...)
+	if len(state.History) > 200 {
+		state.History = state.History[:200]
+	}
+	state.History = s.filterOldHistory(state.History)
+	return saveJSON(s.historyPath, state)
+}
+
+func (s *Store) ClearHistory() error {
+	return s.SaveHistory(QueryHistoryState{})
+}
+
+func (s *Store) filterOldHistory(items []QueryHistoryRecord) []QueryHistoryRecord {
+	cutoff := time.Now().UTC().Add(-historyRetentionDays * 24 * time.Hour)
+	result := make([]QueryHistoryRecord, 0, len(items))
+	for _, item := range items {
+		t, err := time.Parse(time.RFC3339, item.CreatedAt)
+		if err != nil || t.After(cutoff) {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+// --- Crash Logs ---
+
+func (s *Store) LoadCrashLogs() (CrashLogsState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return loadJSON[CrashLogsState](s.crashLogsPath)
+}
+
+func (s *Store) AppendCrashLog(entry CrashLogEntry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, _ := loadJSON[CrashLogsState](s.crashLogsPath)
+	state.Logs = append(state.Logs, entry)
+	// Keep last 100 crash logs
+	if len(state.Logs) > 100 {
+		state.Logs = state.Logs[len(state.Logs)-100:]
+	}
+	return saveJSON(s.crashLogsPath, state)
+}
+
+func (s *Store) ClearCrashLogs() error {
+	return saveJSON(s.crashLogsPath, CrashLogsState{})
+}
+
+// --- AI Snapshots ---
+
+func (s *Store) LoadAISnapshots() (AISnapshotsState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return loadJSON[AISnapshotsState](s.aiSnapshotsPath)
+}
+
+func (s *Store) SaveAISnapshot(snapshot AISnapshot) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, _ := loadJSON[AISnapshotsState](s.aiSnapshotsPath)
+	state.Snapshots = append([]AISnapshot{snapshot}, state.Snapshots...)
+	if len(state.Snapshots) > 50 {
+		state.Snapshots = state.Snapshots[:50]
+	}
+	return saveJSON(s.aiSnapshotsPath, state)
+}
+
+func (s *Store) ClearAISnapshots() error {
+	return saveJSON(s.aiSnapshotsPath, AISnapshotsState{})
+}
+
+// --- Storage Info ---
+
 func (s *Store) GetStorageInfo() StorageInfo {
 	s.mu.Lock()
 	dir := s.dataDir
@@ -151,7 +343,6 @@ func (s *Store) GetStorageInfo() StorageInfo {
 		Writable: false,
 	}
 
-	// Check writability
 	testFile := filepath.Join(dir, ".sql-compass-write-test")
 	if err := os.WriteFile(testFile, []byte("test"), 0o600); err == nil {
 		info.Writable = true
@@ -197,68 +388,55 @@ func (s *Store) GetStorageInfo() StorageInfo {
 	return info
 }
 
-// ClearHistory removes all query history from the store.
-func (s *Store) ClearHistory() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	state, err := s.loadUnlocked()
-	if err != nil {
-		return err
+// ClearDataByCategory clears a specific category of data.
+func (s *Store) ClearDataByCategory(category string) error {
+	switch strings.ToLower(strings.TrimSpace(category)) {
+	case "history":
+		return s.ClearHistory()
+	case "crash":
+		return s.ClearCrashLogs()
+	case "ai-snapshots":
+		return s.ClearAISnapshots()
+	case "config":
+		return s.SaveConfig(AppConfig{})
+	case "connections":
+		return s.SaveConnections(AppState{})
+	default:
+		return fmt.Errorf("unknown category: %s", category)
 	}
-
-	state.History = nil
-	return s.saveUnlocked(state)
 }
 
-func (s *Store) Load() (AppState, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// --- Helpers ---
 
-	return s.loadUnlocked()
-}
-
-func (s *Store) Save(state AppState) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	return s.saveUnlocked(state)
-}
-
-func (s *Store) loadUnlocked() (AppState, error) {
-	data, err := os.ReadFile(s.filePath)
+func loadJSON[T any](path string) (T, error) {
+	var zero T
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return AppState{}, nil
+			return zero, nil
 		}
-
-		return AppState{}, err
+		return zero, err
 	}
-
 	if len(bytes.TrimSpace(data)) == 0 {
-		return AppState{}, nil
+		return zero, nil
 	}
-
-	var state AppState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return AppState{}, err
+	var value T
+	if err := json.Unmarshal(data, &value); err != nil {
+		return zero, err
 	}
-
-	return state, nil
+	return value, nil
 }
 
-func (s *Store) saveUnlocked(state AppState) error {
-	payload, err := json.MarshalIndent(state, "", "  ")
+func saveJSON(path string, value any) error {
+	payload, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
-
-	tempPath := s.filePath + ".tmp"
+	tempPath := path + ".tmp"
 	if err := os.WriteFile(tempPath, payload, 0o600); err != nil {
 		return err
 	}
-
-	return os.Rename(tempPath, s.filePath)
+	return os.Rename(tempPath, path)
 }
 
 func dirSize(path string) int64 {
@@ -288,11 +466,9 @@ func resolveDataDir() (string, error) {
 	return filepath.Join(configDir, "sql-compass"), nil
 }
 
-// isAppOwnedFile checks whether a file name belongs to the application,
-// preventing exposure of user's private data in the storage directory.
 func isAppOwnedFile(name string) bool {
 	switch name {
-	case "app-state.json", ".sql-compass-write-test":
+	case "app-state.json", "config.json", "query-history.json", "crash-logs.json", "ai-snapshots.json", ".sql-compass-write-test":
 		return true
 	default:
 		return false

@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"sqltool/internal/appmeta"
@@ -50,6 +52,20 @@ func (a *App) requireWorkspace() (*workspace.Service, error) {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+
+	// Recover from any startup panic and log it
+	defer func() {
+		if r := recover(); r != nil {
+			_ = a.logCrash(fmt.Sprintf("startup panic: %v", r), string(debug.Stack()))
+		}
+	}()
+}
+
+func (a *App) logCrash(message string, stack string) error {
+	if a.workspace == nil {
+		return errors.New("workspace not available")
+	}
+	return a.workspace.LogCrash(message, stack)
 }
 
 func (a *App) GetBootstrapData() appmeta.ProductOverview {
@@ -275,6 +291,18 @@ func (a *App) ClearStorageData(category string) workspace.SetStoragePathResult {
 		return workspace.SetStoragePathResult{Success: false, Message: err.Error()}
 	}
 	return service.ClearStorageData(category)
+}
+
+func (a *App) GetCrashLogs() ([]store.CrashLogEntry, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return nil, err
+	}
+	state, err := service.GetCrashLogs()
+	if err != nil {
+		return nil, err
+	}
+	return state.Logs, nil
 }
 
 func (a *App) SelectStorageDirectory() string {

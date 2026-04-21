@@ -89,13 +89,18 @@ func NewService(stateStore *store.Store) *Service {
 }
 
 func (s *Service) GetWorkspaceState() (WorkspaceState, error) {
-	state, err := s.store.Load()
+	connState, err := s.store.LoadConnections()
 	if err != nil {
 		return WorkspaceState{}, err
 	}
 
-	connections := make([]ConnectionProfile, 0, len(state.Connections))
-	for _, record := range state.Connections {
+	config, err := s.store.LoadConfig()
+	if err != nil {
+		return WorkspaceState{}, err
+	}
+
+	connections := make([]ConnectionProfile, 0, len(connState.Connections))
+	for _, record := range connState.Connections {
 		connections = append(connections, profileFromRecord(record))
 	}
 
@@ -105,8 +110,8 @@ func (s *Service) GetWorkspaceState() (WorkspaceState, error) {
 
 	return WorkspaceState{
 		Connections: connections,
-		AI:          buildAISettingsView(state.AI),
-		StoragePath: s.store.Path(),
+		AI:          buildAISettingsView(config.AI),
+		StoragePath: s.store.ConnectionsPath(),
 	}, nil
 }
 
@@ -116,7 +121,7 @@ func (s *Service) SaveConnection(input ConnectionInput) (ConnectionProfile, erro
 		return ConnectionProfile{}, err
 	}
 
-	state, err := s.store.Load()
+	state, err := s.store.LoadConnections()
 	if err != nil {
 		return ConnectionProfile{}, err
 	}
@@ -137,7 +142,7 @@ func (s *Service) SaveConnection(input ConnectionInput) (ConnectionProfile, erro
 		}
 
 		state.Connections[index] = record
-		if err := s.store.Save(state); err != nil {
+		if err := s.store.SaveConnections(state); err != nil {
 			return ConnectionProfile{}, err
 		}
 
@@ -149,7 +154,7 @@ func (s *Service) SaveConnection(input ConnectionInput) (ConnectionProfile, erro
 	record.UpdatedAt = now
 	state.Connections = append(state.Connections, record)
 
-	if err := s.store.Save(state); err != nil {
+	if err := s.store.SaveConnections(state); err != nil {
 		return ConnectionProfile{}, err
 	}
 
@@ -162,7 +167,7 @@ func (s *Service) DeleteConnection(id string) error {
 		return errors.New("connection id is required")
 	}
 
-	state, err := s.store.Load()
+	state, err := s.store.LoadConnections()
 	if err != nil {
 		return err
 	}
@@ -183,7 +188,7 @@ func (s *Service) DeleteConnection(id string) error {
 	}
 
 	state.Connections = filtered
-	return s.store.Save(state)
+	return s.store.SaveConnections(state)
 }
 
 func (s *Service) TestConnection(input ConnectionInput) (ConnectionTestResult, error) {
@@ -224,7 +229,7 @@ func (s *Service) TestConnection(input ConnectionInput) (ConnectionTestResult, e
 }
 
 func (s *Service) SaveAISettings(input AISettingsInput) (AISettingsView, error) {
-	state, err := s.store.Load()
+	configState, err := s.store.LoadConfig()
 	if err != nil {
 		return AISettingsView{}, err
 	}
@@ -240,31 +245,31 @@ func (s *Service) SaveAISettings(input AISettingsInput) (AISettingsView, error) 
 		modelName = defaults.ModelName
 	}
 
-	state.AI.BaseURL = baseURL
-	state.AI.ModelName = modelName
+	configState.AI.BaseURL = baseURL
+	configState.AI.ModelName = modelName
 	if strings.TrimSpace(input.APIKey) != "" {
-		state.AI.APIKey = strings.TrimSpace(input.APIKey)
+		configState.AI.APIKey = strings.TrimSpace(input.APIKey)
 	}
 
-	if err := s.store.Save(state); err != nil {
+	if err := s.store.SaveConfig(configState); err != nil {
 		return AISettingsView{}, err
 	}
 
-	return buildAISettingsView(state.AI), nil
+	return buildAISettingsView(configState.AI), nil
 }
 
 func (s *Service) ClearAIAPIKey() (AISettingsView, error) {
-	state, err := s.store.Load()
+	configState, err := s.store.LoadConfig()
 	if err != nil {
 		return AISettingsView{}, err
 	}
 
-	state.AI.APIKey = ""
-	if err := s.store.Save(state); err != nil {
+	configState.AI.APIKey = ""
+	if err := s.store.SaveConfig(configState); err != nil {
 		return AISettingsView{}, err
 	}
 
-	return buildAISettingsView(state.AI), nil
+	return buildAISettingsView(configState.AI), nil
 }
 
 func normalizeConnectionInput(input ConnectionInput) ConnectionInput {
@@ -573,24 +578,45 @@ func (s *Service) GrantStoragePermission() SetStoragePathResult {
 	}
 }
 
+func (s *Service) GetCrashLogs() (store.CrashLogsState, error) {
+	return s.store.LoadCrashLogs()
+}
+
+func (s *Service) LogCrash(message string, stack string) error {
+	entry := store.CrashLogEntry{
+		ID:        newID(),
+		Message:   message,
+		Stack:     stack,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	return s.store.AppendCrashLog(entry)
+}
+
 func (s *Service) ClearStorageData(category string) SetStoragePathResult {
-	switch strings.ToLower(strings.TrimSpace(category)) {
-	case "history":
-		if err := s.store.ClearHistory(); err != nil {
-			return SetStoragePathResult{
-				Success: false,
-				Message: err.Error(),
-			}
-		}
-		return SetStoragePathResult{
-			Success: true,
-			Message: "历史记录已清除",
-		}
-	default:
+	if err := s.store.ClearDataByCategory(category); err != nil {
 		return SetStoragePathResult{
 			Success: false,
-			Message: "未知的清理类别",
+			Message: err.Error(),
 		}
+	}
+
+	label := "数据"
+	switch strings.ToLower(strings.TrimSpace(category)) {
+	case "history":
+		label = "SQL查询历史"
+	case "crash":
+		label = "崩溃日志"
+	case "ai-snapshots":
+		label = "AI对话快照"
+	case "config":
+		label = "配置文件"
+	case "connections":
+		label = "连接配置"
+	}
+
+	return SetStoragePathResult{
+		Success: true,
+		Message: fmt.Sprintf("%s已清除", label),
 	}
 }
 

@@ -95,7 +95,7 @@ func (s *Service) GenerateFieldComment(input AIFieldCommentRequest) (AIFieldComm
 		return AIFieldCommentResult{}, errors.New("字段名不能为空")
 	}
 
-	state, err := s.store.Load()
+	state, err := s.store.LoadConfig()
 	if err != nil {
 		return AIFieldCommentResult{}, err
 	}
@@ -117,13 +117,58 @@ func (s *Service) GenerateFieldComment(input AIFieldCommentRequest) (AIFieldComm
 	}, nil
 }
 
+func formatTableDetail(detail TableDetail) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("表名: %s\n", detail.Table))
+	if strings.TrimSpace(detail.DDL) != "" {
+		b.WriteString(fmt.Sprintf("DDL:\n%s\n", detail.DDL))
+	}
+	if len(detail.Fields) > 0 {
+		b.WriteString("字段:\n")
+		for _, f := range detail.Fields {
+			flags := []string{}
+			if f.Primary {
+				flags = append(flags, "主键")
+			}
+			if f.AutoIncrement {
+				flags = append(flags, "自增")
+			}
+			if !f.Nullable {
+				flags = append(flags, "非空")
+			}
+			if f.DefaultValue != "" {
+				flags = append(flags, fmt.Sprintf("默认值:%s", f.DefaultValue))
+			}
+			line := fmt.Sprintf("  - %s (%s)", f.Name, f.Type)
+			if len(flags) > 0 {
+				line += " " + strings.Join(flags, ",")
+			}
+			if strings.TrimSpace(f.Comment) != "" {
+				line += fmt.Sprintf(" 注释:%s", f.Comment)
+			}
+			b.WriteString(line + "\n")
+		}
+	}
+	if len(detail.Indexes) > 0 {
+		b.WriteString("索引:\n")
+		for _, idx := range detail.Indexes {
+			unique := ""
+			if idx.Unique {
+				unique = " 唯一"
+			}
+			b.WriteString(fmt.Sprintf("  - %s (%s)%s\n", idx.Name, strings.Join(idx.Columns, ","), unique))
+		}
+	}
+	return b.String()
+}
+
 func (s *Service) OptimizeSQL(input SQLOptimizeRequest) (SQLOptimizeResult, error) {
 	sqlText := strings.TrimSpace(input.SQL)
 	if sqlText == "" {
 		return SQLOptimizeResult{}, errors.New("SQL 不能为空")
 	}
 
-	state, err := s.store.Load()
+	state, err := s.store.LoadConfig()
 	if err != nil {
 		return SQLOptimizeResult{}, err
 	}
@@ -134,7 +179,27 @@ func (s *Service) OptimizeSQL(input SQLOptimizeRequest) (SQLOptimizeResult, erro
 	}
 
 	extraPrompt := strings.TrimSpace(input.Prompt)
-	prompt := "你是数据库 SQL 优化助手。请检查并优化下面这段 SQL，并输出 JSON。要求：1. 保持原始语义，不允许扩大影响范围；2. 纠正明显语法问题；3. 保持字段、表名和条件不变；4. 若语句已合理，仅做轻量优化和规范化；5. 不要补充任何额外语句；6. reasoning 用中文简洁说明为什么这样优化。输出格式：{\"sql\":\"...\",\"reasoning\":\"...\"}。不要 markdown。\n\nSQL:\n" + sqlText
+	var schemaContext strings.Builder
+
+	// 优先使用前端传入的当前选中表名，而不是从 SQL 中解析
+	if strings.TrimSpace(input.Table) != "" && strings.TrimSpace(input.ConnectionID) != "" && strings.TrimSpace(input.Database) != "" {
+		detail, err := s.GetTableDetail(TableDetailRequest{
+			ConnectionID: input.ConnectionID,
+			Database:     input.Database,
+			Table:        input.Table,
+		})
+		if err == nil {
+			schemaContext.WriteString(formatTableDetail(detail) + "\n")
+		}
+	}
+
+	prompt := "你是数据库 SQL 优化助手。请检查并优化下面这段 SQL，并输出 JSON。要求：1. 保持原始语义，不允许扩大影响范围；2. 纠正明显语法问题；3. 保持字段、表名和条件不变；4. 若语句已合理，仅做轻量优化和规范化；5. 不要补充任何额外语句；6. reasoning 用中文简洁说明为什么这样优化。输出格式：{\"sql\":\"...\",\"reasoning\":\"...\"}。不要 markdown。\n"
+	if schemaContext.Len() > 0 {
+		prompt += "\n以下是当前选中数据表的结构，请结合这些信息进行优化：\n\n" + schemaContext.String()
+	} else {
+		prompt += "\n（未获取到当前选中数据表的结构信息，请基于 SQL 本身进行优化）\n"
+	}
+	prompt += "\nSQL:\n" + sqlText
 	if extraPrompt != "" {
 		prompt += "\n\n额外要求：\n" + extraPrompt
 	}
@@ -191,7 +256,7 @@ func (s *Service) ChatWithDatabase(input ChatDatabaseRequest) (ChatDatabaseRespo
 		return ChatDatabaseResponse{}, err
 	}
 
-	state, err := s.store.Load()
+	state, err := s.store.LoadConfig()
 	if err != nil {
 		return ChatDatabaseResponse{}, err
 	}
@@ -257,7 +322,7 @@ func (s *Service) RepairChatSQL(input ChatRepairRequest) (ChatDatabaseResponse, 
 		return ChatDatabaseResponse{}, err
 	}
 
-	state, err := s.store.Load()
+	state, err := s.store.LoadConfig()
 	if err != nil {
 		return ChatDatabaseResponse{}, err
 	}
@@ -326,7 +391,7 @@ func (s *Service) SummarizeChatResult(input ChatResultSummaryRequest) (ChatResul
 		return ChatResultSummary{}, errors.New("总结查询结果时缺少上下文")
 	}
 
-	state, err := s.store.Load()
+	state, err := s.store.LoadConfig()
 	if err != nil {
 		return ChatResultSummary{}, err
 	}

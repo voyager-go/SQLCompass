@@ -99,13 +99,13 @@ func (s *Service) PreviewTableData(input TablePreviewRequest) (QueryResult, erro
 }
 
 func (s *Service) GetQueryHistory(connectionID string) ([]HistoryItem, error) {
-	state, err := s.store.Load()
+	histState, err := s.store.LoadHistory()
 	if err != nil {
 		return nil, err
 	}
 
-	items := make([]HistoryItem, 0, len(state.History))
-	for _, record := range state.History {
+	items := make([]HistoryItem, 0, len(histState.History))
+	for _, record := range histState.History {
 		if strings.TrimSpace(connectionID) != "" && record.ConnectionID != strings.TrimSpace(connectionID) {
 			continue
 		}
@@ -899,11 +899,6 @@ func choosePort(port string, engine string) string {
 }
 
 func (s *Service) appendHistory(record store.ConnectionRecord, databaseName string, statement string, executedSQL string, analysis SQLAnalysis, success bool, rowCount int64, duration time.Duration) error {
-	state, err := s.store.Load()
-	if err != nil {
-		return err
-	}
-
 	history := store.QueryHistoryRecord{
 		ID:            newID(),
 		ConnectionID:  record.ID,
@@ -919,12 +914,7 @@ func (s *Service) appendHistory(record store.ConnectionRecord, databaseName stri
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
 	}
 
-	state.History = append([]store.QueryHistoryRecord{history}, state.History...)
-	if len(state.History) > 200 {
-		state.History = state.History[:200]
-	}
-
-	return s.store.Save(state)
+	return s.store.AppendHistory(history)
 }
 
 func (s *Service) getConnectionRecord(id string) (store.ConnectionRecord, error) {
@@ -933,7 +923,7 @@ func (s *Service) getConnectionRecord(id string) (store.ConnectionRecord, error)
 		return store.ConnectionRecord{}, errors.New("connection id is required")
 	}
 
-	state, err := s.store.Load()
+	state, err := s.store.LoadConnections()
 	if err != nil {
 		return store.ConnectionRecord{}, err
 	}
