@@ -26,7 +26,6 @@ import {
     TestConnection,
 } from "../wailsjs/go/main/App";
 import "./App.css";
-import splashLogo from "./assets/images/start.png";
 import { NoticeBanner } from "./components/NoticeBanner";
 import { FloatingToast } from "./components/FloatingToast";
 import { AIPage } from "./pages/AIPage";
@@ -39,8 +38,10 @@ import { HistoryPage } from "./pages/HistoryPage";
 import { SchemaPage } from "./pages/SchemaPage";
 import { QueryPage } from "./pages/QueryPage";
 import { ChatPage } from "./pages/ChatPage";
-import { SidebarTree } from "./pages/SidebarTree";
 import { OptimizeReviewModal } from "./pages/OptimizeReviewModal";
+import { SplashScreen } from "./components/SplashScreen";
+import { Sidebar } from "./components/Sidebar";
+import { WORKBENCH_PAGES, type NoticeTone, type WorkbenchPage, type WorkMode, type ThemeMode } from "./lib/constants";
 import { CellEditorModal } from "./pages/CellEditorModal";
 import { DeleteDialogModal } from "./pages/DeleteDialogModal";
 import type {
@@ -65,11 +66,6 @@ import type {
     TableField,
 } from "./types/runtime";
 
-type NoticeTone = "success" | "error" | "info";
-type WorkbenchPage = "connections" | "query" | "history" | "schema" | "transfer" | "ai" | "theme" | "settings";
-type WorkMode = "normal" | "chat";
-type ThemeMode = "light" | "dark" | "custom";
-
 type CustomTheme = {
     navFontSize: number;
     resultFontSize: number;
@@ -90,12 +86,6 @@ type Toast = {
     tone: NoticeTone;
     title: string;
     message: string;
-};
-
-type PageEntry = {
-    id: WorkbenchPage;
-    label: string;
-    summary: string;
 };
 
 type SchemaDraftField = TableField & {
@@ -190,14 +180,6 @@ const SLASH_COMMANDS = [
     { key: "table", label: "/table", desc: "选择数据表" },
 ] as const;
 const SLASH_PAGE_SIZE = 20;
-
-const pages: PageEntry[] = [
-    { id: "connections", label: "连接管理", summary: "切换与维护连接" },
-    { id: "history", label: "历史查询", summary: "按连接回看 SQL" },
-    { id: "ai", label: "AI 设置", summary: "模型与注释助手" },
-    { id: "theme", label: "自定义主题", summary: "个性化外观设置" },
-    { id: "settings", label: "系统设置", summary: "存储路径与数据管理" },
-];
 
 const emptyWorkspaceState: WorkspaceState = {
     connections: [],
@@ -2884,34 +2866,6 @@ function App() {
     }
 
 
-
-    function renderAIPage() {
-        return (
-            <AIPage
-                aiNotice={aiNotice}
-                aiForm={aiForm}
-                setAIForm={setAIForm}
-                isSavingAI={isSavingAI}
-                onSave={handleSaveAISettings}
-                onClear={handleClearAPIKey}
-                aiState={workspaceState.ai}
-                selectedConnectionName={selectedConnection?.name || ""}
-            />
-        );
-    }
-
-    function renderThemePage() {
-        return (
-            <ThemePage
-                themeMode={themeMode}
-                setThemeMode={setThemeMode}
-                customTheme={customTheme}
-                setCustomTheme={setCustomTheme}
-                pushToast={pushToast}
-            />
-        );
-    }
-
     function renderCurrentPage() {
         if (workMode === "chat") {
             return (
@@ -3079,9 +3033,28 @@ function App() {
                     />
                 );
             case "ai":
-                return renderAIPage();
+                return (
+                    <AIPage
+                        aiNotice={aiNotice}
+                        aiForm={aiForm}
+                        setAIForm={setAIForm}
+                        isSavingAI={isSavingAI}
+                        onSave={handleSaveAISettings}
+                        onClear={handleClearAPIKey}
+                        aiState={workspaceState.ai}
+                        selectedConnectionName={selectedConnection?.name || ""}
+                    />
+                );
             case "theme":
-                return renderThemePage();
+                return (
+                    <ThemePage
+                        themeMode={themeMode}
+                        setThemeMode={setThemeMode}
+                        customTheme={customTheme}
+                        setCustomTheme={setCustomTheme}
+                        pushToast={pushToast}
+                    />
+                );
             case "settings":
                 return (
                     <SettingsPage
@@ -3105,267 +3078,46 @@ function App() {
 
     return (
         <>
-            {/* 启动页 */}
-            {showSplash && (
-                <div className="splash-screen">
-                    <div className="splash-bg-decoration">
-                        <div className="splash-orb splash-orb--1" />
-                        <div className="splash-orb splash-orb--2" />
-                        <div className="splash-orb splash-orb--3" />
-                    </div>
-                    <div className="splash-content">
-                        <div className="splash-logo-wrap">
-                            <div className="splash-pulse-ring" />
-                            <div className="splash-pulse-ring splash-pulse-ring--delay" />
-                            <img src={splashLogo} alt="SQLCompass" className="splash-logo" />
-                        </div>
-                        <div className="splash-brand">SQLCompass</div>
-                        <div className="splash-tagline">更懂开发的数据库客户端</div>
-                        <div className="splash-loader">
-                            <div className="splash-loader-track">
-                                <div className="splash-loader-thumb" />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {showSplash && <SplashScreen />}
             <div className={`studio-shell${sidebarCollapsed ? " studio-shell--collapsed" : ""}`}>
                 <FloatingToast toast={toast} />
                 <input ref={sqlFileInputRef} type="file" accept=".sql,.txt" hidden onChange={handleImportSQLFile} />
 
-            <aside className={`sidebar${sidebarCollapsed ? " sidebar--collapsed" : ""}`}>
-                <div className="sidebar-brand">
-                    {!sidebarCollapsed ? (
-                        <div className="sidebar-brand__title">
-                            <img src={splashLogo} alt="SQLCompass" className="sidebar-brand__logo" />
-                            <div className="sidebar-brand__text">
-                                <strong>SQLCompass</strong>
-                                <span>更懂开发的数据库客户端</span>
-                            </div>
-                            <button type="button" className="sidebar-collapse" onClick={() => setSidebarCollapsed((current) => !current)} title="收起侧边栏">
-                                ‹
-                            </button>
-                        </div>
-                    ) : (
-                        <button type="button" className="sidebar-collapse sidebar-collapse--collapsed" onClick={() => setSidebarCollapsed((current) => !current)} title="展开侧边栏">
-                            <img src={splashLogo} alt="SQLCompass" className="sidebar-brand__logo--collapsed" />
-                        </button>
-                    )}
-                </div>
-
-                {!sidebarCollapsed ? (
-                    <>
-                        <div className="sidebar-tabs">
-                            <button
-                                type="button"
-                                className={`sidebar-tab${sidebarView === "database" ? " sidebar-tab--active" : ""}`}
-                                onClick={() => setSidebarView("database")}
-                                title="数据库"
-                            >
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-                                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
-                                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
-                                </svg>
-                                <span>数据库</span>
-                            </button>
-                            <button
-                                type="button"
-                                className={`sidebar-tab${sidebarView === "workbench" ? " sidebar-tab--active" : ""}`}
-                                onClick={() => setSidebarView("workbench")}
-                                title="工作台"
-                            >
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                                    <line x1="8" y1="21" x2="16" y2="21"></line>
-                                    <line x1="12" y1="17" x2="12" y2="21"></line>
-                                </svg>
-                                <span>工作台</span>
-                            </button>
-                        </div>
-
-                        {sidebarView === "database" && selectedConnection && (
-                            <div className="sidebar-chat-toggle">
-                                <label className="chat-toggle-label">
-                                    <input
-                                        type="checkbox"
-                                        checked={workMode === "chat"}
-                                        onChange={(e) => setWorkMode(e.target.checked ? "chat" : "normal")}
-                                    />
-                                    <span className="chat-toggle-slider"></span>
-                                    <span className="chat-toggle-text">启用Chat模式</span>
-                                </label>
-                            </div>
-                        )}
-
-                        {sidebarView === "database" ? (
-                            <div className="sidebar-section sidebar-section--fill">
-                                <div className="sidebar-title sidebar-title--with-actions">
-                                    <span>数据库 / 数据表</span>
-                                    <div className="sidebar-title__actions">
-                                        <button
-                                            type="button"
-                                            className={`sidebar-icon-btn${showDatabaseFilter ? " sidebar-icon-btn--active" : ""}`}
-                                            onClick={() => setShowDatabaseFilter((prev) => !prev)}
-                                            title="筛选数据库"
-                                        >
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                                            </svg>
-                                        </button>
-                                        {selectedDatabase && (
-                                            <button
-                                                type="button"
-                                                className={`sidebar-icon-btn${showTableFilter ? " sidebar-icon-btn--active" : ""}`}
-                                                onClick={() => setShowTableFilter((prev) => !prev)}
-                                                title="筛选数据表"
-                                            >
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                    <path d="M3 3h18v18H3zM9 3v18M15 3v18M3 9h18M3 15h18"></path>
-                                                </svg>
-                                            </button>
-                                        )}
-                                        <button
-                                            type="button"
-                                            className="sidebar-icon-btn"
-                                            onClick={saveFilterSettings}
-                                            title="保存筛选设置"
-                                        >
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-                                                <polyline points="17 21 17 13 7 13 7 21"></polyline>
-                                                <polyline points="7 3 7 8 15 8"></polyline>
-                                            </svg>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Database Filter Panel */}
-                                {showDatabaseFilter && explorerTree && (
-                                    <div className="filter-panel">
-                                        <div className="filter-panel__header">
-                                            <span>筛选数据库</span>
-                                            <button
-                                                type="button"
-                                                className="filter-panel__clear"
-                                                onClick={() => setDatabaseFilter([])}
-                                            >
-                                                清空
-                                            </button>
-                                        </div>
-                                        <div className="filter-panel__list">
-                                            {explorerTree.databases.map((db) => (
-                                                <label key={db.name} className="filter-panel__item">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={databaseFilter.includes(db.name)}
-                                                        onChange={(e) => {
-                                                            if (e.target.checked) {
-                                                                setDatabaseFilter((prev) => [...prev, db.name]);
-                                                            } else {
-                                                                setDatabaseFilter((prev) => prev.filter((n) => n !== db.name));
-                                                            }
-                                                        }}
-                                                    />
-                                                    <span>{db.name}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Table Filter Panel */}
-                                {showTableFilter && selectedDatabase && explorerTree && (
-                                    <div className="filter-panel">
-                                        <div className="filter-panel__header">
-                                            <span>筛选数据表</span>
-                                            <button
-                                                type="button"
-                                                className="filter-panel__clear"
-                                                onClick={() => setTableFilter([])}
-                                            >
-                                                清空
-                                            </button>
-                                        </div>
-                                        <div className="filter-panel__list">
-                                            {explorerTree.databases
-                                                .find((db) => db.name === selectedDatabase)
-                                                ?.tables.map((table) => (
-                                                    <label key={table.name} className="filter-panel__item">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={tableFilter.includes(table.name)}
-                                                            onChange={(e) => {
-                                                                if (e.target.checked) {
-                                                                    setTableFilter((prev) => [...prev, table.name]);
-                                                                } else {
-                                                                    setTableFilter((prev) => prev.filter((n) => n !== table.name));
-                                                                }
-                                                            }}
-                                                        />
-                                                        <span>{table.name}</span>
-                                                    </label>
-                                                ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="sidebar-search">
-                                    <input
-                                        value={tableSearch}
-                                        onChange={(event) => setTableSearch(event.target.value)}
-                                        disabled={!selectedDatabase}
-                                        placeholder={selectedDatabase ? "搜索当前数据库中的表" : "先选择数据库再搜索表"}
-                                    />
-                                </div>
-                                <div className="navigator-shell">
-                                    <SidebarTree
-                                        explorerTree={explorerTree}
-                                        databaseFilter={databaseFilter}
-                                        selectedDatabase={selectedDatabase}
-                                        expandedDatabases={expandedDatabases}
-                                        setExpandedDatabases={setExpandedDatabases}
-                                        tableSearch={tableSearch}
-                                        tableFilter={tableFilter}
-                                        tablePageByDatabase={tablePageByDatabase}
-                                        setTablePageByDatabase={setTablePageByDatabase}
-                                        workMode={workMode}
-                                        selectedTable={selectedTable}
-                                        handleSelectDatabase={handleSelectDatabase}
-                                        handlePreviewTable={handlePreviewTable}
-                                        tableContextMenu={tableContextMenu}
-                                        setTableContextMenu={setTableContextMenu}
-                                        openTableDesigner={openTableDesigner}
-                                        pushToast={pushToast}
-                                    />
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="sidebar-section sidebar-section--fill">
-                                <div className="page-button-list page-button-list--scrollable page-button-list--workbench">
-                                    {pages.map((page) => (
-                                        <button
-                                            key={page.id}
-                                            type="button"
-                                            className={`page-button${activePage === page.id ? " page-button--active" : ""}`}
-                                            onClick={() => {
-                                                // 从工作台选择页面时，自动退出 Chat 模式
-                                                if (workMode === "chat") {
-                                                    setWorkMode("normal");
-                                                }
-                                                setActivePage(page.id);
-                                            }}
-                                        >
-                                            <strong>{page.label}</strong>
-                                            <span>{page.summary}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </>
-                ) : null}
-            </aside>
+                <Sidebar
+                    sidebarCollapsed={sidebarCollapsed}
+                    setSidebarCollapsed={setSidebarCollapsed}
+                    sidebarView={sidebarView}
+                    setSidebarView={setSidebarView}
+                    selectedConnection={selectedConnection}
+                    workMode={workMode}
+                    setWorkMode={setWorkMode}
+                    showDatabaseFilter={showDatabaseFilter}
+                    setShowDatabaseFilter={setShowDatabaseFilter}
+                    showTableFilter={showTableFilter}
+                    setShowTableFilter={setShowTableFilter}
+                    selectedDatabase={selectedDatabase}
+                    explorerTree={explorerTree}
+                    databaseFilter={databaseFilter}
+                    setDatabaseFilter={setDatabaseFilter}
+                    tableFilter={tableFilter}
+                    setTableFilter={setTableFilter}
+                    tableSearch={tableSearch}
+                    setTableSearch={setTableSearch}
+                    tablePageByDatabase={tablePageByDatabase}
+                    setTablePageByDatabase={setTablePageByDatabase}
+                    expandedDatabases={expandedDatabases}
+                    setExpandedDatabases={setExpandedDatabases}
+                    selectedTable={selectedTable}
+                    handleSelectDatabase={handleSelectDatabase}
+                    handlePreviewTable={handlePreviewTable}
+                    tableContextMenu={tableContextMenu}
+                    setTableContextMenu={setTableContextMenu}
+                    openTableDesigner={openTableDesigner}
+                    pushToast={pushToast}
+                    activePage={activePage}
+                    setActivePage={setActivePage}
+                    saveFilterSettings={saveFilterSettings}
+                />
 
             <main className="workbench">
                 <div className="workbench-body">
