@@ -30,6 +30,7 @@ import {
     TestConnection,
 } from "../wailsjs/go/main/App";
 import "./App.css";
+import splashLogo from "./assets/images/start.png";
 import type {
     AISettingsInput,
     ConnectionInput,
@@ -1038,6 +1039,8 @@ function App() {
     const [newStoragePath, setNewStoragePath] = useState("");
     const [showPermissionModal, setShowPermissionModal] = useState(false);
     const [showClearModal, setShowClearModal] = useState<string | null>(null);
+    // 启动页显示状态
+    const [showSplash, setShowSplash] = useState(true);
 
     const loadStorageInfo = useCallback(() => {
         if (browserPreview) {
@@ -1064,6 +1067,18 @@ function App() {
             loadStorageInfo();
         }
     }, [activePage, loadStorageInfo]);
+
+    // 启动页自动关闭逻辑
+    useEffect(() => {
+        if (!showSplash) {
+            return;
+        }
+        const timer = window.setTimeout(() => {
+            setShowSplash(false);
+        }, 2000);
+        return () => window.clearTimeout(timer);
+    }, [showSplash]);
+
     const [tableDetail, setTableDetail] = useState<TableDetail | null>(null);
     const [tablePageByDatabase, setTablePageByDatabase] = useState<Record<string, number>>({});
     const [expandedDatabases, setExpandedDatabases] = useState<Record<string, boolean>>({});
@@ -5127,15 +5142,41 @@ function App() {
     }
 
     return (
-        <div className={`studio-shell${sidebarCollapsed ? " studio-shell--collapsed" : ""}`}>
-            <FloatingToast toast={toast} />
-            <input ref={sqlFileInputRef} type="file" accept=".sql,.txt" hidden onChange={handleImportSQLFile} />
+        <>
+            {/* 启动页 */}
+            {showSplash && (
+                <div className="splash-screen">
+                    <div className="splash-bg-decoration">
+                        <div className="splash-orb splash-orb--1" />
+                        <div className="splash-orb splash-orb--2" />
+                        <div className="splash-orb splash-orb--3" />
+                    </div>
+                    <div className="splash-content">
+                        <div className="splash-logo-wrap">
+                            <div className="splash-pulse-ring" />
+                            <div className="splash-pulse-ring splash-pulse-ring--delay" />
+                            <img src={splashLogo} alt="SQLCompass" className="splash-logo" />
+                        </div>
+                        <div className="splash-brand">SQLCompass</div>
+                        <div className="splash-tagline">更懂开发的数据库客户端</div>
+                        <div className="splash-loader">
+                            <div className="splash-loader-track">
+                                <div className="splash-loader-thumb" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            <div className={`studio-shell${sidebarCollapsed ? " studio-shell--collapsed" : ""}`}>
+                <FloatingToast toast={toast} />
+                <input ref={sqlFileInputRef} type="file" accept=".sql,.txt" hidden onChange={handleImportSQLFile} />
 
             <aside className={`sidebar${sidebarCollapsed ? " sidebar--collapsed" : ""}`}>
                 <div className="sidebar-brand">
                     {!sidebarCollapsed ? (
                         <div className="sidebar-brand__title">
-                            <div>
+                            <img src={splashLogo} alt="SQLCompass" className="sidebar-brand__logo" />
+                            <div className="sidebar-brand__text">
                                 <strong>SQLCompass</strong>
                                 <span>更懂开发的数据库客户端</span>
                             </div>
@@ -5145,7 +5186,7 @@ function App() {
                         </div>
                     ) : (
                         <button type="button" className="sidebar-collapse sidebar-collapse--collapsed" onClick={() => setSidebarCollapsed((current) => !current)} title="展开侧边栏">
-                            ›
+                            <img src={splashLogo} alt="SQLCompass" className="sidebar-brand__logo--collapsed" />
                         </button>
                     )}
                 </div>
@@ -5476,7 +5517,8 @@ function App() {
                     </button>
                 </div>
             ) : null}
-        </div>
+            </div>
+        </>
     );
 }
 
