@@ -1,0 +1,260 @@
+import { useCallback } from "react";
+import {
+    ClearStorageData,
+    GetStorageInfo,
+    GrantStoragePermission,
+    SelectStorageDirectory,
+    SetStoragePath,
+} from "../../wailsjs/go/main/App";
+import type { SetStoragePathResult, StorageInfoView } from "../types/runtime";
+
+type NoticeTone = "success" | "error" | "info";
+
+interface SettingsPageProps {
+    browserPreview: boolean;
+    newStoragePath: string;
+    setNewStoragePath: (v: string) => void;
+    storageInfo: StorageInfoView | null;
+    setStorageInfo: (v: StorageInfoView | null) => void;
+    showPermissionModal: boolean;
+    setShowPermissionModal: (v: boolean) => void;
+    showClearModal: string | null;
+    setShowClearModal: (v: string | null) => void;
+    pushToast: (tone: NoticeTone, title: string, message: string) => void;
+    refreshWorkspaceState: () => Promise<void>;
+}
+
+export function SettingsPage({
+    browserPreview,
+    newStoragePath,
+    setNewStoragePath,
+    storageInfo,
+    setStorageInfo,
+    showPermissionModal,
+    setShowPermissionModal,
+    showClearModal,
+    setShowClearModal,
+    pushToast,
+    refreshWorkspaceState,
+}: SettingsPageProps) {
+    const handleSetStoragePath = useCallback(async () => {
+        if (browserPreview) return;
+        const result = (await SetStoragePath(newStoragePath)) as SetStoragePathResult;
+        if (result.success) {
+            pushToast("success", "路径已更新", result.message);
+            const info = (await GetStorageInfo()) as StorageInfoView;
+            setStorageInfo(info);
+            await refreshWorkspaceState();
+        } else {
+            pushToast("error", "更新失败", result.message);
+        }
+    }, [browserPreview, newStoragePath, pushToast, refreshWorkspaceState, setStorageInfo]);
+
+    const handleGrantPermission = useCallback(async () => {
+        if (browserPreview) return;
+        const result = (await GrantStoragePermission()) as SetStoragePathResult;
+        if (result.success) {
+            pushToast("success", "权限已授予", result.message);
+            const info = (await GetStorageInfo()) as StorageInfoView;
+            setStorageInfo(info);
+        } else {
+            pushToast("error", "权限设置失败", result.message);
+        }
+        setShowPermissionModal(false);
+    }, [browserPreview, pushToast, setStorageInfo, setShowPermissionModal]);
+
+    const handleClearData = useCallback(async (category: string) => {
+        if (browserPreview) return;
+        const result = (await ClearStorageData(category)) as SetStoragePathResult;
+        if (result.success) {
+            pushToast("success", "清理完成", result.message);
+            const info = (await GetStorageInfo()) as StorageInfoView;
+            setStorageInfo(info);
+        } else {
+            pushToast("error", "清理失败", result.message);
+        }
+        setShowClearModal(null);
+    }, [browserPreview, pushToast, setStorageInfo, setShowClearModal]);
+
+    const handleSelectDirectory = useCallback(async () => {
+        if (browserPreview) return;
+        const dir = await SelectStorageDirectory();
+        if (dir) {
+            setNewStoragePath(dir);
+        }
+    }, [browserPreview, setNewStoragePath]);
+
+    return (
+        <section className="page-panel">
+            <div className="page-headline">
+                <div>
+                    <h2>系统设置</h2>
+                    <p>管理应用存储路径、查看存储占用与清理数据</p>
+                </div>
+            </div>
+
+            {/* Storage Path */}
+            <div className="settings-section panel-card" style={{ marginBottom: 20 }}>
+                <div className="section-title">
+                    <div>
+                        <h3>存储路径</h3>
+                        <p>自定义应用数据的存储位置，修改后已有数据将自动迁移</p>
+                    </div>
+                </div>
+                <div className="settings-path-row">
+                    <input
+                        type="text"
+                        className="settings-path-input"
+                        value={newStoragePath}
+                        onChange={(e) => setNewStoragePath(e.target.value)}
+                        placeholder="输入新的存储路径..."
+                    />
+                    <button type="button" className="ghost-button" onClick={handleSelectDirectory} disabled={browserPreview} title="选择文件夹">
+                        选择路径
+                    </button>
+                    <button type="button" className="primary-button" onClick={handleSetStoragePath} disabled={browserPreview || newStoragePath === (storageInfo?.dataDir ?? "")}>
+                        应用配置
+                    </button>
+                </div>
+                {storageInfo && (
+                    <div className="settings-path-hint">
+                        当前路径：<code>{storageInfo.dataDir}</code>
+                    </div>
+                )}
+            </div>
+
+            {/* Storage Overview */}
+            {storageInfo && (
+                <div className="settings-section panel-card" style={{ marginBottom: 20 }}>
+                    <div className="section-title">
+                        <div>
+                            <h3>存储概况</h3>
+                            <p>应用数据文件占用情况</p>
+                        </div>
+                        <div className="settings-total-badge">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                            </svg>
+                            <span>{storageInfo.totalHR}</span>
+                        </div>
+                    </div>
+
+                    {!storageInfo.writable && (
+                        <div className="notice-banner notice-banner--error" style={{ marginBottom: 14 }}>
+                            <span className="notice-banner__icon">!</span>
+                            <span className="notice-banner__text">
+                                当前存储目录没有写入权限，部分功能可能无法正常使用。
+                                <button type="button" className="text-button" onClick={() => setShowPermissionModal(true)} style={{ marginLeft: 8 }}>
+                                    授权写入
+                                </button>
+                            </span>
+                        </div>
+                    )}
+
+                    {storageInfo.writable && (
+                        <div className="notice-banner notice-banner--success" style={{ marginBottom: 14 }}>
+                            <span className="notice-banner__icon">✓</span>
+                            <span className="notice-banner__text">存储目录读写权限正常</span>
+                        </div>
+                    )}
+
+                    <div className="settings-file-list">
+                        {storageInfo.files.length === 0 ? (
+                            <div className="settings-file-empty">暂无存储文件</div>
+                        ) : (
+                            storageInfo.files.map((file, idx) => (
+                                <div key={idx} className="settings-file-item">
+                                    <div className="settings-file-icon">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            {file.name.endsWith("/") ? (
+                                                <>
+                                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                                </>
+                                            )}
+                                        </svg>
+                                    </div>
+                                    <div className="settings-file-info">
+                                        <span className="settings-file-name">{file.name}</span>
+                                        <span className="settings-file-path">{file.path}</span>
+                                    </div>
+                                    <div className="settings-file-size">{file.sizeHR}</div>
+                                    {file.name === "app-state.json" && (
+                                        <button
+                                            type="button"
+                                            className="mini-ghost-button ghost-button--danger"
+                                            onClick={() => setShowClearModal("history")}
+                                            title="清除历史查询记录以减小文件大小"
+                                        >
+                                            清理
+                                        </button>
+                                    )}
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Permission Modal */}
+            {showPermissionModal && (
+                <div className="modal-backdrop" onClick={() => setShowPermissionModal(false)}>
+                    <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                        <div className="section-title">
+                            <div>
+                                <h3>写入权限请求</h3>
+                                <p>应用需要写入配置文件以保存您的设置</p>
+                            </div>
+                        </div>
+                        <div className="notice-banner notice-banner--info">
+                            <span className="notice-banner__icon">i</span>
+                            <span className="notice-banner__text">
+                                当前存储目录 <code>{storageInfo?.dataDir}</code> 没有写入权限。是否授权该目录读写权限？
+                            </span>
+                        </div>
+                        <div className="toolbar-actions toolbar-actions--end">
+                            <button type="button" className="ghost-button" onClick={() => setShowPermissionModal(false)}>
+                                拒绝
+                            </button>
+                            <button type="button" className="primary-button" onClick={handleGrantPermission}>
+                                授权写入
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Clear Confirm Modal */}
+            {showClearModal && (
+                <div className="modal-backdrop" onClick={() => setShowClearModal(null)}>
+                    <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                        <div className="section-title">
+                            <div>
+                                <h3>确认清理</h3>
+                                <p>此操作不可撤销，请确认</p>
+                            </div>
+                        </div>
+                        <div className="notice-banner notice-banner--error">
+                            <span className="notice-banner__icon">!</span>
+                            <span className="notice-banner__text">
+                                确定要清除{showClearModal === "history" ? "所有历史查询记录" : "所选数据"}吗？此操作不可撤销。
+                            </span>
+                        </div>
+                        <div className="toolbar-actions toolbar-actions--end">
+                            <button type="button" className="ghost-button" onClick={() => setShowClearModal(null)}>
+                                取消
+                            </button>
+                            <button type="button" className="primary-button" style={{ background: "rgba(239, 68, 68, 0.9)", borderColor: "rgba(239, 68, 68, 0.6)" }} onClick={() => handleClearData(showClearModal)}>
+                                确认清理
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </section>
+    );
+}

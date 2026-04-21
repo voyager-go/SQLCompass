@@ -6,7 +6,6 @@ import {
     BeautifySQL,
     ChatWithDatabase,
     ClearAIAPIKey,
-    ClearStorageData,
     DeleteConnection,
     ExecuteQuery,
     ExportTextFile,
@@ -18,15 +17,12 @@ import {
     GetTableDetail,
     GetTableRowCounts,
     GetWorkspaceState,
-    GrantStoragePermission,
     OptimizeSQL,
     PreviewTableData,
     RepairChatSQL,
     RenameTable,
     SaveAISettings,
     SaveConnection,
-    SelectStorageDirectory,
-    SetStoragePath,
     TestConnection,
 } from "../wailsjs/go/main/App";
 import "./App.css";
@@ -36,6 +32,9 @@ import { FloatingToast } from "./components/FloatingToast";
 import { CopyableText } from "./components/CopyableText";
 import { AIPage } from "./pages/AIPage";
 import { ThemePage } from "./pages/ThemePage";
+import { SettingsPage } from "./pages/SettingsPage";
+import { ConnectionsPage } from "./pages/ConnectionsPage";
+import { engineLabels, defaultPortForEngine } from "./lib/engine";
 import type {
     AISettingsInput,
     ConnectionInput,
@@ -51,7 +50,6 @@ import type {
     FieldDictionarySuggestion,
     HistoryItem,
     QueryResult,
-    SetStoragePathResult,
     SQLAnalysis,
     SQLOptimizeResult,
     StorageInfoView,
@@ -207,102 +205,6 @@ const emptyWorkspaceState: WorkspaceState = {
     },
     storagePath: "",
 };
-
-const engineLabels: Record<string, string> = {
-    mysql: "MySQL",
-    mariadb: "MariaDB",
-    postgresql: "PostgreSQL",
-    sqlite: "SQLite",
-    clickhouse: "ClickHouse",
-    mongodb: "MongoDB",
-    redis: "Redis",
-};
-
-// 引擎图标组件 —— 使用简洁可识别的矢量图标
-// 引擎图标组件 —— 使用官方/标准 SVG logo
-function EngineIcon({ engine, size = 18 }: { engine: string; size?: number }) {
-    const s = size;
-    const icons: Record<string, JSX.Element> = {
-        // MySQL 官方海豚 logo - 简化版
-        mysql: (
-            <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="#00758F"/>
-                <path d="M7 8c.5 0 1 .2 1.4.6.4.4.6.9.6 1.4 0 .5-.2 1-.6 1.4-.4.4-.9.6-1.4.6s-1-.2-1.4-.6c-.4-.4-.6-.9-.6-1.4 0-.5.2-1 .6-1.4.4-.4.9-.6 1.4-.6z" fill="#fff"/>
-                <path d="M12 6c.8 0 1.5.3 2.1.9.6.6.9 1.3.9 2.1 0 .8-.3 1.5-.9 2.1-.6.6-1.3.9-2.1.9-.8 0-1.5-.3-2.1-.9-.6-.6-.9-1.3-.9-2.1 0-.8.3-1.5.9-2.1.6-.6 1.3-.9 2.1-.9z" fill="#F29111"/>
-                <path d="M17 9c.5 0 1 .2 1.4.6.4.4.6.9.6 1.4 0 .5-.2 1-.6 1.4-.4.4-.9.6-1.4.6s-1-.2-1.4-.6c-.4-.4-.6-.9-.6-1.4 0-.5.2-1 .6-1.4.4-.4.9-.6 1.4-.6z" fill="#fff"/>
-                <path d="M8 14c.4 0 .8.2 1.1.5.3.3.5.7.5 1.1 0 .4-.2.8-.5 1.1-.3.3-.7.5-1.1.5-.4 0-.8-.2-1.1-.5-.3-.3-.5-.7-.5-1.1 0-.4.2-.8.5-1.1.3-.3.7-.5 1.1-.5z" fill="#fff"/>
-                <path d="M16 14c.4 0 .8.2 1.1.5.3.3.5.7.5 1.1 0 .4-.2.8-.5 1.1-.3.3-.7.5-1.1.5-.4 0-.8-.2-1.1-.5-.3-.3-.5-.7-.5-1.1 0-.4.2-.8.5-1.1.3-.3.7-.5 1.1-.5z" fill="#F29111"/>
-                <path d="M12 16c.3 0 .6.1.8.3.2.2.3.5.3.8 0 .3-.1.6-.3.8-.2.2-.5.3-.8.3-.3 0-.6-.1-.8-.3-.2-.2-.3-.5-.3-.8 0-.3.1-.6.3-.8.2-.2.5-.3.8-.3z" fill="#fff"/>
-            </svg>
-        ),
-        // MariaDB logo
-        mariadb: (
-            <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" fill="#003545"/>
-                <circle cx="12" cy="12" r="8" fill="#1F6FB6"/>
-                <path d="M12 5c-2 3-3 6-3 9s1 5.5 3 8c2-2.5 3-5 3-8s-1-6-3-9z" fill="#C49A6C"/>
-                <path d="M9 8c.5 1.5 1 3.5 1 6s-.5 4.5-1 6" stroke="#003545" strokeWidth="0.8" fill="none"/>
-                <path d="M15 8c-.5 1.5-1 3.5-1 6s.5 4.5 1 6" stroke="#003545" strokeWidth="0.8" fill="none"/>
-            </svg>
-        ),
-        // PostgreSQL 大象 logo
-        postgresql: (
-            <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="#336791"/>
-                <path d="M12 4c-4.4 0-8 3.6-8 8s3.6 8 8 8c1.7 0 3.2-.5 4.5-1.4-1-1.5-1.8-3.2-2.3-4.8-.5-1.6-.7-3.2-.7-4.8 0-1.6.2-3.2.7-4.8.5-1.6 1.3-3.3 2.3-4.8C15.2 4.5 13.7 4 12 4z" fill="#fff"/>
-                <path d="M16.5 4.6c-1 1.5-1.8 3.2-2.3 4.8-.5 1.6-.7 3.2-.7 4.8 0 1.6.2 3.2.7 4.8.5 1.6 1.3 3.3 2.3 4.8 2.3-1.6 3.8-4.2 3.8-7.2s-1.5-5.6-3.8-7.2z" fill="#336791"/>
-                <circle cx="14" cy="10" r="1.5" fill="#336791"/>
-                <path d="M7 6l-2-2M17 6l2-2" stroke="#fff" strokeWidth="1.2" strokeLinecap="round"/>
-            </svg>
-        ),
-        // SQLite logo
-        sqlite: (
-            <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-                <rect x="3" y="3" width="18" height="18" rx="3" fill="#003B57"/>
-                <path d="M7 7h10" stroke="#44A8B3" strokeWidth="2" strokeLinecap="round"/>
-                <path d="M7 11h7" stroke="#44A8B3" strokeWidth="2" strokeLinecap="round"/>
-                <path d="M7 15h4" stroke="#44A8B3" strokeWidth="2" strokeLinecap="round"/>
-                <path d="M15 13l4-4v10l-4-4" fill="#0F80CC"/>
-            </svg>
-        ),
-        // ClickHouse logo
-        clickhouse: (
-            <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-                <rect x="2" y="2" width="20" height="20" rx="2" fill="#FFCC00"/>
-                <rect x="5" y="5" width="4" height="14" rx="1" fill="#000"/>
-                <rect x="11" y="9" width="4" height="10" rx="1" fill="#000"/>
-                <rect x="17" y="13" width="3" height="6" rx="1" fill="#000"/>
-            </svg>
-        ),
-        // MongoDB 叶子 logo
-        mongodb: (
-            <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-                <path d="M12 2c-1.5 4-2 7.5-2 10.5s.8 6.5 2 9c1.2-2.5 2-5.5 2-9S13.5 6 12 2z" fill="#4FA94D"/>
-                <path d="M12 2v19.5" stroke="#3E7B3D" strokeWidth="1"/>
-                <path d="M9.5 5c.5 1.5.8 3.3.8 5.3 0 2-.3 4-.8 5.8" stroke="#70BF6E" strokeWidth="1" fill="none" strokeLinecap="round"/>
-                <path d="M14.5 5c-.5 1.5-.8 3.3-.8 5.3 0 2 .3 4 .8 5.8" stroke="#70BF6E" strokeWidth="1" fill="none" strokeLinecap="round"/>
-            </svg>
-        ),
-        // Redis logo
-        redis: (
-            <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-                <ellipse cx="12" cy="6" rx="8" ry="3" fill="#DC382D"/>
-                <path d="M4 6v4c0 1.7 3.6 3 8 3s8-1.3 8-3V6" fill="#A82A26"/>
-                <path d="M4 10v4c0 1.7 3.6 3 8 3s8-1.3 8-3v-4" fill="#DC382D"/>
-                <path d="M4 14v4c0 1.7 3.6 3 8 3s8-1.3 8-3v-4" fill="#A82A26"/>
-                <path d="M8 5c-.3 0-.5.2-.5.5s.2.5.5.5.5-.2.5-.5-.2-.5-.5-.5zM16 5c-.3 0-.5.2-.5.5s.2.5.5.5.5-.2.5-.5-.2-.5-.5-.5z" fill="#fff"/>
-                <path d="M10 9c-.3 0-.5.2-.5.5s.2.5.5.5.5-.2.5-.5-.2-.5-.5-.5zM14 9c-.3 0-.5.2-.5.5s.2.5.5.5.5-.2.5-.5-.2-.5-.5-.5z" fill="#fff"/>
-                <path d="M9 13c-.3 0-.5.2-.5.5s.2.5.5.5.5-.2.5-.5-.2-.5-.5-.5zM15 13c-.3 0-.5.2-.5.5s.2.5.5.5.5-.2.5-.5-.2-.5-.5-.5z" fill="#fff"/>
-            </svg>
-        ),
-    };
-    return icons[engine] || (
-        <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="8" stroke="#9CA3AF" strokeWidth="1.5" fill="none"/>
-            <circle cx="12" cy="12" r="3" fill="#9CA3AF"/>
-        </svg>
-    );
-}
 
 const mysqlFieldTypes = [
     "bit",
@@ -471,24 +373,6 @@ function browserGeneratedID(): string {
     return `browser-${Date.now()}`;
 }
 
-function defaultPortForEngine(engine: string): number {
-    switch (engine) {
-        case "mysql":
-        case "mariadb":
-            return 3306;
-        case "postgresql":
-            return 5432;
-        case "clickhouse":
-            return 8123;
-        case "mongodb":
-            return 27017;
-        case "redis":
-            return 6379;
-        default:
-            return 0;
-    }
-}
-
 function createConnectionDraft(engine = "mysql"): ConnectionInput {
     return {
         id: "",
@@ -561,18 +445,6 @@ function updateBrowserAIState(state: WorkspaceState, form: AISettingsInput): Wor
             storageMode: "浏览器本地预览",
         },
     };
-}
-
-function connectionTargetLabel(profile: ConnectionProfile): string {
-    if (profile.engine === "sqlite") {
-        return profile.filePath || "未选择文件";
-    }
-
-    if (profile.url) {
-        return profile.url;
-    }
-
-    return `${profile.host}:${profile.port}`;
 }
 
 function formatDateTime(value: string): string {
@@ -3130,257 +3002,6 @@ function App() {
         });
     }
 
-    function renderConnectionsPage() {
-        const isSQLite = connectionDraft.engine === "sqlite";
-
-        return (
-            <section className="page-panel">
-                <NoticeBanner notice={connectionNotice} />
-
-                <div className="connection-layout">
-                    <div className="connection-card">
-                        <div className="section-title">
-                            <h3>已保存连接</h3>
-                            <span className="count-chip">{workspaceState.connections.length}</span>
-                        </div>
-
-                        <div className="connection-groups">
-                            {workspaceState.connections.length === 0 ? <div className="empty-block">还没有连接，先创建一个。</div> : null}
-                            {Array.from(
-                                workspaceState.connections.reduce((groups, conn) => {
-                                    const groupName = conn.group || "默认分组";
-                                    if (!groups.has(groupName)) {
-                                        groups.set(groupName, { name: groupName, color: conn.groupColor, connections: [] });
-                                    }
-                                    groups.get(groupName)!.connections.push(conn);
-                                    return groups;
-                                }, new Map<string, { name: string; color: string; connections: ConnectionProfile[] }>()).values()
-                            ).map((group) => (
-                                <div key={group.name} className="connection-group-card" style={{ borderLeftColor: group.color || "#3b82f6" }}>
-                                    <div className="connection-group-header">
-                                        <div className="connection-group-color" style={{ backgroundColor: group.color || "#3b82f6" }} />
-                                        <span className="connection-group-name">{group.name}</span>
-                                        <span className="connection-group-count">{group.connections.length} 个连接</span>
-                                    </div>
-                                    <div className="connection-group-list">
-                                        {group.connections.map((profile) => (
-                                            <div key={profile.id} className={`connection-card__item${profile.id === selectedConnectionId ? " connection-card__item--active" : ""}`}>
-                                                <div className="connection-card__main" role="button" tabIndex={0} onClick={() => handleSelectConnection(profile)} onKeyDown={(event) => {
-                                                    if (event.key === "Enter" || event.key === " ") {
-                                                        event.preventDefault();
-                                                        handleSelectConnection(profile);
-                                                    }
-                                                }}>
-                                                    <div className="connection-card__title">
-                                                        <div className="connection-name-row">
-                                                            <span className="engine-icon" title={engineLabels[profile.engine] ?? profile.engine}>
-                                                                <EngineIcon engine={profile.engine} size={18} />
-                                                            </span>
-                                                            <CopyableText
-                                                                value={profile.name}
-                                                                onCopied={(value) => pushToast(value ? "success" : "error", value ? "已复制连接名称" : "复制失败", value || "请重试")}
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <span className="connection-card__target">{connectionTargetLabel(profile)}</span>
-                                                </div>
-                                                <div className="row-actions row-actions--icon">
-                                                    <button
-                                                        type="button"
-                                                        className="icon-btn icon-btn--edit"
-                                                        onClick={() => fillConnectionDraft(profile)}
-                                                        title="编辑"
-                                                    >
-                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                                                        </svg>
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        className="icon-btn icon-btn--delete"
-                                                        onClick={() => handleDeleteConnection(profile)}
-                                                        title="删除"
-                                                    >
-                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                            <polyline points="3 6 5 6 21 6"></polyline>
-                                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                                        </svg>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="connection-editor">
-                        <div className="section-title section-title--with-actions">
-                            <h3>{connectionDraft.id ? "编辑连接" : "新建连接"}</h3>
-                            <div className="toolbar-actions toolbar-actions--compact">
-                                <button
-                                    type="button"
-                                    className="ghost-button ghost-button--sm"
-                                    onClick={() => {
-                                        setConnectionDraft({
-                                            id: "",
-                                            name: "本地MYSQL",
-                                            engine: "mysql",
-                                            group: "默认分组",
-                                            groupColor: "#3b82f6",
-                                            host: "127.0.0.1",
-                                            port: 3306,
-                                            username: "root",
-                                            password: "",
-                                            database: "",
-                                            url: "",
-                                            filePath: "",
-                                            notes: "",
-                                        });
-                                        pushToast("info", "快速填充", "已自动填充本地 MySQL 默认配置");
-                                    }}
-                                >
-                                    快速
-                                </button>
-                                <button type="button" className="ghost-button ghost-button--sm" onClick={handleTestConnection} disabled={isTestingConnection}>
-                                    {isTestingConnection ? "测试中..." : "测试"}
-                                </button>
-                                <button type="button" className="primary-button primary-button--sm" onClick={handleSaveConnection} disabled={isSavingConnection}>
-                                    {isSavingConnection ? "保存中..." : "保存"}
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="form-grid">
-                            <label className="field">
-                                <span>连接名称</span>
-                                <input value={connectionDraft.name} onChange={(event) => updateConnectionField("name", event.target.value)} placeholder="例如：Docker-ms" />
-                            </label>
-                            <label className="field field--engine">
-                                <span>数据库类型</span>
-                                <select value={connectionDraft.engine} onChange={(event) => updateConnectionField("engine", event.target.value)}>
-                                    {Object.entries(engineLabels).map(([value, label]) => (
-                                        <option key={value} value={value}>
-                                            {label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-
-                            <label className="field">
-                                <span>分组</span>
-                                <div className="group-input-row">
-                                    <input
-                                        list="group-suggestions"
-                                        value={connectionDraft.group}
-                                        onChange={(event) => updateConnectionField("group", event.target.value)}
-                                        placeholder="例如：开发环境"
-                                    />
-                                    <datalist id="group-suggestions">
-                                        {Array.from(new Set(workspaceState.connections.map((c) => c.group).filter(Boolean))).map((group) => (
-                                            <option key={group} value={group} />
-                                        ))}
-                                    </datalist>
-                                    <div className="color-picker-compact">
-                                        {["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#6366f1"].slice(0, 6).map((color) => (
-                                            <button
-                                                key={color}
-                                                type="button"
-                                                className={`color-dot${connectionDraft.groupColor === color ? " color-dot--active" : ""}`}
-                                                style={{ backgroundColor: color }}
-                                                onClick={() => updateConnectionField("groupColor", color)}
-                                                title={color}
-                                            />
-                                        ))}
-                                        <div className="color-custom-wrapper">
-                                            <input
-                                                type="color"
-                                                value={connectionDraft.groupColor || "#3b82f6"}
-                                                onChange={(event) => updateConnectionField("groupColor", event.target.value)}
-                                                className="color-input-native"
-                                                title="自定义颜色"
-                                            />
-                                            <span className="color-custom-icon">+</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </label>
-
-                            {!isSQLite ? (
-                                <>
-                                    <label className="field">
-                                        <span>主机地址</span>
-                                        <input value={connectionDraft.host} onChange={(event) => updateConnectionField("host", event.target.value)} />
-                                    </label>
-                                    <label className="field">
-                                        <span>端口</span>
-                                        <input type="number" value={connectionDraft.port} onChange={(event) => updateConnectionField("port", Number(event.target.value))} />
-                                    </label>
-                                    <label className="field">
-                                        <span>用户名</span>
-                                        <input value={connectionDraft.username} onChange={(event) => updateConnectionField("username", event.target.value)} />
-                                    </label>
-                                    <label className="field field--password">
-                                        <span>密码</span>
-                                        <div className="password-input-wrap">
-                                            <input type={showPassword ? "text" : "password"} value={connectionDraft.password} onChange={(event) => updateConnectionField("password", event.target.value)} />
-                                            <button
-                                                type="button"
-                                                className="password-toggle-btn"
-                                                onClick={() => setShowPassword((prev) => !prev)}
-                                                title={showPassword ? "隐藏密码" : "显示密码"}
-                                            >
-                                                {showPassword ? (
-                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                                        <circle cx="12" cy="12" r="3"></circle>
-                                                        <path d="M3 3l18 18"></path>
-                                                    </svg>
-                                                ) : (
-                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                                        <circle cx="12" cy="12" r="3"></circle>
-                                                    </svg>
-                                                )}
-                                            </button>
-                                        </div>
-                                    </label>
-                                    <label className="field">
-                                        <span>默认数据库</span>
-                                        <input value={connectionDraft.database} onChange={(event) => updateConnectionField("database", event.target.value)} placeholder="可选，连接后默认进入" />
-                                    </label>
-                                    <label className="field">
-                                        <span>连接 URL</span>
-                                        <input value={connectionDraft.url} onChange={(event) => updateConnectionField("url", event.target.value)} placeholder="可选" />
-                                    </label>
-                                </>
-                            ) : (
-                                <label className="field field--full">
-                                    <span>SQLite 文件</span>
-                                    <input value={connectionDraft.filePath} onChange={(event) => updateConnectionField("filePath", event.target.value)} />
-                                </label>
-                            )}
-
-                            <label className="field field--full">
-                                <span>备注</span>
-                                <textarea value={connectionDraft.notes} onChange={(event) => updateConnectionField("notes", event.target.value)} rows={4} />
-                            </label>
-                        </div>
-
-                        {connectionTest ? (
-                            <div className={`status-strip${connectionTest.success ? " status-strip--success" : " status-strip--error"}`}>
-                                <strong>{connectionTest.message}</strong>
-                                <span>{connectionTest.detail}</span>
-                            </div>
-                        ) : null}
-                    </div>
-                </div>
-            </section>
-        );
-    }
-
     function renderQueryPage() {
         return (
             <section className="page-panel page-panel--wide page-panel--scrollable">
@@ -4473,229 +4094,6 @@ function App() {
         );
     }
 
-    function renderSettingsPage() {
-        const handleSetStoragePath = async () => {
-            if (browserPreview) return;
-            const result = (await SetStoragePath(newStoragePath)) as SetStoragePathResult;
-            if (result.success) {
-                pushToast("success", "路径已更新", result.message);
-                const info = (await GetStorageInfo()) as StorageInfoView;
-                setStorageInfo(info);
-                await refreshWorkspaceState();
-            } else {
-                pushToast("error", "更新失败", result.message);
-            }
-        };
-
-        const handleGrantPermission = async () => {
-            if (browserPreview) return;
-            const result = (await GrantStoragePermission()) as SetStoragePathResult;
-            if (result.success) {
-                pushToast("success", "权限已授予", result.message);
-                const info = (await GetStorageInfo()) as StorageInfoView;
-                setStorageInfo(info);
-            } else {
-                pushToast("error", "权限设置失败", result.message);
-            }
-            setShowPermissionModal(false);
-        };
-
-        const handleClearData = async (category: string) => {
-            if (browserPreview) return;
-            const result = (await ClearStorageData(category)) as SetStoragePathResult;
-            if (result.success) {
-                pushToast("success", "清理完成", result.message);
-                const info = (await GetStorageInfo()) as StorageInfoView;
-                setStorageInfo(info);
-            } else {
-                pushToast("error", "清理失败", result.message);
-            }
-            setShowClearModal(null);
-        };
-
-        const handleSelectDirectory = async () => {
-            if (browserPreview) return;
-            const dir = await SelectStorageDirectory();
-            if (dir) {
-                setNewStoragePath(dir);
-            }
-        };
-
-        return (
-            <section className="page-panel">
-                <div className="page-headline">
-                    <div>
-                        <h2>系统设置</h2>
-                        <p>管理应用存储路径、查看存储占用与清理数据</p>
-                    </div>
-                </div>
-
-                {/* Storage Path */}
-                <div className="settings-section panel-card" style={{ marginBottom: 20 }}>
-                    <div className="section-title">
-                        <div>
-                            <h3>存储路径</h3>
-                            <p>自定义应用数据的存储位置，修改后已有数据将自动迁移</p>
-                        </div>
-                    </div>
-                    <div className="settings-path-row">
-                        <input
-                            type="text"
-                            className="settings-path-input"
-                            value={newStoragePath}
-                            onChange={(e) => setNewStoragePath(e.target.value)}
-                            placeholder="输入新的存储路径..."
-                        />
-                        <button type="button" className="ghost-button" onClick={handleSelectDirectory} disabled={browserPreview} title="选择文件夹">
-                            选择路径
-                        </button>
-                        <button type="button" className="primary-button" onClick={handleSetStoragePath} disabled={browserPreview || newStoragePath === (storageInfo?.dataDir ?? "")}>
-                            应用配置
-                        </button>
-                    </div>
-                    {storageInfo && (
-                        <div className="settings-path-hint">
-                            当前路径：<code>{storageInfo.dataDir}</code>
-                        </div>
-                    )}
-                </div>
-
-                {/* Storage Overview */}
-                {storageInfo && (
-                    <div className="settings-section panel-card" style={{ marginBottom: 20 }}>
-                        <div className="section-title">
-                            <div>
-                                <h3>存储概况</h3>
-                                <p>应用数据文件占用情况</p>
-                            </div>
-                            <div className="settings-total-badge">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                                </svg>
-                                <span>{storageInfo.totalHR}</span>
-                            </div>
-                        </div>
-
-                        {!storageInfo.writable && (
-                            <div className="notice-banner notice-banner--error" style={{ marginBottom: 14 }}>
-                                <span className="notice-banner__icon">!</span>
-                                <span className="notice-banner__text">
-                                    当前存储目录没有写入权限，部分功能可能无法正常使用。
-                                    <button type="button" className="text-button" onClick={() => setShowPermissionModal(true)} style={{ marginLeft: 8 }}>
-                                        授权写入
-                                    </button>
-                                </span>
-                            </div>
-                        )}
-
-                        {storageInfo.writable && (
-                            <div className="notice-banner notice-banner--success" style={{ marginBottom: 14 }}>
-                                <span className="notice-banner__icon">✓</span>
-                                <span className="notice-banner__text">存储目录读写权限正常</span>
-                            </div>
-                        )}
-
-                        <div className="settings-file-list">
-                            {storageInfo.files.length === 0 ? (
-                                <div className="settings-file-empty">暂无存储文件</div>
-                            ) : (
-                                storageInfo.files.map((file, idx) => (
-                                    <div key={idx} className="settings-file-item">
-                                        <div className="settings-file-icon">
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                {file.name.endsWith("/") ? (
-                                                    <>
-                                                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                                        <polyline points="14 2 14 8 20 8"></polyline>
-                                                    </>
-                                                )}
-                                            </svg>
-                                        </div>
-                                        <div className="settings-file-info">
-                                            <span className="settings-file-name">{file.name}</span>
-                                            <span className="settings-file-path">{file.path}</span>
-                                        </div>
-                                        <div className="settings-file-size">{file.sizeHR}</div>
-                                        {file.name === "app-state.json" && (
-                                            <button
-                                                type="button"
-                                                className="mini-ghost-button ghost-button--danger"
-                                                onClick={() => setShowClearModal("history")}
-                                                title="清除历史查询记录以减小文件大小"
-                                            >
-                                                清理
-                                            </button>
-                                        )}
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* Permission Modal */}
-                {showPermissionModal && (
-                    <div className="modal-backdrop" onClick={() => setShowPermissionModal(false)}>
-                        <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-                            <div className="section-title">
-                                <div>
-                                    <h3>写入权限请求</h3>
-                                    <p>应用需要写入配置文件以保存您的设置</p>
-                                </div>
-                            </div>
-                            <div className="notice-banner notice-banner--info">
-                                <span className="notice-banner__icon">i</span>
-                                <span className="notice-banner__text">
-                                    当前存储目录 <code>{storageInfo?.dataDir}</code> 没有写入权限。是否授权该目录读写权限？
-                                </span>
-                            </div>
-                            <div className="toolbar-actions toolbar-actions--end">
-                                <button type="button" className="ghost-button" onClick={() => setShowPermissionModal(false)}>
-                                    拒绝
-                                </button>
-                                <button type="button" className="primary-button" onClick={handleGrantPermission}>
-                                    授权写入
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Clear Confirm Modal */}
-                {showClearModal && (
-                    <div className="modal-backdrop" onClick={() => setShowClearModal(null)}>
-                        <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-                            <div className="section-title">
-                                <div>
-                                    <h3>确认清理</h3>
-                                    <p>此操作不可撤销，请确认</p>
-                                </div>
-                            </div>
-                            <div className="notice-banner notice-banner--error">
-                                <span className="notice-banner__icon">!</span>
-                                <span className="notice-banner__text">
-                                    确定要清除{showClearModal === "history" ? "所有历史查询记录" : "所选数据"}吗？此操作不可撤销。
-                                </span>
-                            </div>
-                            <div className="toolbar-actions toolbar-actions--end">
-                                <button type="button" className="ghost-button" onClick={() => setShowClearModal(null)}>
-                                    取消
-                                </button>
-                                <button type="button" className="primary-button" style={{ background: "rgba(239, 68, 68, 0.9)", borderColor: "rgba(239, 68, 68, 0.6)" }} onClick={() => handleClearData(showClearModal)}>
-                                    确认清理
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </section>
-        );
-    }
-
     function renderCurrentPage() {
         if (workMode === "chat") {
             return renderChatPage();
@@ -4703,7 +4101,27 @@ function App() {
 
         switch (activePage) {
             case "connections":
-                return renderConnectionsPage();
+                return (
+                    <ConnectionsPage
+                        connectionNotice={connectionNotice}
+                        workspaceState={workspaceState}
+                        selectedConnectionId={selectedConnectionId}
+                        connectionDraft={connectionDraft}
+                        setConnectionDraft={setConnectionDraft}
+                        showPassword={showPassword}
+                        setShowPassword={setShowPassword}
+                        connectionTest={connectionTest}
+                        isTestingConnection={isTestingConnection}
+                        isSavingConnection={isSavingConnection}
+                        handleSelectConnection={handleSelectConnection}
+                        fillConnectionDraft={fillConnectionDraft}
+                        handleDeleteConnection={handleDeleteConnection}
+                        handleTestConnection={handleTestConnection}
+                        handleSaveConnection={handleSaveConnection}
+                        updateConnectionField={updateConnectionField}
+                        pushToast={pushToast}
+                    />
+                );
             case "query":
                 return renderQueryPage();
             case "history":
@@ -4715,7 +4133,21 @@ function App() {
             case "theme":
                 return renderThemePage();
             case "settings":
-                return renderSettingsPage();
+                return (
+                    <SettingsPage
+                        browserPreview={browserPreview}
+                        newStoragePath={newStoragePath}
+                        setNewStoragePath={setNewStoragePath}
+                        storageInfo={storageInfo}
+                        setStorageInfo={setStorageInfo}
+                        showPermissionModal={showPermissionModal}
+                        setShowPermissionModal={setShowPermissionModal}
+                        showClearModal={showClearModal}
+                        setShowClearModal={setShowClearModal}
+                        pushToast={pushToast}
+                        refreshWorkspaceState={refreshWorkspaceState}
+                    />
+                );
             default:
                 return null;
         }
