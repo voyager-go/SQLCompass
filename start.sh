@@ -9,10 +9,12 @@ FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${FRONTEND_PORT:-4173}"
 DESKTOP_BINARY="${DESKTOP_BINARY:-$RUN_DIR/SQLTool-dev}"
 DESKTOP_BUILD_TAGS="${DESKTOP_BUILD_TAGS:-production}"
-DESKTOP_MACOS_MIN_VERSION="${DESKTOP_MACOS_MIN_VERSION:-11.0}"
+DESKTOP_MACOS_MIN_VERSION="${DESKTOP_MACOS_MIN_VERSION:-15.0}"
 GOCACHE="${GOCACHE:-$ROOT_DIR/.gocache}"
 GOMODCACHE="${GOMODCACHE:-$ROOT_DIR/.gomodcache}"
 GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}"
+# macOS deployment target for linker warnings
+export MACOSX_DEPLOYMENT_TARGET="$DESKTOP_MACOS_MIN_VERSION"
 
 mkdir -p "$RUN_DIR" "$GOCACHE" "$GOMODCACHE"
 
@@ -141,11 +143,13 @@ start_desktop() {
   (
     cd "$ROOT_DIR"
     env \
+      MACOSX_DEPLOYMENT_TARGET="$DESKTOP_MACOS_MIN_VERSION" \
+      CGO_CFLAGS="-mmacosx-version-min=$DESKTOP_MACOS_MIN_VERSION" \
       CGO_LDFLAGS="-framework UniformTypeIdentifiers -mmacosx-version-min=$DESKTOP_MACOS_MIN_VERSION" \
       GOPROXY="$GOPROXY" \
       GOCACHE="$GOCACHE" \
       GOMODCACHE="$GOMODCACHE" \
-      go build -tags "$DESKTOP_BUILD_TAGS" -o "$DESKTOP_BINARY" .
+      go build -tags "$DESKTOP_BUILD_TAGS" -o "$DESKTOP_BINARY" . 2>&1 | grep -v "was built for newer 'macOS' version" || true
   )
 
   : >"$log_file"

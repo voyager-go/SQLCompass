@@ -4580,10 +4580,22 @@ function App() {
         };
 
         /* Live preview styles derived from current state */
+        const getPreviewBackgroundColor = () => {
+            if (themeMode === "dark") return "#0b1220";
+            if (themeMode === "light") return "#f8fcfb";
+            return customTheme.backgroundColor;
+        };
+
+        const getPreviewTextColor = () => {
+            if (themeMode === "dark") return "#e6edf7";
+            if (themeMode === "light") return "#1f2937";
+            return customTheme.fontColor;
+        };
+
         const livePreviewStyle: React.CSSProperties = {
             fontSize: `${customTheme.resultFontSize}px`,
-            color: customTheme.fontColor,
-            backgroundColor: customTheme.backgroundColor,
+            color: getPreviewTextColor(),
+            backgroundColor: getPreviewBackgroundColor(),
             ...(themeMode === "custom" && customTheme.backgroundImage
                 ? { backgroundImage: `url(${customTheme.backgroundImage})`, backgroundSize: "cover", backgroundPosition: "center" }
                 : {}),
@@ -4723,7 +4735,9 @@ function App() {
                     {/* ===== Right column: Live Preview ===== */}
                     <div className="theme-preview-panel" style={livePreviewStyle}>
                         <div className="theme-preview-inner">
-                            <div className="preview-mock-sidebar">
+                            <div className="preview-mock-sidebar" style={{
+                                background: themeMode === "dark" ? "rgba(20, 25, 35, 0.6)" : "rgba(245, 248, 252, 0.6)",
+                            }}>
                                 <div className="preview-brand">
                                     <strong style={{ fontSize: `${Math.max(12, customTheme.navFontSize - 2)}px` }}>SQLCompass</strong>
                                     <span style={{ fontSize: `${Math.max(10, customTheme.navFontSize - 4)}px`, opacity: 0.6 }}>数据库客户端</span>
@@ -4731,10 +4745,10 @@ function App() {
                                 {["连接管理", "SQL 查询", "历史记录", "表设计", "AI 设置"].map((item) => (
                                     <div key={item} className="preview-nav-item" style={{
                                         backgroundColor: item === "连接管理"
-                                            ? `color-mix(in srgb, ${customTheme.accentColor} 10%)`
+                                            ? (themeMode === "dark" ? "rgba(59, 130, 246, 0.15)" : `color-mix(in srgb, ${customTheme.accentColor} 10%)`)
                                             : "transparent",
-                                        borderLeftColor: item === "连接管理" ? customTheme.accentColor : "transparent",
-                                        color: item === "连接管理" ? customTheme.accentColor : undefined,
+                                        borderLeftColor: item === "连接管理" ? (themeMode === "dark" ? "#3b82f6" : customTheme.accentColor) : "transparent",
+                                        color: item === "连接管理" ? (themeMode === "dark" ? "#3b82f6" : customTheme.accentColor) : undefined,
                                         fontSize: `${customTheme.navFontSize - 1}px`,
                                     }}>
                                         {item}
@@ -4747,24 +4761,32 @@ function App() {
                                 </div>
                                 <div className="preview-mock-cards">
                                     {[1, 2, 3].map((i) => (
-                                        <div key={i} className="preview-mock-card" style={{ borderColor: `color-mix(in srgb, ${customTheme.fontColor} 15%)`, borderRadius: 14, padding: "16px 18px" }}>
+                                        <div key={i} className="preview-mock-card" style={{
+                                            background: themeMode === "dark" ? "rgba(30, 35, 45, 0.7)" : "rgba(255, 255, 255, 0.7)",
+                                            borderColor: themeMode === "dark" ? "rgba(255, 255, 255, 0.1)" : `color-mix(in srgb, ${customTheme.fontColor} 15%)`,
+                                            borderRadius: 14,
+                                            padding: "16px 18px",
+                                        }}>
                                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                                <strong style={{ fontSize: `${customTheme.resultFontSize}px`, color: customTheme.fontColor }}>MySQL-Docker-{i}</strong>
-                                                <span className="preview-badge" style={{ backgroundColor: `color-mix(in srgb, ${customTheme.accentColor} 12%)`, color: customTheme.accentColor, fontSize: `${Math.max(11, customTheme.resultFontSize - 3)}px` }}>运行中</span>
+                                                <strong style={{ fontSize: `${customTheme.resultFontSize}px`, color: getPreviewTextColor() }}>MySQL-Docker-{i}</strong>
+                                                <span className="preview-badge" style={{ backgroundColor: themeMode === "dark" ? "rgba(59, 130, 246, 0.15)" : `color-mix(in srgb, ${customTheme.accentColor} 12%)`, color: themeMode === "dark" ? "#3b82f6" : customTheme.accentColor, fontSize: `${Math.max(11, customTheme.resultFontSize - 3)}px` }}>运行中</span>
                                             </div>
                                             <div style={{ marginTop: 6, fontSize: `${Math.max(11, customTheme.resultFontSize - 2)}px`, opacity: 0.55 }}>127.0.0.1:3306 / docker_db_{i}</div>
                                         </div>
                                     ))}
                                 </div>
-                                <div className="preview-mock-editor" style={{ borderColor: `color-mix(in srgb, ${customTheme.fontColor} 12%)` }}>
+                                <div className="preview-mock-editor" style={{
+                                    background: themeMode === "dark" ? "rgba(20, 25, 35, 0.5)" : "rgba(255, 255, 255, 0.5)",
+                                    borderColor: themeMode === "dark" ? "rgba(255, 255, 255, 0.1)" : `color-mix(in srgb, ${customTheme.fontColor} 12%)`,
+                                }}>
                                     <div style={{ fontFamily: "monospace", fontSize: `${Math.max(11, customTheme.resultFontSize - 2)}px`, lineHeight: 1.7 }}>
-                                        <span style={{ color: `color-mix(in srgb, ${customTheme.accentColor} 70%)` }}>SELECT</span>{" "}
-                                        <span>{customTheme.fontColor !== "#ffffff" ? "*" : "id, name, email"}</span>{" "}
-                                        <span style={{ color: `color-mix(in srgb, ${customTheme.accentColor} 70%)` }}>FROM</span>{" "}
+                                        <span style={{ color: themeMode === "dark" ? "#7aa2ff" : `color-mix(in srgb, ${customTheme.accentColor} 70%)` }}>SELECT</span>{" "}
+                                        <span>*</span>{" "}
+                                        <span style={{ color: themeMode === "dark" ? "#7aa2ff" : `color-mix(in srgb, ${customTheme.accentColor} 70%)` }}>FROM</span>{" "}
                                         <span>users</span>{" "}
-                                        <span style={{ color: `color-mix(in srgb, ${customTheme.accentColor} 70%)` }}>WHERE</span>{" "}
-                                        <span>status</span> = <span style={{ color: "#059669" }}>'active'</span>{" "}
-                                        <span style={{ color: `color-mix(in srgb, ${customTheme.accentColor} 70%)` }}>LIMIT</span>{" "}
+                                        <span style={{ color: themeMode === "dark" ? "#7aa2ff" : `color-mix(in srgb, ${customTheme.accentColor} 70%)` }}>WHERE</span>{" "}
+                                        <span>status</span> = <span style={{ color: themeMode === "dark" ? "#85d6a5" : "#059669" }}>'active'</span>{" "}
+                                        <span style={{ color: themeMode === "dark" ? "#7aa2ff" : `color-mix(in srgb, ${customTheme.accentColor} 70%)` }}>LIMIT</span>{" "}
                                         <span>50</span>;
                                     </div>
                                 </div>

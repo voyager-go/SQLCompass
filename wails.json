@@ -9,5 +9,10 @@
   "author": {
     "name": "gopher",
     "email": "xxxxx@qq.com"
-  }
+  },
+  "info": {
+    "productVersion": "1.0.0"
+  },
+  "nsisType": "multiple",
+  "obfuscated": false
 }
