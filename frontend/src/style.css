@@ -2140,6 +2140,35 @@ body[data-theme="dark"] .connection-card__item--active {
     display: none;
 }
 
+/* Chat message footer - contains copy all button */
+.chat-message__footer {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 4px;
+}
+
+.chat-copy-all-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1px solid var(--surface-3);
+    border-radius: 6px;
+    background: var(--surface-2);
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    opacity: 0.6;
+}
+
+.chat-copy-all-btn:hover {
+    opacity: 1;
+    background: var(--surface-3);
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
 .chat-bubble {
     width: 100%;
     padding: 0;

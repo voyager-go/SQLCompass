@@ -3934,11 +3934,6 @@ function App() {
                                 <div className="chat-message__body">
                                     <div className="chat-message__meta">
                                         <div className="chat-message__label">{item.role === "assistant" ? "AI 助手" : "你"}</div>
-                                        {item.role === "assistant" ? (
-                                            <button type="button" className="chat-bubble-actions__btn" style={{ opacity: 0.55 }} onClick={() => handleCopyChatMessage(item)} title="复制整轮对话">
-                                                复制全部
-                                            </button>
-                                        ) : null}
                                     </div>
                                     <div className={`chat-bubble chat-bubble--${item.role}`}>
                                         <p>{item.content}</p>
@@ -3998,6 +3993,14 @@ function App() {
                                                     </tbody>
                                                 </table>
                                             )}
+                                        </div>
+                                    ) : null}
+                                    {/* Copy whole conversation button - placed at bottom right */}
+                                    {item.role === "assistant" ? (
+                                        <div className="chat-message__footer">
+                                            <button type="button" className="chat-copy-all-btn" onClick={() => handleCopyChatMessage(item)} title="复制整轮对话">
+                                                📋 复制全部
+                                            </button>
                                         </div>
                                     ) : null}
                                 </div>
