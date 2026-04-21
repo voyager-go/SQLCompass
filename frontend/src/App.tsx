@@ -169,8 +169,8 @@ type CellEditorState = {
     nextValue: string;
 };
 
-const browserStorageKey = "sql-pilot-browser-workspace";
-const themeStorageKey = "sql-pilot-theme";
+const browserStorageKey = "sql-compass-browser-workspace";
+const themeStorageKey = "sql-compass-theme";
 const tablePageSize = 12;
 const previewPageSize = 30;
 const queryPageSize = 50;
@@ -1011,7 +1011,7 @@ function App() {
         if (typeof window === "undefined") {
             return { navFontSize: 14, resultFontSize: 14, fontColor: "#1f2937", accentColor: "#3b82f6", backgroundColor: "#f8fcfb", backgroundImage: null };
         }
-        const saved = window.localStorage.getItem("sql-pilot-custom-theme");
+        const saved = window.localStorage.getItem("sql-compass-custom-theme");
         if (saved) {
             const parsed = JSON.parse(saved);
             return { ...parsed, backgroundImage: parsed.backgroundImage ?? null, backgroundColor: parsed.backgroundColor ?? "#f8fcfb" };
@@ -1276,14 +1276,14 @@ function App() {
             databaseFilter,
             tableFilter,
         };
-        localStorage.setItem("sql-pilot-filter-settings", JSON.stringify(settings));
+        localStorage.setItem("sql-compass-filter-settings", JSON.stringify(settings));
         pushToast("success", "已保存", "筛选设置已保存，下次连接时自动恢复");
     }
 
     // 加载保存的筛选设置（仅恢复过滤项，不自动展开面板）
     function loadFilterSettings() {
         try {
-            const saved = localStorage.getItem("sql-pilot-filter-settings");
+            const saved = localStorage.getItem("sql-compass-filter-settings");
             if (saved) {
                 const settings = JSON.parse(saved);
                 if (settings.databaseFilter?.length > 0) setDatabaseFilter(settings.databaseFilter);
@@ -1555,7 +1555,7 @@ function App() {
     // Sync SQL editor theme with app theme
     useEffect(() => {
         if (monacoRef.current) {
-            const editorTheme = themeMode === "light" ? "sql-pilot-sql-light" : "sql-pilot-sql-dark";
+            const editorTheme = themeMode === "light" ? "sql-compass-sql-light" : "sql-compass-sql-dark";
             monacoRef.current.editor.setTheme(editorTheme);
         }
     }, [themeMode]);
@@ -2074,7 +2074,7 @@ function App() {
         setMonacoReady(true);
 
         // Dark SQL editor theme
-        monaco.editor.defineTheme("sql-pilot-sql-dark", {
+        monaco.editor.defineTheme("sql-compass-sql-dark", {
             base: "vs-dark",
             inherit: true,
             rules: [
@@ -2094,7 +2094,7 @@ function App() {
         });
 
         // Light SQL editor theme — soft, muted, comfortable
-        monaco.editor.defineTheme("sql-pilot-sql-light", {
+        monaco.editor.defineTheme("sql-compass-sql-light", {
             base: "vs",
             inherit: true,
             rules: [
@@ -2114,7 +2114,7 @@ function App() {
         });
 
         // Apply theme based on current mode
-        monaco.editor.setTheme(themeMode === "light" ? "sql-pilot-sql-light" : "sql-pilot-sql-dark");
+        monaco.editor.setTheme(themeMode === "light" ? "sql-compass-sql-light" : "sql-compass-sql-dark");
 
         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
             const currentSelection = editor.getSelection();
@@ -3091,7 +3091,7 @@ function App() {
                                 }
 
                                 event.dataTransfer.effectAllowed = "copy";
-                                event.dataTransfer.setData("application/x-sql-pilot-chat-item", JSON.stringify({ kind: "database", database: database.name }));
+                                event.dataTransfer.setData("application/x-sql-compass-chat-item", JSON.stringify({ kind: "database", database: database.name }));
                                 setDragPreview(event, database.name, "数据库");
                             }} onClick={() => handleSelectDatabase(database.name)} onKeyDown={(event) => {
                                 if (event.key === "Enter" || event.key === " ") {
@@ -3131,7 +3131,7 @@ function App() {
                                         }
 
                                         event.dataTransfer.effectAllowed = "copy";
-                                        event.dataTransfer.setData("application/x-sql-pilot-chat-item", JSON.stringify({ kind: "table", database: database.name, table: table.name }));
+                                        event.dataTransfer.setData("application/x-sql-compass-chat-item", JSON.stringify({ kind: "table", database: database.name, table: table.name }));
                                         setDragPreview(event, table.name, "数据表");
                                     }}
                                     onClick={() => handlePreviewTable(database.name, table.name)}
@@ -4040,7 +4040,7 @@ function App() {
                     }} onDrop={(event) => {
                         event.preventDefault();
                         setChatDropActive(false);
-                        const raw = event.dataTransfer.getData("application/x-sql-pilot-chat-item");
+                        const raw = event.dataTransfer.getData("application/x-sql-compass-chat-item");
                         if (!raw) {
                             return;
                         }
@@ -4528,14 +4528,14 @@ function App() {
 
     function renderThemePage() {
         const handleSaveTheme = () => {
-            window.localStorage.setItem("sql-pilot-custom-theme", JSON.stringify(customTheme));
+            window.localStorage.setItem("sql-compass-custom-theme", JSON.stringify(customTheme));
             pushToast("success", "主题已保存", "自定义主题设置已保存到本地");
         };
 
         const handleResetTheme = () => {
             const defaultTheme = { navFontSize: 14, resultFontSize: 14, fontColor: "#1f2937", accentColor: "#3b82f6", backgroundColor: "#f8fcfb", backgroundImage: null };
             setCustomTheme(defaultTheme);
-            window.localStorage.setItem("sql-pilot-custom-theme", JSON.stringify(defaultTheme));
+            window.localStorage.setItem("sql-compass-custom-theme", JSON.stringify(defaultTheme));
             pushToast("success", "主题已重置", "已恢复默认设置");
         };
 
@@ -4709,7 +4709,7 @@ function App() {
                         <div className="theme-preview-inner">
                             <div className="preview-mock-sidebar">
                                 <div className="preview-brand">
-                                    <strong style={{ fontSize: `${Math.max(12, customTheme.navFontSize - 2)}px` }}>SQLPilot</strong>
+                                    <strong style={{ fontSize: `${Math.max(12, customTheme.navFontSize - 2)}px` }}>SQLCompass</strong>
                                     <span style={{ fontSize: `${Math.max(10, customTheme.navFontSize - 4)}px`, opacity: 0.6 }}>数据库客户端</span>
                                 </div>
                                 {["连接管理", "SQL 查询", "历史记录", "表设计", "AI 设置"].map((item) => (
@@ -5017,7 +5017,7 @@ function App() {
                     {!sidebarCollapsed ? (
                         <div className="sidebar-brand__title">
                             <div>
-                                <strong>SQLPilot</strong>
+                                <strong>SQLCompass</strong>
                                 <span>更懂开发的数据库客户端</span>
                             </div>
                             <button type="button" className="sidebar-collapse" onClick={() => setSidebarCollapsed((current) => !current)} title="收起侧边栏">

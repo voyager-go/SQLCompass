@@ -333,7 +333,7 @@ func chooseExportTitle(title string) string {
 func sanitizeExportFilename(name string, kind string) string {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
-		trimmed = "sql-pilot-export"
+		trimmed = "sql-compass-export"
 	}
 
 	replacer := strings.NewReplacer("/", "-", "\\", "-", ":", "-", "\n", "", "\r", "", "\t", " ")

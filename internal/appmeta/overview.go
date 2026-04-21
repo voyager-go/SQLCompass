@@ -37,7 +37,7 @@ type ProductOverview struct {
 
 func DefaultProductOverview() ProductOverview {
 	return ProductOverview{
-		AppName:       "SQLPilot",
+		AppName:       "SQLCompass",
 		Tagline:       "A desktop client for practical database work: schema edits, query history, AI-assisted SQL, and controlled change previews.",
 		Summary:       "The scaffold focuses on a polished desktop shell that can grow into a serious multi-engine workbench without pretending every engine should look relational. MySQL and other SQL engines keep the richest design flow, while MongoDB and Redis get query-first interfaces shaped to their actual operating model.",
 		DesktopTarget: "Wails + React + Go desktop application",
