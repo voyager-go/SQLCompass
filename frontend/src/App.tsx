@@ -31,6 +31,9 @@ import {
 } from "../wailsjs/go/main/App";
 import "./App.css";
 import splashLogo from "./assets/images/start.png";
+import { NoticeBanner } from "./components/NoticeBanner";
+import { FloatingToast } from "./components/FloatingToast";
+import { CopyableText } from "./components/CopyableText";
 import type {
     AISettingsInput,
     ConnectionInput,
@@ -857,136 +860,6 @@ async function copyText(value: string): Promise<void> {
     textarea.select();
     document.execCommand("copy");
     document.body.removeChild(textarea);
-}
-
-function NoticeBanner({ notice }: { notice: Notice | null }) {
-    if (!notice) {
-        return null;
-    }
-
-    const iconMap: Record<NoticeTone, string> = {
-        success: "✓",
-        error: "!",
-        info: "ℹ",
-    };
-
-    return (
-        <div className={`notice-banner notice-banner--${notice.tone}`}>
-            <span className="notice-banner__icon">{iconMap[notice.tone]}</span>
-            <span className="notice-banner__text">{notice.message}</span>
-        </div>
-    );
-}
-
-function FloatingToast({ toast }: { toast: Toast | null }) {
-    if (!toast) {
-        return null;
-    }
-
-    return (
-        <div className="floating-toast">
-            <div className={`toast toast--${toast.tone}`}>
-                <strong>{toast.title}</strong>
-                <span>{toast.message}</span>
-            </div>
-        </div>
-    );
-}
-
-function CopyableText({
-    value,
-    helperText = "点击复制完整名称",
-    onCopied,
-}: {
-    value: string;
-    helperText?: string;
-    onCopied: (value: string) => void;
-}) {
-    const closeTimerRef = useRef<number | null>(null);
-    const openTimerRef = useRef<number | null>(null);
-    const labelRef = useRef<HTMLSpanElement | null>(null);
-    const [open, setOpen] = useState(false);
-    const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
-
-    function clearCloseTimer() {
-        if (closeTimerRef.current !== null) {
-            window.clearTimeout(closeTimerRef.current);
-            closeTimerRef.current = null;
-        }
-    }
-
-    function clearOpenTimer() {
-        if (openTimerRef.current !== null) {
-            window.clearTimeout(openTimerRef.current);
-            openTimerRef.current = null;
-        }
-    }
-
-    function openTooltip() {
-        clearCloseTimer();
-        setOpen(true);
-    }
-
-    function closeTooltip() {
-        clearOpenTimer();
-        clearCloseTimer();
-        closeTimerRef.current = window.setTimeout(() => setOpen(false), 140);
-    }
-
-    function updateTooltipPosition(clientX: number, clientY: number) {
-        const tooltipWidth = 320;
-        const padding = 18;
-        const maxX = Math.max(padding, window.innerWidth - tooltipWidth - padding);
-        setTooltipPosition({
-            x: Math.min(clientX + 14, maxX),
-            y: Math.max(18, clientY + 18),
-        });
-    }
-
-    function shouldShowTooltip() {
-        const element = labelRef.current;
-        if (!element) {
-            return false;
-        }
-
-        return element.scrollWidth > element.clientWidth || helperText.trim().length > 0;
-    }
-
-    return (
-        <div
-            className="copyable-text"
-            onMouseEnter={(event) => {
-                updateTooltipPosition(event.clientX, event.clientY);
-                clearOpenTimer();
-                openTimerRef.current = window.setTimeout(() => {
-                    if (shouldShowTooltip()) {
-                        openTooltip();
-                    }
-                }, 220);
-            }}
-            onMouseLeave={closeTooltip}
-            onMouseMove={(event) => updateTooltipPosition(event.clientX, event.clientY)}
-            onContextMenu={() => {
-                clearOpenTimer();
-                clearCloseTimer();
-                setOpen(false);
-            }}
-        >
-            <span ref={labelRef} className="copyable-text__label">{value}</span>
-            <div
-                className={`copyable-text__tooltip${open ? " copyable-text__tooltip--open" : ""}`}
-                style={{
-                    left: tooltipPosition.x,
-                    top: tooltipPosition.y,
-                }}
-                onMouseEnter={clearCloseTimer}
-                onMouseLeave={closeTooltip}
-            >
-                <strong>{value}</strong>
-                <span>{helperText}</span>
-            </div>
-        </div>
-    );
 }
 
 function App() {
