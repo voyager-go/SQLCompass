@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { SchemaDraftField, TableDetail, AIFieldCommentResult, FieldDictionarySuggestion } from "../types/runtime";
 import { RenameTable, GenerateFieldComment, GetFieldDictionarySuggestion, GenerateIndexName, ExecuteQuery } from "../../wailsjs/go/main/App";
-import { browserGeneratedID, buildAlterSQL, copyText, getFieldTypeOptions, getIndexTypeOptions } from "../lib/utils";
+import { browserGeneratedID, buildAlterSQL, copyText, getFieldTypeOptions, getIndexTypeOptions, getDefaultFieldType } from "../lib/utils";
 import type { NoticeTone } from "../lib/constants";
 import type { SchemaDraftIndex } from "../lib/utils";
 
@@ -38,7 +38,7 @@ export interface UseSchemaReturn {
     setSchemaNotice: React.Dispatch<React.SetStateAction<Notice | null>>;
     isRenamingTable: boolean;
     currentAlterSQL: string;
-    mysqlTypeOptions: string[];
+    fieldTypeOptions: string[];
     applyFieldSuggestion: (index: number, fieldName: string) => Promise<void>;
     handleGenerateFieldComment: (index: number) => Promise<void>;
     updateDraftField: <K extends keyof SchemaDraftField>(index: number, key: K, value: SchemaDraftField[K]) => void;
@@ -84,7 +84,7 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
 
     const currentAlterSQL = useMemo(() => buildAlterSQL(activeEngine, tableDetail, selectedTable, schemaDraftFields, schemaDraftIndexes), [activeEngine, tableDetail, selectedTable, schemaDraftFields, schemaDraftIndexes]);
 
-    const mysqlTypeOptions = useMemo(() => {
+    const fieldTypeOptions = useMemo(() => {
         const dynamicTypes = schemaDraftFields.map((item) => item.type).filter(Boolean);
         return getFieldTypeOptions(activeEngine, dynamicTypes);
     }, [activeEngine, schemaDraftFields]);
@@ -209,7 +209,7 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
                 id: browserGeneratedID(),
                 originName: "",
                 name: "",
-                type: "varchar(255)",
+                type: getDefaultFieldType(activeEngine),
                 nullable: true,
                 defaultValue: "",
                 comment: "",
@@ -470,7 +470,7 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
         setSchemaNotice,
         isRenamingTable,
         currentAlterSQL,
-        mysqlTypeOptions,
+        fieldTypeOptions,
         applyFieldSuggestion,
         handleGenerateFieldComment,
         updateDraftField,

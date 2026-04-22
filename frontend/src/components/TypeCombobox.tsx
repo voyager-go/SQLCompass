@@ -63,13 +63,17 @@ export function TypeCombobox({ options, value, onChange, placeholder }: TypeComb
         function handleClickOutside(event: MouseEvent) {
             if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
                 setOpen(false);
+                /* Commit current input to parent when clicking away */
+                if (inputValue !== value) {
+                    onChange(inputValue);
+                }
             }
         }
         if (open) {
             document.addEventListener("mousedown", handleClickOutside);
         }
         return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [open]);
+    }, [open, inputValue, value, onChange]);
 
     const handleKeyDown = useCallback(
         (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -96,6 +100,13 @@ export function TypeCombobox({ options, value, onChange, placeholder }: TypeComb
         },
         [open, filtered, activeIndex, inputValue, value, onChange]
     );
+
+    function handleBlur() {
+        setOpen(false);
+        if (inputValue !== value) {
+            onChange(inputValue);
+        }
+    }
 
     const dropdownEl =
         open && filtered.length > 0 && dropdownPos ? (
@@ -139,6 +150,7 @@ export function TypeCombobox({ options, value, onChange, placeholder }: TypeComb
                         setActiveIndex(0);
                     }}
                     onKeyDown={handleKeyDown}
+                    onBlur={handleBlur}
                 />
             </div>
             {dropdownEl ? createPortal(dropdownEl, document.body) : null}

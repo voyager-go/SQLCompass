@@ -384,9 +384,24 @@ function quoteIdentifierByEngine(engine: string, value: string): string {
     return `\`${trimmed.replace(/`/g, "``")}\``;
 }
 
+export function getDefaultFieldType(engine: string): string {
+    switch (engine.toLowerCase()) {
+        case "clickhouse":
+            return "String";
+        case "sqlite":
+            return "TEXT";
+        case "postgresql":
+            return "varchar(255)";
+        case "redis":
+            return "string";
+        default:
+            return "varchar(255)";
+    }
+}
+
 function buildFieldDefinition(engine: string, field: SchemaDraftField): string {
     const identifier = quoteIdentifierByEngine(engine, field.name || "new_column");
-    const parts = [`\`${field.name || "new_column"}\``, field.type || "varchar(255)"];
+    const parts = [`\`${field.name || "new_column"}\``, field.type || getDefaultFieldType(engine)];
     parts[0] = identifier;
     parts.push(field.nullable ? "NULL" : "NOT NULL");
 

@@ -243,44 +243,58 @@ func (s *Service) getMySQLTableRowCounts(record store.ConnectionRecord, database
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// 构建 IN 子句
-	placeholders := make([]string, len(tables))
-	args := make([]interface{}, len(tables))
-	for i, table := range tables {
-		placeholders[i] = "?"
-		args[i] = table
-	}
-	args = append([]interface{}{databaseName}, args...)
-
-	query := fmt.Sprintf(`
-		SELECT table_name, COALESCE(table_rows, 0)
-		FROM information_schema.tables
-		WHERE table_schema = ?
-		  AND table_name IN (%s)
-		  AND table_type = 'BASE TABLE'
-	`, strings.Join(placeholders, ","))
-
-	rows, err := db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return TableRowCountResult{}, err
-	}
-	defer rows.Close()
-
 	counts := make(map[string]int64)
-	for rows.Next() {
-		var tableName string
-		var rowCount int64
-		if err := rows.Scan(&tableName, &rowCount); err != nil {
+
+	// 表数量较少时（<=30），使用 COUNT(*) 获取精确行数；否则回退到 information_schema 估算值
+	if len(tables) <= 30 {
+		for _, table := range tables {
+			var count int64
+			query := fmt.Sprintf("SELECT COUNT(*) FROM `%s`", escapeIdentifier(table))
+			if err := db.QueryRowContext(ctx, query).Scan(&count); err == nil {
+				counts[table] = count
+			}
+		}
+	} else {
+		placeholders := make([]string, len(tables))
+		args := make([]interface{}, len(tables))
+		for i, table := range tables {
+			placeholders[i] = "?"
+			args[i] = table
+		}
+		args = append([]interface{}{databaseName}, args...)
+
+		query := fmt.Sprintf(`
+			SELECT table_name, COALESCE(table_rows, 0)
+			FROM information_schema.tables
+			WHERE table_schema = ?
+			  AND table_name IN (%s)
+			  AND table_type = 'BASE TABLE'
+		`, strings.Join(placeholders, ","))
+
+		rows, err := db.QueryContext(ctx, query, args...)
+		if err != nil {
 			return TableRowCountResult{}, err
 		}
-		counts[tableName] = rowCount
+		defer rows.Close()
+
+		for rows.Next() {
+			var tableName string
+			var rowCount int64
+			if err := rows.Scan(&tableName, &rowCount); err != nil {
+				return TableRowCountResult{}, err
+			}
+			counts[tableName] = rowCount
+		}
+		if err := rows.Err(); err != nil {
+			return TableRowCountResult{}, err
+		}
 	}
 
 	return TableRowCountResult{
 		ConnectionID: record.ID,
 		Database:     databaseName,
 		Counts:       counts,
-	}, rows.Err()
+	}, nil
 }
 
 func (s *Service) getMySQLTableDetail(record store.ConnectionRecord, databaseName string, tableName string) (TableDetail, error) {
@@ -879,6 +893,8 @@ func (s *Service) CreateDatabase(input CreateDatabaseRequest) (CreateDatabaseRes
 		return s.createClickHouseDatabase(record, input)
 	case string(database.SQLite):
 		return CreateDatabaseResult{Success: false, Message: "SQLite 不支持创建数据库，每个文件即为一个数据库"}, nil
+	case string(database.MongoDB):
+		return CreateDatabaseResult{Success: false, Message: "MongoDB 不支持在此创建数据库，请使用命令行"}, nil
 	case string(database.Redis):
 		return CreateDatabaseResult{Success: false, Message: "Redis 不支持创建数据库"}, nil
 	default:
@@ -986,6 +1002,8 @@ func (s *Service) CreateTable(input CreateTableRequest) (CreateTableResult, erro
 		return s.createSQLiteTable(record, input)
 	case string(database.ClickHouse):
 		return s.createClickHouseTable(record, input)
+	case string(database.MongoDB):
+		return CreateTableResult{}, fmt.Errorf("MongoDB 不支持可视化建表，请使用命令行")
 	default:
 		return CreateTableResult{}, fmt.Errorf("%s 暂未接入可视化建表", record.Engine)
 	}
@@ -1093,6 +1111,8 @@ func (s *Service) FillTableData(input FillTableRequest) (FillTableResult, error)
 		return s.fillSQLiteTable(record, input)
 	case string(database.ClickHouse):
 		return s.fillClickHouseTable(record, input)
+	case string(database.MongoDB):
+		return s.fillMongoDBTable(record, input)
 	case string(database.Redis):
 		return FillTableResult{Success: false, Message: "Redis 不支持填充数据"}, nil
 	default:
@@ -1148,7 +1168,7 @@ func (s *Service) fillMySQLTable(record store.ConnectionRecord, input FillTableR
 	}
 	defer stmt.Close()
 
-	return executeFill(stmt, ctx, fields, count)
+	return executeFill(stmt, ctx, fields, count, input.FieldMappings)
 }
 
 func (s *Service) fillPostgreSQLTable(record store.ConnectionRecord, input FillTableRequest) (FillTableResult, error) {
@@ -1201,7 +1221,7 @@ func (s *Service) fillPostgreSQLTable(record store.ConnectionRecord, input FillT
 	}
 	defer stmt.Close()
 
-	return executeFill(stmt, ctx, fields, count)
+	return executeFill(stmt, ctx, fields, count, input.FieldMappings)
 }
 
 func (s *Service) fillSQLiteTable(record store.ConnectionRecord, input FillTableRequest) (FillTableResult, error) {
@@ -1250,7 +1270,7 @@ func (s *Service) fillSQLiteTable(record store.ConnectionRecord, input FillTable
 	}
 	defer stmt.Close()
 
-	return executeFill(stmt, ctx, fields, count)
+	return executeFill(stmt, ctx, fields, count, input.FieldMappings)
 }
 
 func (s *Service) fillClickHouseTable(record store.ConnectionRecord, input FillTableRequest) (FillTableResult, error) {
@@ -1299,10 +1319,10 @@ func (s *Service) fillClickHouseTable(record store.ConnectionRecord, input FillT
 	}
 	defer stmt.Close()
 
-	return executeFill(stmt, ctx, fields, count)
+	return executeFill(stmt, ctx, fields, count, input.FieldMappings)
 }
 
-func executeFill(stmt *dbsql.Stmt, ctx context.Context, fields []TableField, count int) (FillTableResult, error) {
+func executeFill(stmt *dbsql.Stmt, ctx context.Context, fields []TableField, count int, fieldMappings map[string]string) (FillTableResult, error) {
 	inserted := 0
 	for i := 0; i < count; i++ {
 		args := make([]any, 0, len(fields))
@@ -1310,7 +1330,11 @@ func executeFill(stmt *dbsql.Stmt, ctx context.Context, fields []TableField, cou
 			if f.AutoIncrement {
 				continue
 			}
-			args = append(args, generateFakeValue(f.Type, i))
+			fakeType := ""
+			if fieldMappings != nil {
+				fakeType = fieldMappings[f.Name]
+			}
+			args = append(args, generateFakeValueByType(fakeType, i, f.Type))
 		}
 		if _, err := stmt.ExecContext(ctx, args...); err != nil {
 			return FillTableResult{Success: false, Message: err.Error(), InsertedRows: inserted}, nil
@@ -1325,26 +1349,4 @@ func executeFill(stmt *dbsql.Stmt, ctx context.Context, fields []TableField, cou
 	}, nil
 }
 
-func generateFakeValue(fieldType string, seed int) any {
-	lower := strings.ToLower(fieldType)
-	switch {
-	case strings.Contains(lower, "int"):
-		return seed + 1
-	case strings.Contains(lower, "float"), strings.Contains(lower, "double"), strings.Contains(lower, "decimal"):
-		return float64(seed) + 0.5
-	case strings.Contains(lower, "bool"):
-		return seed%2 == 0
-	case strings.Contains(lower, "date") && strings.Contains(lower, "time"):
-		return time.Now().Add(time.Duration(seed) * time.Second).Format("2006-01-02 15:04:05")
-	case strings.Contains(lower, "date"):
-		return time.Now().Add(time.Duration(seed) * time.Hour * 24).Format("2006-01-02")
-	case strings.Contains(lower, "time"):
-		return time.Now().Add(time.Duration(seed) * time.Second).Format("15:04:05")
-	case strings.Contains(lower, "text"), strings.Contains(lower, "char"):
-		return fmt.Sprintf("val_%x", seed+1)
-	case strings.Contains(lower, "blob"), strings.Contains(lower, "binary"):
-		return []byte(fmt.Sprintf("bin_%x", seed+1))
-	default:
-		return fmt.Sprintf("val_%x", seed+1)
-	}
-}
+

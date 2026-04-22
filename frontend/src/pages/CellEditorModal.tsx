@@ -20,6 +20,7 @@ interface CellEditorModalProps {
     isSavingCell: boolean;
     handleConfirmCellEdit: () => void;
     pushToast: (tone: "success" | "error" | "info", title: string, message: string) => void;
+    error: string | null;
 }
 
 export function CellEditorModal({
@@ -28,6 +29,7 @@ export function CellEditorModal({
     isSavingCell,
     handleConfirmCellEdit,
     pushToast,
+    error,
 }: CellEditorModalProps) {
     if (!cellEditor) return null;
 
@@ -56,6 +58,11 @@ export function CellEditorModal({
                         />
                     )}
                 </label>
+                {error ? (
+                    <div className="notice notice--error" style={{ marginTop: 8, marginBottom: 8 }}>
+                        <span>{error}</span>
+                    </div>
+                ) : null}
                 <div className="cell-editor-toolbar">
                     <button type="button" className="ghost-button" onClick={() => {
                         copyText(fromEditorValue(cellEditor.nextValue, cellEditor.fieldType));

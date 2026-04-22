@@ -210,6 +210,8 @@ func (s *Service) TestConnection(input ConnectionInput) (ConnectionTestResult, e
 		return testPostgreSQLConnection(normalized)
 	case string(database.ClickHouse):
 		return testClickHouseConnection(normalized)
+	case string(database.MongoDB):
+		return testMongoDBConnection(normalized)
 	case string(database.Redis):
 		return testRedisConnection(normalized)
 	}

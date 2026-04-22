@@ -289,10 +289,11 @@ type CreateDatabaseResult struct {
 }
 
 type FillTableRequest struct {
-	ConnectionID string `json:"connectionId"`
-	Database     string `json:"database"`
-	Table        string `json:"table"`
-	Count        int    `json:"count"`
+	ConnectionID  string            `json:"connectionId"`
+	Database      string            `json:"database"`
+	Table         string            `json:"table"`
+	Count         int               `json:"count"`
+	FieldMappings map[string]string `json:"fieldMappings"` // fieldName -> fakeType
 }
 
 type FillTableResult struct {

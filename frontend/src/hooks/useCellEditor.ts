@@ -52,6 +52,7 @@ export function useCellEditor({
 }) {
     const [cellEditor, setCellEditor] = useState<CellEditorState | null>(null);
     const [isSavingCell, setIsSavingCell] = useState(false);
+    const [cellEditorError, setCellEditorError] = useState<string | null>(null);
 
     function openCellEditor(row: Record<string, string>, rowKey: string, column: string) {
         if (!tableDetail) {
@@ -68,6 +69,7 @@ export function useCellEditor({
             return;
         }
 
+        setCellEditorError(null);
         setCellEditor({
             rowKey,
             row,
@@ -116,7 +118,7 @@ export function useCellEditor({
             pushToast("success", "字段已更新", `${cellEditor.column} 已保存`);
         } catch (error) {
             const message = getErrorMessage(error);
-            setQueryNotice({ tone: "error", message });
+            setCellEditorError(message);
         } finally {
             setIsSavingCell(false);
         }
@@ -126,6 +128,8 @@ export function useCellEditor({
         cellEditor,
         setCellEditor,
         isSavingCell,
+        cellEditorError,
+        setCellEditorError,
         openCellEditor,
         handleConfirmCellEdit,
     };

@@ -1,8 +1,9 @@
 import Editor from "@monaco-editor/react";
 import type { editor as MonacoEditorNS } from "monaco-editor";
 import type { Monaco } from "@monaco-editor/react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { NoticeBanner } from "../components/NoticeBanner";
+import { FillTableModal } from "../components/FillTableModal";
 import type { QueryResult, TableDetail } from "../types/runtime";
 import type { WorkbenchPage } from "../lib/constants";
 import { formatCellPreview, isTextLikeType } from "../lib/utils";
@@ -68,7 +69,7 @@ interface QueryPageProps {
     selectedConnection: { id: string; engine?: string } | null;
     selectedDatabase: string;
     selectedTable: string;
-    handleFillTableData: () => Promise<void>;
+    handleFillTableData: (mappings?: Record<string, string>, count?: number) => Promise<void>;
     isFillingTable: boolean;
     handleSmartFillTableData: () => Promise<void>;
     isSmartFillingTable: boolean;
@@ -141,6 +142,31 @@ export function QueryPage({
         executing: boolean;
         error: string;
     }>({ open: false, reasoning: "", sqls: [], editableSQLs: [], loading: false, executing: false, error: "" });
+    const smartFillAbortRef = useRef(false);
+    const [fillTableModalOpen, setFillTableModalOpen] = useState(false);
+    const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+    const [colMenuOpen, setColMenuOpen] = useState(false);
+    const colMenuRef = useRef<HTMLDivElement>(null);
+    const [sortState, setSortState] = useState<{ column: string | null; direction: "asc" | "desc" | null }>({ column: null, direction: null });
+
+    useEffect(() => {
+        if (queryResult) {
+            setHiddenColumns(new Set());
+            setSortState({ column: null, direction: null });
+        }
+    }, [queryResult?.columns.map((c) => c).sort().join(",") ?? ""]);
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (colMenuRef.current && !colMenuRef.current.contains(event.target as Node)) {
+                setColMenuOpen(false);
+            }
+        }
+        if (colMenuOpen) {
+            document.addEventListener("mousedown", handleClickOutside);
+        }
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [colMenuOpen]);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -154,8 +180,42 @@ export function QueryPage({
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [fillMenuOpen]);
 
+    function handleSort(column: string) {
+        setSortState((prev) => {
+            if (prev.column !== column) {
+                return { column, direction: "asc" };
+            }
+            if (prev.direction === "asc") {
+                return { column, direction: "desc" };
+            }
+            return { column: null, direction: null };
+        });
+    }
+
+    const sortedRows = useMemo(() => {
+        if (!queryResult) return [] as { row: Record<string, string>; originalIndex: number }[];
+        const rows = queryResult.rows.map((row, originalIndex) => ({ row, originalIndex }));
+        if (!sortState.column || !sortState.direction) return rows;
+        rows.sort((a, b) => {
+            const aVal = a.row[sortState.column!] ?? "";
+            const bVal = b.row[sortState.column!] ?? "";
+            if (aVal === "" && bVal === "") return 0;
+            if (aVal === "") return 1;
+            if (bVal === "") return -1;
+            const numericPattern = /^-?\d+(\.\d+)?$/;
+            if (numericPattern.test(aVal) && numericPattern.test(bVal)) {
+                const cmp = parseFloat(aVal) - parseFloat(bVal);
+                return sortState.direction === "asc" ? cmp : -cmp;
+            }
+            const cmp = aVal.localeCompare(bVal, "zh-CN");
+            return sortState.direction === "asc" ? cmp : -cmp;
+        });
+        return rows;
+    }, [queryResult, sortState]);
+
     async function startSmartFill() {
         if (!selectedConnection || !selectedDatabase || !selectedTable) return;
+        smartFillAbortRef.current = false;
         setSmartFillModal({ open: true, reasoning: "", sqls: [], editableSQLs: [], loading: true, executing: false, error: "" });
         try {
             const result = (await PreviewSmartFillSQL({
@@ -164,6 +224,7 @@ export function QueryPage({
                 table: selectedTable,
                 count: 10,
             })) as import("../types/runtime").PreviewSmartFillSQLResult;
+            if (smartFillAbortRef.current) return;
             if (result.success) {
                 setSmartFillModal((prev) => ({
                     ...prev,
@@ -176,16 +237,19 @@ export function QueryPage({
                 setSmartFillModal((prev) => ({ ...prev, loading: false, error: result.message }));
             }
         } catch (error) {
+            if (smartFillAbortRef.current) return;
             const message = error instanceof Error ? error.message : "预览失败";
             setSmartFillModal((prev) => ({ ...prev, loading: false, error: message }));
         }
     }
 
     function handleCloseSmartFillModal() {
-        if (smartFillModal.loading || smartFillModal.executing) {
-            if (!window.confirm("当前智能填充正在进行中，关闭将终止操作，是否继续？")) {
+        if (smartFillModal.executing) {
+            if (!window.confirm("当前智能填充正在执行中，关闭将终止操作，是否继续？")) {
                 return;
             }
+        } else if (smartFillModal.loading) {
+            smartFillAbortRef.current = true;
         }
         setSmartFillModal({ open: false, reasoning: "", sqls: [], editableSQLs: [], loading: false, executing: false, error: "" });
     }
@@ -238,7 +302,7 @@ export function QueryPage({
                                     className="context-menu__item"
                                     onClick={() => {
                                         setFillMenuOpen(false);
-                                        handleFillTableData();
+                                        setFillTableModalOpen(true);
                                     }}
                                 >
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -363,6 +427,67 @@ export function QueryPage({
                         <span className="result-board__dot"></span>
                         查询结果
                     </div>
+                    {queryResult && queryResult.columns.length > 0 ? (
+                        <div ref={colMenuRef} style={{ position: "relative", marginRight: "auto", marginLeft: 8 }}>
+                            <button
+                                type="button"
+                                className="ghost-button"
+                                style={{ padding: "4px 8px", fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}
+                                onClick={() => setColMenuOpen((v) => !v)}
+                                title="显示/隐藏列"
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                    <line x1="3" y1="9" x2="21" y2="9"></line>
+                                    <line x1="9" y1="3" x2="9" y2="21"></line>
+                                </svg>
+                                列
+                            </button>
+                            {colMenuOpen ? (
+                                <div
+                                    className="context-menu"
+                                    style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, minWidth: 180, maxHeight: 320, overflowY: "auto", zIndex: 10 }}
+                                >
+                                    <div style={{ padding: "6px 10px", display: "flex", gap: 10, borderBottom: "1px solid var(--border-soft)" }}>
+                                        <button
+                                            type="button"
+                                            style={{ fontSize: 11, color: "var(--text-secondary)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                                            onClick={() => setHiddenColumns(new Set())}
+                                        >
+                                            全选
+                                        </button>
+                                        <button
+                                            type="button"
+                                            style={{ fontSize: 11, color: "var(--text-secondary)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                                            onClick={() => setHiddenColumns(new Set(queryResult.columns))}
+                                        >
+                                            清空
+                                        </button>
+                                    </div>
+                                    {queryResult.columns.map((column) => (
+                                        <label key={column} className="context-menu__item" style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12.5 }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={!hiddenColumns.has(column)}
+                                                onChange={(e) => {
+                                                    setHiddenColumns((prev) => {
+                                                        const next = new Set(prev);
+                                                        if (e.target.checked) {
+                                                            next.delete(column);
+                                                        } else {
+                                                            next.add(column);
+                                                        }
+                                                        return next;
+                                                    });
+                                                }}
+                                            />
+                                            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{column}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
                     {queryResult && (
                         <div className="result-board__pagination">
                             <div className="pagination-size">
@@ -480,7 +605,7 @@ export function QueryPage({
                             <span>{queryResult.durationMs} ms</span>
                             <span>第 {queryResult.page} 页</span>
                             <span>{queryResult.rows.length} 行</span>
-                            <span>{queryResult.columns.length} 列</span>
+                            <span>{queryResult.columns.filter((c) => !hiddenColumns.has(c)).length}/{queryResult.columns.length} 列</span>
                             {selectedResultRows.length > 0 ? <span>已选 {selectedResultRows.length} 项</span> : null}
                         </div>
 
@@ -513,26 +638,41 @@ export function QueryPage({
                                             <th className="result-table__checkbox">
                                                 <input type="checkbox" checked={Boolean(allVisibleRowsSelected)} onChange={handleToggleAllResultRows} />
                                             </th>
-                                            {queryResult.columns.map((column) => (
-                                                <th key={column}>{column}</th>
+                                            {queryResult.columns.filter((c) => !hiddenColumns.has(c)).map((column) => (
+                                                <th
+                                                    key={column}
+                                                    onClick={() => handleSort(column)}
+                                                    style={{ cursor: "pointer", userSelect: "none" }}
+                                                >
+                                                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                                        {column}
+                                                        {sortState.column === column ? (
+                                                            <span style={{ fontSize: 10, opacity: 0.6 }}>
+                                                                {sortState.direction === "asc" ? "▲" : "▼"}
+                                                            </span>
+                                                        ) : (
+                                                            <span style={{ fontSize: 10, opacity: 0.15 }}>⇅</span>
+                                                        )}
+                                                    </span>
+                                                </th>
                                             ))}
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {queryResult.rows.map((row, rowIndex) => (
-                                            <tr key={buildRowSelectionKey(queryResult.page, queryResult.columns, row, rowIndex)}>
+                                        {sortedRows.map(({ row, originalIndex }) => (
+                                            <tr key={buildRowSelectionKey(queryResult.page, queryResult.columns, row, originalIndex)}>
                                                 <td className="result-table__checkbox">
                                                     <input
                                                         type="checkbox"
-                                                        checked={selectedResultRowKeys.includes(buildRowSelectionKey(queryResult.page, queryResult.columns, row, rowIndex))}
-                                                        onChange={() => handleToggleResultRow(buildRowSelectionKey(queryResult.page, queryResult.columns, row, rowIndex))}
+                                                        checked={selectedResultRowKeys.includes(buildRowSelectionKey(queryResult.page, queryResult.columns, row, originalIndex))}
+                                                        onChange={() => handleToggleResultRow(buildRowSelectionKey(queryResult.page, queryResult.columns, row, originalIndex))}
                                                     />
                                                 </td>
-                                                {queryResult.columns.map((column) => {
+                                                {queryResult.columns.filter((c) => !hiddenColumns.has(c)).map((column) => {
                                                     const field = tableDetail?.fields.find((item) => item.name === column);
                                                     const fieldType = field?.type ?? "";
                                                     const value = row[column] ?? "";
-                                                    const rowKey = buildRowSelectionKey(queryResult.page, queryResult.columns, row, rowIndex);
+                                                    const rowKey = buildRowSelectionKey(queryResult.page, queryResult.columns, row, originalIndex);
                                                     return (
                                                         <td key={column} onDoubleClick={() => openCellEditor(row, rowKey, column)}>
                                                             {isTextLikeType(fieldType) ? (
@@ -600,9 +740,14 @@ export function QueryPage({
                         </div>
 
                         {smartFillModal.loading ? (
-                            <div className="chat-thinking" style={{ margin: "12px 0", justifyContent: "center" }}>
-                                <span className="chat-thinking__spinner">✦</span>
-                                <span>AI 正在思考数据生成策略...</span>
+                            <div style={{ margin: "12px 0", textAlign: "center" }}>
+                                <div className="chat-thinking" style={{ justifyContent: "center" }}>
+                                    <span className="chat-thinking__spinner">✦</span>
+                                    <span>AI 正在分析表结构并构思数据...</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 6 }}>
+                                    预计需要 10~30 秒，可随时点击取消终止
+                                </div>
                             </div>
                         ) : null}
 
@@ -655,6 +800,17 @@ export function QueryPage({
                     </div>
                 </div>
             ) : null}
+
+            <FillTableModal
+                open={fillTableModalOpen}
+                fields={tableDetail?.fields ?? []}
+                onClose={() => setFillTableModalOpen(false)}
+                onConfirm={(mappings, cnt) => {
+                    setFillTableModalOpen(false);
+                    handleFillTableData(mappings, cnt);
+                }}
+                isFilling={isFillingTable}
+            />
         </section>
     );
 }

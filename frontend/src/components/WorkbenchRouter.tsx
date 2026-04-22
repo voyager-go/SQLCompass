@@ -179,7 +179,7 @@ export interface WorkbenchRouterProps {
     selectedTable: string;
     schemaNotice: Notice | null;
     schemaDraftFields: SchemaDraftField[];
-    mysqlTypeOptions: string[];
+    fieldTypeOptions: string[];
     updateDraftField: <K extends keyof SchemaDraftField>(index: number, key: K, value: SchemaDraftField[K]) => void;
     applyFieldSuggestion: (index: number, fieldName: string) => Promise<void>;
     handleGenerateFieldComment: (index: number) => Promise<void>;
@@ -384,7 +384,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         selectedTable,
         schemaNotice,
         schemaDraftFields,
-        mysqlTypeOptions,
+        fieldTypeOptions,
         updateDraftField,
         applyFieldSuggestion,
         handleGenerateFieldComment,
@@ -589,7 +589,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     tableDetail={tableDetail}
                     schemaNotice={schemaNotice}
                     schemaDraftFields={schemaDraftFields}
-                    mysqlTypeOptions={mysqlTypeOptions}
+                    fieldTypeOptions={fieldTypeOptions}
                     activeEngine={selectedConnection?.engine ?? "mysql"}
                     updateDraftField={updateDraftField}
                     applyFieldSuggestion={applyFieldSuggestion}

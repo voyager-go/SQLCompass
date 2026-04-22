@@ -2223,7 +2223,7 @@ function App() {
         }
     }
 
-    async function handleFillTableData() {
+    async function handleFillTableData(mappings?: Record<string, string>, count?: number) {
         if (!selectedConnection || !selectedDatabase || !selectedTable) {
             setQueryNotice({ tone: "info", message: "请先选择连接、数据库和数据表。" });
             return;
@@ -2234,7 +2234,8 @@ function App() {
                 connectionId: selectedConnection.id,
                 database: selectedDatabase,
                 table: selectedTable,
-                count: 100,
+                count: count ?? 100,
+                fieldMappings: mappings ?? {},
             })) as { success: boolean; message: string; insertedRows: number };
             if (result.success) {
                 pushToast("success", "填充完成", result.message);
@@ -2495,7 +2496,7 @@ function App() {
                         setQueryNotice={setQueryNotice}
                         schemaNotice={schema.schemaNotice}
                         schemaDraftFields={schema.schemaDraftFields}
-                        mysqlTypeOptions={schema.mysqlTypeOptions}
+                        fieldTypeOptions={schema.fieldTypeOptions}
                         updateDraftField={schema.updateDraftField}
                         applyFieldSuggestion={schema.applyFieldSuggestion}
                         handleGenerateFieldComment={schema.handleGenerateFieldComment}
@@ -2562,6 +2563,7 @@ function App() {
                 isSavingCell={cellEditorHook.isSavingCell}
                 handleConfirmCellEdit={cellEditorHook.handleConfirmCellEdit}
                 pushToast={pushToast}
+                error={cellEditorHook.cellEditorError}
             />
 
             <DeleteDialogModal

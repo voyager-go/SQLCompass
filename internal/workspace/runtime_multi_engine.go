@@ -26,6 +26,8 @@ func (s *Service) getExplorerTreeByRecord(record store.ConnectionRecord, preferr
 		return s.getSQLiteExplorerTree(record, preferredDatabase)
 	case string(database.ClickHouse):
 		return s.getClickHouseExplorerTree(record, preferredDatabase)
+	case string(database.MongoDB):
+		return s.getMongoDBExplorerTree(record, preferredDatabase)
 	case string(database.Redis):
 		return s.getRedisExplorerTree(record, preferredDatabase)
 	default:
@@ -43,6 +45,8 @@ func (s *Service) getTableDetailByRecord(record store.ConnectionRecord, database
 		return s.getSQLiteTableDetail(record, databaseName, tableName)
 	case string(database.ClickHouse):
 		return s.getClickHouseTableDetail(record, databaseName, tableName)
+	case string(database.MongoDB):
+		return s.getMongoDBTableDetail(record, databaseName, tableName)
 	default:
 		return TableDetail{}, fmt.Errorf("%s 暂未接入真实表结构读取", record.Engine)
 	}
@@ -58,6 +62,8 @@ func (s *Service) executeQueryByRecord(record store.ConnectionRecord, input Quer
 		return s.runSQLiteQuery(record, input, persistHistory)
 	case string(database.ClickHouse):
 		return s.runClickHouseQuery(record, input, persistHistory)
+	case string(database.MongoDB):
+		return s.runMongoDBQuery(record, input, persistHistory)
 	case string(database.Redis):
 		return s.runRedisQuery(record, input, persistHistory)
 	default:
@@ -90,6 +96,8 @@ func (s *Service) previewTableDataByRecord(record store.ConnectionRecord, input 
 		return s.previewSQLiteTable(record, input)
 	case string(database.ClickHouse):
 		return s.previewClickHouseTable(record, input)
+	case string(database.MongoDB):
+		return s.previewMongoDBCollection(record, input)
 	case string(database.Redis):
 		return s.previewRedisKey(record, input)
 	default:
@@ -107,6 +115,8 @@ func (s *Service) getTableRowCountsByRecord(record store.ConnectionRecord, datab
 		return s.getSQLiteTableRowCounts(record, databaseName, tables)
 	case string(database.ClickHouse):
 		return s.getClickHouseTableRowCounts(record, databaseName, tables)
+	case string(database.MongoDB):
+		return s.getMongoDBTableRowCounts(record, databaseName, tables)
 	default:
 		return TableRowCountResult{}, fmt.Errorf("%s 暂未接入表行数查询", record.Engine)
 	}
@@ -122,6 +132,8 @@ func (s *Service) renameTableByRecord(record store.ConnectionRecord, input Renam
 		return s.renameSQLiteTable(record, input)
 	case string(database.ClickHouse):
 		return s.renameClickHouseTable(record, input)
+	case string(database.MongoDB):
+		return s.renameMongoDBCollection(record, input)
 	default:
 		return RenameTableResult{}, fmt.Errorf("%s 暂未接入真实重命名表", record.Engine)
 	}
@@ -788,17 +800,29 @@ func (s *Service) getPostgreSQLTableRowCounts(record store.ConnectionRecord, dat
 	}
 	defer db.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	for _, name := range tables {
-		schemaName, bareTable := splitSchemaAndTable(name, "public")
-		var count int64
-		if err := db.QueryRowContext(ctx, `
-			SELECT COALESCE(c.reltuples::bigint, 0)
-			FROM pg_class c
-			JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE n.nspname = $1 AND c.relname = $2`, schemaName, bareTable).Scan(&count); err == nil {
-			counts[name] = count
+
+	if len(tables) <= 30 {
+		for _, name := range tables {
+			schemaName, bareTable := splitSchemaAndTable(name, "public")
+			var count int64
+			query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", quotePostgreSQLIdentifier(schemaName), quotePostgreSQLIdentifier(bareTable))
+			if err := db.QueryRowContext(ctx, query).Scan(&count); err == nil {
+				counts[name] = count
+			}
+		}
+	} else {
+		for _, name := range tables {
+			schemaName, bareTable := splitSchemaAndTable(name, "public")
+			var count int64
+			if err := db.QueryRowContext(ctx, `
+				SELECT COALESCE(c.reltuples::bigint, 0)
+				FROM pg_class c
+				JOIN pg_namespace n ON n.oid = c.relnamespace
+				WHERE n.nspname = $1 AND c.relname = $2`, schemaName, bareTable).Scan(&count); err == nil {
+				counts[name] = count
+			}
 		}
 	}
 	return TableRowCountResult{ConnectionID: record.ID, Database: databaseName, Counts: counts}, nil
