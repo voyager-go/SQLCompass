@@ -265,6 +265,53 @@ export function appendUnique(items: string[], value: string): string[] {
     return items.includes(value) ? items : [...items, value];
 }
 
+const fieldTypeOptionsByEngine: Record<string, string[]> = {
+    mysql: [
+        "tinyint", "smallint", "mediumint", "int", "bigint",
+        "float", "double", "decimal(10,2)",
+        "date", "datetime", "timestamp", "time", "year",
+        "char(32)", "varchar(64)", "varchar(128)", "varchar(255)",
+        "tinytext", "text", "mediumtext", "longtext",
+        "binary(16)", "varbinary(255)", "tinyblob", "blob", "mediumblob", "longblob",
+        "enum('Y','N')", "set('A','B')", "json",
+    ],
+    mariadb: [
+        "tinyint", "smallint", "mediumint", "int", "bigint",
+        "float", "double", "decimal(10,2)",
+        "date", "datetime", "timestamp", "time", "year",
+        "char(32)", "varchar(64)", "varchar(128)", "varchar(255)",
+        "tinytext", "text", "mediumtext", "longtext",
+        "binary(16)", "varbinary(255)", "tinyblob", "blob", "mediumblob", "longblob",
+        "enum('Y','N')", "set('A','B')", "json",
+    ],
+    postgresql: [
+        "smallint", "integer", "bigint", "numeric(10,2)", "real", "double precision",
+        "serial", "bigserial", "boolean",
+        "date", "time", "timestamp", "timestamptz",
+        "char(32)", "varchar(64)", "varchar(255)", "text",
+        "bytea", "json", "jsonb", "uuid",
+    ],
+    sqlite: [
+        "INTEGER", "REAL", "TEXT", "BLOB", "NUMERIC",
+        "INTEGER PRIMARY KEY", "VARCHAR(255)", "DATETIME", "DATE", "BOOLEAN", "JSON",
+    ],
+    clickhouse: [
+        "Int8", "Int16", "Int32", "Int64",
+        "UInt8", "UInt16", "UInt32", "UInt64",
+        "Float32", "Float64", "Decimal(10,2)",
+        "String", "FixedString(16)",
+        "Date", "Date32", "DateTime", "DateTime64(3)",
+        "UUID", "Bool", "JSON", "Nullable(String)",
+    ],
+    redis: ["string", "hash", "list", "set", "zset", "stream"],
+};
+
+export function getFieldTypeOptions(engine: string, dynamicTypes: string[] = []): string[] {
+    const normalizedEngine = engine.toLowerCase();
+    const baseOptions = fieldTypeOptionsByEngine[normalizedEngine] ?? fieldTypeOptionsByEngine.mysql;
+    return [...new Set([...baseOptions, ...dynamicTypes.filter(Boolean)])];
+}
+
 export function stringifySQLValue(value: string): string {
     if (value === "") {
         return "NULL";
@@ -304,8 +351,19 @@ export function buildRowSelectionKey(page: number, columns: string[], row: Recor
     return `${page}:${rowIndex}:${signature}`;
 }
 
-export function buildFieldDefinition(field: SchemaDraftField): string {
+function quoteIdentifierByEngine(engine: string, value: string): string {
+    const normalized = engine.toLowerCase();
+    const trimmed = value.trim();
+    if (normalized === "postgresql" || normalized === "sqlite") {
+        return `"${trimmed.replace(/"/g, '""')}"`;
+    }
+    return `\`${trimmed.replace(/`/g, "``")}\``;
+}
+
+function buildFieldDefinition(engine: string, field: SchemaDraftField): string {
+    const identifier = quoteIdentifierByEngine(engine, field.name || "new_column");
     const parts = [`\`${field.name || "new_column"}\``, field.type || "varchar(255)"];
+    parts[0] = identifier;
     parts.push(field.nullable ? "NULL" : "NOT NULL");
 
     if (field.defaultValue.trim()) {
@@ -313,10 +371,14 @@ export function buildFieldDefinition(field: SchemaDraftField): string {
     }
 
     if (field.autoIncrement) {
-        parts.push("AUTO_INCREMENT");
+        if (engine === "postgresql") {
+            // PostgreSQL usually uses serial/identity types instead of a suffix.
+        } else if (engine !== "sqlite" && engine !== "clickhouse") {
+            parts.push("AUTO_INCREMENT");
+        }
     }
 
-    if (field.comment.trim()) {
+    if (field.comment.trim() && engine !== "postgresql" && engine !== "sqlite" && engine !== "clickhouse") {
         parts.push(`COMMENT '${field.comment.replace(/'/g, "''")}'`);
     }
 
@@ -335,48 +397,184 @@ export function fieldSignature(field: SchemaDraftField | TableField): string {
     ].join("|");
 }
 
-export function buildAlterSQL(tableDetail: TableDetail | null, tableName: string, draftFields: SchemaDraftField[]): string {
+export type SchemaDraftIndex = {
+    id: string;
+    originName: string;
+    name: string;
+    columns: string[];
+    unique: boolean;
+};
+
+export function buildAlterSQL(
+    engine: string,
+    tableDetail: TableDetail | null,
+    tableName: string,
+    draftFields: SchemaDraftField[],
+    draftIndexes?: SchemaDraftIndex[]
+): string {
     if (!tableDetail) {
         return "-- 请选择一张真实表";
     }
 
+    const normalizedEngine = engine.toLowerCase();
     const statements: string[] = [];
+    const postStatements: string[] = [];
     const originals = new Map(tableDetail.fields.map((field) => [field.name, field]));
     const draftNames = new Set(draftFields.map((field) => field.originName || field.name));
+    const tableIdentifier = normalizedEngine === "postgresql"
+        ? tableName.split(".").map((part) => quoteIdentifierByEngine(normalizedEngine, part)).join(".")
+        : quoteIdentifierByEngine(normalizedEngine, tableName);
 
     tableDetail.fields.forEach((field) => {
         if (!draftNames.has(field.name)) {
-            statements.push(`DROP COLUMN \`${field.name}\``);
+            if (normalizedEngine === "sqlite") {
+                statements.push(`-- SQLite 删除列通常需要重建整张表: ${field.name}`);
+            } else {
+                statements.push(`DROP COLUMN ${quoteIdentifierByEngine(normalizedEngine, field.name)}`);
+            }
         }
     });
 
     draftFields.forEach((field) => {
         if (!field.originName) {
-            statements.push(`ADD COLUMN ${buildFieldDefinition(field)}`);
+            statements.push(`ADD COLUMN ${buildFieldDefinition(normalizedEngine, field)}`);
+            if (normalizedEngine === "postgresql" && field.comment.trim()) {
+                postStatements.push(`COMMENT ON COLUMN ${tableIdentifier}.${quoteIdentifierByEngine(normalizedEngine, field.name)} IS '${field.comment.replace(/'/g, "''")}';`);
+            }
             return;
         }
 
         const original = originals.get(field.originName);
         if (!original) {
-            statements.push(`ADD COLUMN ${buildFieldDefinition(field)}`);
+            statements.push(`ADD COLUMN ${buildFieldDefinition(normalizedEngine, field)}`);
             return;
         }
 
         if (original.name !== field.name) {
-            statements.push(`CHANGE COLUMN \`${original.name}\` ${buildFieldDefinition(field)}`);
+            if (normalizedEngine === "mysql" || normalizedEngine === "mariadb") {
+                statements.push(`CHANGE COLUMN ${quoteIdentifierByEngine(normalizedEngine, original.name)} ${buildFieldDefinition(normalizedEngine, field)}`);
+            } else {
+                statements.push(`RENAME COLUMN ${quoteIdentifierByEngine(normalizedEngine, original.name)} TO ${quoteIdentifierByEngine(normalizedEngine, field.name)}`);
+                if (fieldSignature(original) !== fieldSignature(field)) {
+                    if (normalizedEngine === "postgresql") {
+                        statements.push(`ALTER COLUMN ${quoteIdentifierByEngine(normalizedEngine, field.name)} TYPE ${field.type}`);
+                    } else if (normalizedEngine === "clickhouse") {
+                        statements.push(`MODIFY COLUMN ${buildFieldDefinition(normalizedEngine, field)}`);
+                    } else if (normalizedEngine === "sqlite") {
+                        statements.push(`-- SQLite 修改列定义通常需要重建整张表: ${field.name}`);
+                    }
+                }
+            }
             return;
         }
 
         if (fieldSignature(original) !== fieldSignature(field)) {
-            statements.push(`MODIFY COLUMN ${buildFieldDefinition(field)}`);
+            if (normalizedEngine === "postgresql") {
+                if (original.type !== field.type) {
+                    statements.push(`ALTER COLUMN ${quoteIdentifierByEngine(normalizedEngine, field.name)} TYPE ${field.type}`);
+                }
+                if (original.nullable !== field.nullable) {
+                    statements.push(`ALTER COLUMN ${quoteIdentifierByEngine(normalizedEngine, field.name)} ${field.nullable ? "DROP NOT NULL" : "SET NOT NULL"}`);
+                }
+                if (original.defaultValue.trim() !== field.defaultValue.trim()) {
+                    statements.push(`ALTER COLUMN ${quoteIdentifierByEngine(normalizedEngine, field.name)} ${field.defaultValue.trim() ? `SET DEFAULT ${stringifySQLValue(field.defaultValue.trim())}` : "DROP DEFAULT"}`);
+                }
+                if (original.comment.trim() !== field.comment.trim()) {
+                    postStatements.push(`COMMENT ON COLUMN ${tableIdentifier}.${quoteIdentifierByEngine(normalizedEngine, field.name)} IS ${field.comment.trim() ? `'${field.comment.replace(/'/g, "''")}'` : "NULL"};`);
+                }
+            } else if (normalizedEngine === "sqlite") {
+                statements.push(`-- SQLite 修改列定义通常需要重建整张表: ${field.name}`);
+            } else {
+                statements.push(`MODIFY COLUMN ${buildFieldDefinition(normalizedEngine, field)}`);
+            }
         }
     });
 
-    if (statements.length === 0) {
+    if (draftIndexes) {
+        const originalIndexNames = new Set(tableDetail.indexes.map((idx) => idx.name));
+        const draftIndexNames = new Set(draftIndexes.map((idx) => idx.originName || idx.name));
+
+        tableDetail.indexes.forEach((idx) => {
+            if (!draftIndexNames.has(idx.name)) {
+                if (normalizedEngine === "sqlite") {
+                    statements.push(`-- SQLite 删除索引/主键通常需要重建表或单独 DROP INDEX: ${idx.name}`);
+                } else if (idx.name === "PRIMARY" || idx.name === "PRIMARY_KEY") {
+                    statements.push(`DROP PRIMARY KEY`);
+                } else {
+                    statements.push(normalizedEngine === "postgresql"
+                        ? `DROP INDEX ${quoteIdentifierByEngine(normalizedEngine, idx.name)};`
+                        : `DROP INDEX ${quoteIdentifierByEngine(normalizedEngine, idx.name)}`);
+                }
+            }
+        });
+
+        draftIndexes.forEach((idx) => {
+            if (!idx.originName) {
+                const unique = idx.unique ? "UNIQUE " : "";
+                if (normalizedEngine === "postgresql") {
+                    postStatements.push(`CREATE ${unique}INDEX ${quoteIdentifierByEngine(normalizedEngine, idx.name)} ON ${tableIdentifier} (${idx.columns.map((c) => quoteIdentifierByEngine(normalizedEngine, c)).join(", ")});`);
+                } else if (normalizedEngine === "sqlite") {
+                    postStatements.push(`CREATE ${unique}INDEX ${quoteIdentifierByEngine(normalizedEngine, idx.name)} ON ${tableIdentifier} (${idx.columns.map((c) => quoteIdentifierByEngine(normalizedEngine, c)).join(", ")});`);
+                } else {
+                    statements.push(`ADD ${unique}INDEX ${quoteIdentifierByEngine(normalizedEngine, idx.name)} (${idx.columns.map((c) => quoteIdentifierByEngine(normalizedEngine, c)).join(", ")})`);
+                }
+                return;
+            }
+
+            const original = tableDetail.indexes.find((i) => i.name === idx.originName);
+            if (!original) {
+                const unique = idx.unique ? "UNIQUE " : "";
+                if (normalizedEngine === "postgresql") {
+                    postStatements.push(`CREATE ${unique}INDEX ${quoteIdentifierByEngine(normalizedEngine, idx.name)} ON ${tableIdentifier} (${idx.columns.map((c) => quoteIdentifierByEngine(normalizedEngine, c)).join(", ")});`);
+                } else if (normalizedEngine === "sqlite") {
+                    postStatements.push(`CREATE ${unique}INDEX ${quoteIdentifierByEngine(normalizedEngine, idx.name)} ON ${tableIdentifier} (${idx.columns.map((c) => quoteIdentifierByEngine(normalizedEngine, c)).join(", ")});`);
+                } else {
+                    statements.push(`ADD ${unique}INDEX ${quoteIdentifierByEngine(normalizedEngine, idx.name)} (${idx.columns.map((c) => quoteIdentifierByEngine(normalizedEngine, c)).join(", ")})`);
+                }
+                return;
+            }
+
+            const nameChanged = original.name !== idx.name;
+            const colsChanged = original.columns.join(",") !== idx.columns.join(",");
+            const uniqueChanged = original.unique !== idx.unique;
+
+            if (nameChanged || colsChanged || uniqueChanged) {
+                if (normalizedEngine === "sqlite") {
+                    statements.push(`-- SQLite 调整索引通常需要 DROP/CREATE 或重建表: ${idx.name}`);
+                } else if (original.name === "PRIMARY" || original.name === "PRIMARY_KEY") {
+                    statements.push(`DROP PRIMARY KEY`);
+                    statements.push(`ADD PRIMARY KEY (${idx.columns.map((c) => quoteIdentifierByEngine(normalizedEngine, c)).join(", ")})`);
+                } else {
+                    statements.push(normalizedEngine === "postgresql"
+                        ? `DROP INDEX ${quoteIdentifierByEngine(normalizedEngine, original.name)};`
+                        : `DROP INDEX ${quoteIdentifierByEngine(normalizedEngine, original.name)}`);
+                    const unique = idx.unique ? "UNIQUE " : "";
+                    if (normalizedEngine === "postgresql") {
+                        postStatements.push(`CREATE ${unique}INDEX ${quoteIdentifierByEngine(normalizedEngine, idx.name)} ON ${tableIdentifier} (${idx.columns.map((c) => quoteIdentifierByEngine(normalizedEngine, c)).join(", ")});`);
+                    } else if (normalizedEngine === "sqlite") {
+                        postStatements.push(`CREATE ${unique}INDEX ${quoteIdentifierByEngine(normalizedEngine, idx.name)} ON ${tableIdentifier} (${idx.columns.map((c) => quoteIdentifierByEngine(normalizedEngine, c)).join(", ")});`);
+                    } else {
+                        statements.push(`ADD ${unique}INDEX ${quoteIdentifierByEngine(normalizedEngine, idx.name)} (${idx.columns.map((c) => quoteIdentifierByEngine(normalizedEngine, c)).join(", ")})`);
+                    }
+                }
+            }
+        });
+    }
+
+    if (statements.length === 0 && postStatements.length === 0) {
         return "-- 当前没有结构变更";
     }
 
-    return `ALTER TABLE \`${tableName}\`\n  ${statements.join(",\n  ")};`;
+    if (normalizedEngine === "postgresql") {
+        const alterStatements = statements.map((statement) => `ALTER TABLE ${tableIdentifier}\n  ${statement};`);
+        return [...alterStatements, ...postStatements].join("\n\n");
+    }
+
+    if (normalizedEngine === "sqlite") {
+        return [...statements, ...postStatements].join("\n");
+    }
+
+    return [`ALTER TABLE ${tableIdentifier}\n  ${statements.join(",\n  ")};`, ...postStatements].join("\n\n");
 }
 
 export function csvFromRows(columns: string[], rows: Record<string, string>[]): string {

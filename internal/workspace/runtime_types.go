@@ -19,6 +19,15 @@ type DatabaseNode struct {
 	Name       string      `json:"name"`
 	IsSystem   bool        `json:"isSystem"`
 	TableCount int         `json:"tableCount"`
+	Schemas    []SchemaNode `json:"schemas,omitempty"`
+	Tables     []TableNode `json:"tables"`
+	NextCursor uint64      `json:"nextCursor,omitempty"`
+	HasMore    bool        `json:"hasMore,omitempty"`
+}
+
+type SchemaNode struct {
+	Name       string      `json:"name"`
+	TableCount int         `json:"tableCount"`
 	Tables     []TableNode `json:"tables"`
 }
 
@@ -40,6 +49,22 @@ type TableRowCountResult struct {
 	ConnectionID string            `json:"connectionId"`
 	Database     string            `json:"database"`
 	Counts       map[string]int64  `json:"counts"` // table_name -> row_count
+}
+
+type RedisKeyBrowseRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+	Cursor       uint64 `json:"cursor"`
+	Count        int    `json:"count"`
+}
+
+type RedisKeyBrowseResult struct {
+	ConnectionID string      `json:"connectionId"`
+	Database     string      `json:"database"`
+	Cursor       uint64      `json:"cursor"`
+	NextCursor   uint64      `json:"nextCursor"`
+	HasMore      bool        `json:"hasMore"`
+	Keys         []TableNode `json:"keys"`
 }
 
 type TableDetailRequest struct {
@@ -247,4 +272,63 @@ type ExportFileRequest struct {
 type ExportFileResult struct {
 	Path  string `json:"path"`
 	Saved bool   `json:"saved"`
+}
+
+type CreateDatabaseRequest struct {
+	ConnectionID string `json:"connectionId"`
+	DatabaseName string `json:"databaseName"`
+	Charset      string `json:"charset"`
+	Collation    string `json:"collation"`
+}
+
+type CreateDatabaseResult struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+type FillTableRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+	Table        string `json:"table"`
+	Count        int    `json:"count"`
+}
+
+type FillTableResult struct {
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	InsertedRows int    `json:"insertedRows"`
+}
+
+type CreateTableRequest struct {
+	ConnectionID string            `json:"connectionId"`
+	Database     string            `json:"database"`
+	Schema       string            `json:"schema"`
+	TableName    string            `json:"tableName"`
+	PartitionBy  string            `json:"partitionBy"`
+	PrimaryKey   string            `json:"primaryKey"`
+	OrderBy      string            `json:"orderBy"`
+	SampleBy     string            `json:"sampleBy"`
+	Fields       []SchemaFieldInput `json:"fields"`
+	Indexes      []SchemaIndexInput `json:"indexes"`
+}
+
+type SchemaFieldInput struct {
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	Nullable      bool   `json:"nullable"`
+	DefaultValue  string `json:"defaultValue"`
+	Comment       string `json:"comment"`
+	Primary       bool   `json:"primary"`
+	AutoIncrement bool   `json:"autoIncrement"`
+}
+
+type SchemaIndexInput struct {
+	Name    string   `json:"name"`
+	Columns []string `json:"columns"`
+	Unique  bool     `json:"unique"`
+}
+
+type CreateTableResult struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
 }

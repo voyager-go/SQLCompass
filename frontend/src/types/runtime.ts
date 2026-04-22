@@ -23,9 +23,34 @@ export type TableRowCountResult = {
     counts: Record<string, number>;
 };
 
+export type RedisKeyBrowseRequest = {
+    connectionId: string;
+    database: string;
+    cursor: number;
+    count: number;
+};
+
+export type RedisKeyBrowseResult = {
+    connectionId: string;
+    database: string;
+    cursor: number;
+    nextCursor: number;
+    hasMore: boolean;
+    keys: TableNode[];
+};
+
 export type DatabaseNode = {
     name: string;
     isSystem: boolean;
+    tableCount: number;
+    schemas?: SchemaNode[];
+    tables: TableNode[];
+    nextCursor?: number;
+    hasMore?: boolean;
+};
+
+export type SchemaNode = {
+    name: string;
     tableCount: number;
     tables: TableNode[];
 };
@@ -144,6 +169,65 @@ export type RenameTableResult = {
     database: string;
     oldName: string;
     newName: string;
+    message: string;
+};
+
+export type CreateDatabaseRequest = {
+    connectionId: string;
+    databaseName: string;
+    charset: string;
+    collation: string;
+};
+
+export type CreateDatabaseResult = {
+    success: boolean;
+    message: string;
+};
+
+export type FillTableRequest = {
+    connectionId: string;
+    database: string;
+    table: string;
+    count: number;
+};
+
+export type FillTableResult = {
+    success: boolean;
+    message: string;
+    insertedRows: number;
+};
+
+export type SchemaFieldInput = {
+    name: string;
+    type: string;
+    nullable: boolean;
+    defaultValue: string;
+    comment: string;
+    primary: boolean;
+    autoIncrement: boolean;
+};
+
+export type SchemaIndexInput = {
+    name: string;
+    columns: string[];
+    unique: boolean;
+};
+
+export type CreateTableRequest = {
+    connectionId: string;
+    database: string;
+    schema: string;
+    tableName: string;
+    partitionBy: string;
+    primaryKey: string;
+    orderBy: string;
+    sampleBy: string;
+    fields: SchemaFieldInput[];
+    indexes: SchemaIndexInput[];
+};
+
+export type CreateTableResult = {
+    success: boolean;
     message: string;
 };
 

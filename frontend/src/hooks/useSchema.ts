@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import type { SchemaDraftField, TableDetail, AIFieldCommentResult, FieldDictionarySuggestion } from "../types/runtime";
 import { RenameTable, GenerateFieldComment, GetFieldDictionarySuggestion } from "../../wailsjs/go/main/App";
-import { browserGeneratedID, buildAlterSQL, copyText } from "../lib/utils";
+import { browserGeneratedID, buildAlterSQL, copyText, getFieldTypeOptions } from "../lib/utils";
 import type { NoticeTone } from "../lib/constants";
+import type { SchemaDraftIndex } from "../lib/utils";
 
 type Notice = {
     tone: NoticeTone;
@@ -27,6 +28,8 @@ export interface UseSchemaOptions {
 export interface UseSchemaReturn {
     schemaDraftFields: SchemaDraftField[];
     setSchemaDraftFields: React.Dispatch<React.SetStateAction<SchemaDraftField[]>>;
+    schemaDraftIndexes: SchemaDraftIndex[];
+    setSchemaDraftIndexes: React.Dispatch<React.SetStateAction<SchemaDraftIndex[]>>;
     renameModalOpen: boolean;
     setRenameModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
     renameTableName: string;
@@ -44,6 +47,9 @@ export interface UseSchemaReturn {
     handleRenameTable: () => Promise<void>;
     handleExportDDL: () => Promise<void>;
     handleCopyDDL: () => void;
+    handleAddIndex: () => void;
+    handleDeleteDraftIndex: (index: number) => void;
+    updateDraftIndex: <K extends keyof SchemaDraftIndex>(index: number, key: K, value: SchemaDraftIndex[K]) => void;
 }
 
 export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
@@ -63,27 +69,18 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
     } = options;
 
     const [schemaDraftFields, setSchemaDraftFields] = useState<SchemaDraftField[]>([]);
+    const [schemaDraftIndexes, setSchemaDraftIndexes] = useState<SchemaDraftIndex[]>([]);
     const [renameModalOpen, setRenameModalOpen] = useState(false);
     const [renameTableName, setRenameTableName] = useState("");
     const [schemaNotice, setSchemaNotice] = useState<Notice | null>(null);
     const [isRenamingTable, setIsRenamingTable] = useState(false);
 
-    const currentAlterSQL = useMemo(() => buildAlterSQL(tableDetail, selectedTable, schemaDraftFields), [tableDetail, selectedTable, schemaDraftFields]);
-
-    const mysqlFieldTypes = [
-        "tinyint", "smallint", "mediumint", "int", "bigint",
-        "float", "double", "decimal",
-        "date", "datetime", "timestamp", "time", "year",
-        "char", "varchar", "tinytext", "text", "mediumtext", "longtext",
-        "binary", "varbinary", "tinyblob", "blob", "mediumblob", "longblob",
-        "enum", "set",
-        "json",
-    ];
+    const currentAlterSQL = useMemo(() => buildAlterSQL(activeEngine, tableDetail, selectedTable, schemaDraftFields, schemaDraftIndexes), [activeEngine, tableDetail, selectedTable, schemaDraftFields, schemaDraftIndexes]);
 
     const mysqlTypeOptions = useMemo(() => {
         const dynamicTypes = schemaDraftFields.map((item) => item.type).filter(Boolean);
-        return [...new Set([...mysqlFieldTypes, ...dynamicTypes])];
-    }, [schemaDraftFields]);
+        return getFieldTypeOptions(activeEngine, dynamicTypes);
+    }, [activeEngine, schemaDraftFields]);
 
     async function applyFieldSuggestion(index: number, fieldName: string) {
         if (!fieldName.trim()) {
@@ -219,6 +216,36 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
         setSchemaDraftFields((current) => current.filter((_, itemIndex) => itemIndex !== index));
     }
 
+    function handleAddIndex() {
+        setSchemaDraftIndexes((current) => [
+            ...current,
+            {
+                id: browserGeneratedID(),
+                originName: "",
+                name: "",
+                columns: [],
+                unique: false,
+            },
+        ]);
+    }
+
+    function handleDeleteDraftIndex(index: number) {
+        setSchemaDraftIndexes((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    }
+
+    function updateDraftIndex<K extends keyof SchemaDraftIndex>(index: number, key: K, value: SchemaDraftIndex[K]) {
+        setSchemaDraftIndexes((current) =>
+            current.map((idx, itemIndex) =>
+                itemIndex === index
+                    ? {
+                          ...idx,
+                          [key]: value,
+                      }
+                    : idx,
+            ),
+        );
+    }
+
     async function handleRenameTable() {
         if (!selectedConnection || !selectedDatabase || !selectedTable || !renameTableName.trim()) {
             return;
@@ -274,6 +301,8 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
     return {
         schemaDraftFields,
         setSchemaDraftFields,
+        schemaDraftIndexes,
+        setSchemaDraftIndexes,
         renameModalOpen,
         setRenameModalOpen,
         renameTableName,
@@ -291,5 +320,8 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
         handleRenameTable,
         handleExportDDL,
         handleCopyDDL,
+        handleAddIndex,
+        handleDeleteDraftIndex,
+        updateDraftIndex,
     };
 }

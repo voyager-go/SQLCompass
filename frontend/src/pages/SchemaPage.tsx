@@ -1,5 +1,6 @@
 import { NoticeBanner } from "../components/NoticeBanner";
 import type { TableDetail, SchemaDraftField } from "../types/runtime";
+import type { SchemaDraftIndex } from "../lib/utils";
 
 type NoticeTone = "success" | "error" | "info";
 
@@ -24,6 +25,10 @@ interface SchemaPageProps {
     setRenameTableName: (v: string) => void;
     handleRenameTable: () => Promise<void>;
     isRenamingTable: boolean;
+    schemaDraftIndexes: SchemaDraftIndex[];
+    handleAddIndex: () => void;
+    handleDeleteDraftIndex: (index: number) => void;
+    updateDraftIndex: <K extends keyof SchemaDraftIndex>(index: number, key: K, value: SchemaDraftIndex[K]) => void;
 }
 
 export function SchemaPage({
@@ -47,6 +52,10 @@ export function SchemaPage({
     setRenameTableName,
     handleRenameTable,
     isRenamingTable,
+    schemaDraftIndexes,
+    handleAddIndex,
+    handleDeleteDraftIndex,
+    updateDraftIndex,
 }: SchemaPageProps) {
     return (
         <section className="page-panel page-panel--wide">
@@ -58,6 +67,9 @@ export function SchemaPage({
                 <div className="toolbar-actions">
                     <button type="button" className="ghost-button" onClick={handleAddField} disabled={!tableDetail}>
                         新增字段
+                    </button>
+                    <button type="button" className="ghost-button" onClick={handleAddIndex} disabled={!tableDetail}>
+                        新增索引
                     </button>
                     <button type="button" className="ghost-button" onClick={() => setRenameModalOpen(true)} disabled={!tableDetail}>
                         重命名表
@@ -148,6 +160,60 @@ export function SchemaPage({
                                             </td>
                                         </tr>
                                     ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="section-title" style={{ marginTop: 24 }}>
+                            <div>
+                                <h3>索引结构</h3>
+                            </div>
+                        </div>
+                        <div className="schema-table-shell">
+                            <table className="schema-table">
+                                <thead>
+                                    <tr>
+                                        <th>索引名</th>
+                                        <th>字段</th>
+                                        <th>唯一</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {schemaDraftIndexes.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={4} style={{ textAlign: "center", color: "#999" }}>暂无索引，点击上方「新增索引」添加</td>
+                                        </tr>
+                                    ) : (
+                                        schemaDraftIndexes.map((idx, index) => (
+                                            <tr key={idx.id}>
+                                                <td>
+                                                    <input
+                                                        value={idx.name}
+                                                        onChange={(event) => updateDraftIndex(index, "name", event.target.value)}
+                                                        placeholder="索引名"
+                                                    />
+                                                </td>
+                                                <td>
+                                                    <input
+                                                        value={idx.columns.join(",")}
+                                                        onChange={(event) => updateDraftIndex(index, "columns", event.target.value.split(",").map((c) => c.trim()).filter(Boolean))}
+                                                        placeholder="字段1,字段2"
+                                                    />
+                                                </td>
+                                                <td>
+                                                    <label className="checkbox-cell">
+                                                        <input type="checkbox" checked={idx.unique} onChange={(event) => updateDraftIndex(index, "unique", event.target.checked)} />
+                                                    </label>
+                                                </td>
+                                                <td>
+                                                    <button type="button" className="text-button text-button--danger" onClick={() => handleDeleteDraftIndex(index)}>
+                                                        删除
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
                                 </tbody>
                             </table>
                         </div>

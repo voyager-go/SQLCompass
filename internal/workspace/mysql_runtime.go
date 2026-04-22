@@ -31,13 +31,7 @@ func (s *Service) GetExplorerTree(input ExplorerRequest) (ExplorerTree, error) {
 	if err != nil {
 		return ExplorerTree{}, err
 	}
-
-	switch record.Engine {
-	case string(database.MySQL), string(database.MariaDB):
-		return s.getMySQLExplorerTree(record, input.Database)
-	default:
-		return ExplorerTree{}, fmt.Errorf("%s 暂未接入真实结构浏览", record.Engine)
-	}
+	return s.getExplorerTreeByRecord(record, input.Database)
 }
 
 func (s *Service) GetTableDetail(input TableDetailRequest) (TableDetail, error) {
@@ -45,13 +39,7 @@ func (s *Service) GetTableDetail(input TableDetailRequest) (TableDetail, error) 
 	if err != nil {
 		return TableDetail{}, err
 	}
-
-	switch record.Engine {
-	case string(database.MySQL), string(database.MariaDB):
-		return s.getMySQLTableDetail(record, input.Database, input.Table)
-	default:
-		return TableDetail{}, fmt.Errorf("%s 暂未接入真实表结构读取", record.Engine)
-	}
+	return s.getTableDetailByRecord(record, input.Database, input.Table)
 }
 
 func (s *Service) ExecuteQuery(input QueryRequest) (QueryResult, error) {
@@ -59,13 +47,7 @@ func (s *Service) ExecuteQuery(input QueryRequest) (QueryResult, error) {
 	if err != nil {
 		return QueryResult{}, err
 	}
-
-	switch record.Engine {
-	case string(database.MySQL), string(database.MariaDB):
-		return s.runMySQLQuery(record, input, true)
-	default:
-		return QueryResult{}, fmt.Errorf("%s 暂未接入真实 SQL 执行", record.Engine)
-	}
+	return s.executeQueryByRecord(record, input, true)
 }
 
 func (s *Service) PreviewTableData(input TablePreviewRequest) (QueryResult, error) {
@@ -73,29 +55,7 @@ func (s *Service) PreviewTableData(input TablePreviewRequest) (QueryResult, erro
 	if err != nil {
 		return QueryResult{}, err
 	}
-
-	if strings.TrimSpace(input.Database) == "" || strings.TrimSpace(input.Table) == "" {
-		return QueryResult{}, errors.New("数据库名和表名不能为空")
-	}
-
-	switch record.Engine {
-	case string(database.MySQL), string(database.MariaDB):
-		result, err := s.runMySQLQuery(record, QueryRequest{
-			ConnectionID: input.ConnectionID,
-			Database:     input.Database,
-			SQL:          fmt.Sprintf("SELECT * FROM `%s`", escapeIdentifier(input.Table)),
-			Page:         input.Page,
-			PageSize:     input.PageSize,
-		}, false)
-		if err != nil {
-			return QueryResult{}, err
-		}
-
-		result.Message = fmt.Sprintf("已预览表 %s 的前 %d 行数据", input.Table, len(result.Rows))
-		return result, nil
-	default:
-		return QueryResult{}, fmt.Errorf("%s 暂未接入真实表数据预览", record.Engine)
-	}
+	return s.previewTableDataByRecord(record, input)
 }
 
 func (s *Service) GetQueryHistory(connectionID string) ([]HistoryItem, error) {
@@ -144,39 +104,7 @@ func (s *Service) RenameTable(input RenameTableInput) (RenameTableResult, error)
 	if strings.TrimSpace(input.OldName) == "" || strings.TrimSpace(input.NewName) == "" {
 		return RenameTableResult{}, errors.New("旧表名和新表名不能为空")
 	}
-
-	switch record.Engine {
-	case string(database.MySQL), string(database.MariaDB):
-	default:
-		return RenameTableResult{}, fmt.Errorf("%s 暂未接入真实重命名表", record.Engine)
-	}
-
-	db, err := openMySQLDatabase(record, input.Database)
-	if err != nil {
-		return RenameTableResult{}, err
-	}
-	defer db.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	statement := fmt.Sprintf("RENAME TABLE `%s`.`%s` TO `%s`.`%s`",
-		escapeIdentifier(input.Database),
-		escapeIdentifier(input.OldName),
-		escapeIdentifier(input.Database),
-		escapeIdentifier(input.NewName),
-	)
-
-	if _, err := db.ExecContext(ctx, statement); err != nil {
-		return RenameTableResult{}, err
-	}
-
-	return RenameTableResult{
-		Database: input.Database,
-		OldName:  input.OldName,
-		NewName:  input.NewName,
-		Message:  "表已重命名",
-	}, nil
+	return s.renameTableByRecord(record, input)
 }
 
 func (s *Service) getMySQLExplorerTree(record store.ConnectionRecord, preferredDatabase string) (ExplorerTree, error) {
@@ -294,13 +222,7 @@ func (s *Service) GetTableRowCounts(input TableRowCountRequest) (TableRowCountRe
 	if err != nil {
 		return TableRowCountResult{}, err
 	}
-
-	switch record.Engine {
-	case string(database.MySQL), string(database.MariaDB):
-		return s.getMySQLTableRowCounts(record, input.Database, input.Tables)
-	default:
-		return TableRowCountResult{}, fmt.Errorf("%s 暂未接入表行数查询", record.Engine)
-	}
+	return s.getTableRowCountsByRecord(record, input.Database, input.Tables)
 }
 
 func (s *Service) getMySQLTableRowCounts(record store.ConnectionRecord, databaseName string, tables []string) (TableRowCountResult, error) {
@@ -935,4 +857,242 @@ func (s *Service) getConnectionRecord(id string) (store.ConnectionRecord, error)
 	}
 
 	return store.ConnectionRecord{}, errors.New("connection not found")
+}
+
+func (s *Service) CreateDatabase(input CreateDatabaseRequest) (CreateDatabaseResult, error) {
+	record, err := s.getConnectionRecord(input.ConnectionID)
+	if err != nil {
+		return CreateDatabaseResult{}, err
+	}
+
+	dbName := strings.TrimSpace(input.DatabaseName)
+	if dbName == "" {
+		return CreateDatabaseResult{}, errors.New("数据库名不能为空")
+	}
+
+	charset := strings.TrimSpace(input.Charset)
+	if charset == "" {
+		charset = "utf8mb4"
+	}
+	collation := strings.TrimSpace(input.Collation)
+	if collation == "" {
+		collation = "utf8mb4_general_ci"
+	}
+
+	db, err := openMySQLDatabase(record, "")
+	if err != nil {
+		return CreateDatabaseResult{}, err
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	sql := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET %s COLLATE %s;",
+		escapeIdentifier(dbName), charset, collation)
+	if _, err := db.ExecContext(ctx, sql); err != nil {
+		return CreateDatabaseResult{Success: false, Message: err.Error()}, nil
+	}
+
+	return CreateDatabaseResult{Success: true, Message: fmt.Sprintf("数据库 `%s` 创建成功", dbName)}, nil
+}
+
+func (s *Service) CreateTable(input CreateTableRequest) (CreateTableResult, error) {
+	record, err := s.getConnectionRecord(input.ConnectionID)
+	if err != nil {
+		return CreateTableResult{}, err
+	}
+
+	switch record.Engine {
+	case string(database.MySQL), string(database.MariaDB):
+		return s.createMySQLTable(record, input)
+	case string(database.PostgreSQL):
+		return s.createPostgreSQLTable(record, input)
+	case string(database.SQLite):
+		return s.createSQLiteTable(record, input)
+	case string(database.ClickHouse):
+		return s.createClickHouseTable(record, input)
+	default:
+		return CreateTableResult{}, fmt.Errorf("%s 暂未接入可视化建表", record.Engine)
+	}
+}
+
+func (s *Service) createMySQLTable(record store.ConnectionRecord, input CreateTableRequest) (CreateTableResult, error) {
+
+	database := strings.TrimSpace(input.Database)
+	tableName := strings.TrimSpace(input.TableName)
+	if database == "" || tableName == "" {
+		return CreateTableResult{}, errors.New("数据库名和表名不能为空")
+	}
+	if len(input.Fields) == 0 {
+		return CreateTableResult{}, errors.New("至少需要定义一个字段")
+	}
+
+	var fieldDefs []string
+	var primaryCols []string
+	for _, f := range input.Fields {
+		name := strings.TrimSpace(f.Name)
+		fieldType := strings.TrimSpace(f.Type)
+		if name == "" || fieldType == "" {
+			continue
+		}
+		def := fmt.Sprintf("`%s` %s", escapeIdentifier(name), fieldType)
+		if f.AutoIncrement {
+			def += " AUTO_INCREMENT"
+		}
+		if f.Primary {
+			primaryCols = append(primaryCols, fmt.Sprintf("`%s`", escapeIdentifier(name)))
+		}
+		if !f.Nullable {
+			def += " NOT NULL"
+		}
+		if strings.TrimSpace(f.DefaultValue) != "" {
+			def += fmt.Sprintf(" DEFAULT %s", strings.TrimSpace(f.DefaultValue))
+		}
+		if strings.TrimSpace(f.Comment) != "" {
+			def += fmt.Sprintf(" COMMENT '%s'", strings.ReplaceAll(strings.TrimSpace(f.Comment), "'", "\\'"))
+		}
+		fieldDefs = append(fieldDefs, def)
+	}
+
+	if len(primaryCols) > 0 {
+		fieldDefs = append(fieldDefs, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(primaryCols, ", ")))
+	}
+
+	for _, idx := range input.Indexes {
+		name := strings.TrimSpace(idx.Name)
+		if name == "" || len(idx.Columns) == 0 {
+			continue
+		}
+		cols := make([]string, len(idx.Columns))
+		for i, c := range idx.Columns {
+			cols[i] = fmt.Sprintf("`%s`", escapeIdentifier(strings.TrimSpace(c)))
+		}
+		unique := ""
+		if idx.Unique {
+			unique = "UNIQUE "
+		}
+		fieldDefs = append(fieldDefs, fmt.Sprintf("%sINDEX `%s` (%s)", unique, escapeIdentifier(name), strings.Join(cols, ", ")))
+	}
+
+	sql := fmt.Sprintf("CREATE TABLE `%s`.`%s` (\n  %s\n);",
+		escapeIdentifier(database), escapeIdentifier(tableName), strings.Join(fieldDefs, ",\n  "))
+
+	db, err := openMySQLDatabase(record, database)
+	if err != nil {
+		return CreateTableResult{}, err
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, sql); err != nil {
+		return CreateTableResult{Success: false, Message: err.Error()}, nil
+	}
+
+	return CreateTableResult{Success: true, Message: fmt.Sprintf("表 `%s`.`%s` 创建成功", database, tableName)}, nil
+}
+
+func (s *Service) FillTableData(input FillTableRequest) (FillTableResult, error) {
+	record, err := s.getConnectionRecord(input.ConnectionID)
+	if err != nil {
+		return FillTableResult{}, err
+	}
+
+	database := strings.TrimSpace(input.Database)
+	table := strings.TrimSpace(input.Table)
+	if database == "" || table == "" {
+		return FillTableResult{}, errors.New("数据库名和表名不能为空")
+	}
+
+	count := input.Count
+	if count <= 0 {
+		count = 100
+	}
+
+	db, err := openMySQLDatabase(record, database)
+	if err != nil {
+		return FillTableResult{}, err
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	fields, err := loadMySQLFields(ctx, db, database, table)
+	if err != nil {
+		return FillTableResult{}, err
+	}
+	if len(fields) == 0 {
+		return FillTableResult{}, errors.New("表中没有字段")
+	}
+
+	var colNames []string
+	var valuePlaceholders []string
+	for _, f := range fields {
+		if f.AutoIncrement {
+			continue
+		}
+		colNames = append(colNames, fmt.Sprintf("`%s`", escapeIdentifier(f.Name)))
+		valuePlaceholders = append(valuePlaceholders, "?")
+	}
+
+	if len(colNames) == 0 {
+		return FillTableResult{}, errors.New("没有可插入的字段（可能全是自增）")
+	}
+
+	sql := fmt.Sprintf("INSERT INTO `%s` (%s) VALUES (%s)",
+		escapeIdentifier(table), strings.Join(colNames, ", "), strings.Join(valuePlaceholders, ", "))
+
+	stmt, err := db.PrepareContext(ctx, sql)
+	if err != nil {
+		return FillTableResult{}, err
+	}
+	defer stmt.Close()
+
+	inserted := 0
+	for i := 0; i < count; i++ {
+		args := make([]any, 0, len(colNames))
+		for _, f := range fields {
+			if f.AutoIncrement {
+				continue
+			}
+			args = append(args, generateFakeValue(f.Type, i))
+		}
+		if _, err := stmt.ExecContext(ctx, args...); err != nil {
+			return FillTableResult{Success: false, Message: err.Error(), InsertedRows: inserted}, nil
+		}
+		inserted++
+	}
+
+	return FillTableResult{
+		Success:      true,
+		Message:      fmt.Sprintf("成功插入 %d 行数据", inserted),
+		InsertedRows: inserted,
+	}, nil
+}
+
+func generateFakeValue(fieldType string, seed int) any {
+	lower := strings.ToLower(fieldType)
+	switch {
+	case strings.Contains(lower, "int"):
+		return seed + 1
+	case strings.Contains(lower, "float"), strings.Contains(lower, "double"), strings.Contains(lower, "decimal"):
+		return float64(seed) + 0.5
+	case strings.Contains(lower, "bool"):
+		return seed%2 == 0
+	case strings.Contains(lower, "date") && strings.Contains(lower, "time"):
+		return time.Now().Add(time.Duration(seed) * time.Second).Format("2006-01-02 15:04:05")
+	case strings.Contains(lower, "date"):
+		return time.Now().Add(time.Duration(seed) * time.Hour * 24).Format("2006-01-02")
+	case strings.Contains(lower, "time"):
+		return time.Now().Add(time.Duration(seed) * time.Second).Format("15:04:05")
+	case strings.Contains(lower, "text"), strings.Contains(lower, "char"):
+		return fmt.Sprintf("val_%x", seed+1)
+	case strings.Contains(lower, "blob"), strings.Contains(lower, "binary"):
+		return []byte(fmt.Sprintf("bin_%x", seed+1))
+	default:
+		return fmt.Sprintf("val_%x", seed+1)
+	}
 }

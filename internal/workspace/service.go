@@ -199,9 +199,17 @@ func (s *Service) TestConnection(input ConnectionInput) (ConnectionTestResult, e
 
 	switch normalized.Engine {
 	case string(database.SQLite):
-		return testSQLiteConnection(normalized.FilePath), nil
+		fileValidation := testSQLiteConnection(normalized.FilePath)
+		if !fileValidation.Success {
+			return fileValidation, nil
+		}
+		return testSQLiteDriverConnection(normalized)
 	case string(database.MySQL), string(database.MariaDB):
 		return testMySQLConnection(normalized)
+	case string(database.PostgreSQL):
+		return testPostgreSQLConnection(normalized)
+	case string(database.ClickHouse):
+		return testClickHouseConnection(normalized)
 	case string(database.Redis):
 		return testRedisConnection(normalized)
 	}
@@ -507,11 +515,11 @@ func maskSecret(value string) string {
 
 // StorageInfoView is the frontend view of storage information.
 type StorageInfoView struct {
-	DataDir  string              `json:"dataDir"`
-	Files    []StorageFileEntry  `json:"files"`
-	Total    int64               `json:"total"`
-	TotalHR  string              `json:"totalHR"`
-	Writable bool                `json:"writable"`
+	DataDir  string             `json:"dataDir"`
+	Files    []StorageFileEntry `json:"files"`
+	Total    int64              `json:"total"`
+	TotalHR  string             `json:"totalHR"`
+	Writable bool               `json:"writable"`
 }
 
 // StorageFileEntry describes a single storage file for the frontend.
@@ -524,9 +532,9 @@ type StorageFileEntry struct {
 
 // SetStoragePathResult is the result of changing storage path.
 type SetStoragePathResult struct {
-	Success   bool   `json:"success"`
-	NewPath   string `json:"newPath"`
-	Message   string `json:"message"`
+	Success bool   `json:"success"`
+	NewPath string `json:"newPath"`
+	Message string `json:"message"`
 }
 
 func (s *Service) GetStorageInfo() StorageInfoView {

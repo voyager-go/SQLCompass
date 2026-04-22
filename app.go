@@ -144,6 +144,15 @@ func (a *App) GetTableRowCounts(input workspace.TableRowCountRequest) (workspace
 	return service.GetTableRowCounts(input)
 }
 
+func (a *App) BrowseRedisKeys(input workspace.RedisKeyBrowseRequest) (workspace.RedisKeyBrowseResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.RedisKeyBrowseResult{}, err
+	}
+
+	return service.BrowseRedisKeys(input)
+}
+
 func (a *App) GetTableDetail(input workspace.TableDetailRequest) (workspace.TableDetail, error) {
 	service, err := a.requireWorkspace()
 	if err != nil {
@@ -188,6 +197,35 @@ func (a *App) RenameTable(input workspace.RenameTableInput) (workspace.RenameTab
 
 	return service.RenameTable(input)
 }
+
+func (a *App) CreateDatabase(input workspace.CreateDatabaseRequest) (workspace.CreateDatabaseResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.CreateDatabaseResult{Success: false, Message: err.Error()}, err
+	}
+
+	return service.CreateDatabase(input)
+}
+
+func (a *App) FillTableData(input workspace.FillTableRequest) (workspace.FillTableResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.FillTableResult{Success: false, Message: err.Error()}, err
+	}
+
+	return service.FillTableData(input)
+}
+
+func (a *App) CreateTable(input workspace.CreateTableRequest) (workspace.CreateTableResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.CreateTableResult{Success: false, Message: err.Error()}, err
+	}
+
+	return service.CreateTable(input)
+}
+
+
 
 func (a *App) GetFieldDictionarySuggestion(input workspace.FieldDictionaryRequest) (workspace.FieldDictionarySuggestion, error) {
 	service, err := a.requireWorkspace()

@@ -3,6 +3,7 @@ import { ConnectionsPage } from "../pages/ConnectionsPage";
 import { QueryPage } from "../pages/QueryPage";
 import { HistoryPage } from "../pages/HistoryPage";
 import { SchemaPage } from "../pages/SchemaPage";
+import { CreateTablePage } from "../pages/CreateTablePage";
 import { AIPage } from "../pages/AIPage";
 import { ThemePage } from "../pages/ThemePage";
 import { SettingsPage } from "../pages/SettingsPage";
@@ -156,8 +157,9 @@ export interface WorkbenchRouterProps {
     handleRequestDeleteSelectedRows: () => void;
     queryPageSizeOptions: number[];
     handleExecuteQuery: (page: number) => void;
-    handleBeautifySQL: () => void;
-    handleOptimizeSQL: () => void;
+    selectedDatabase: string;
+    handleFillTableData: () => Promise<void>;
+    isFillingTable: boolean;
 
     // History
     historyItems: HistoryItem[];
@@ -190,6 +192,10 @@ export interface WorkbenchRouterProps {
     setRenameTableName: (v: string) => void;
     handleRenameTable: () => Promise<void>;
     isRenamingTable: boolean;
+    schemaDraftIndexes: { id: string; originName: string; name: string; columns: string[]; unique: boolean }[];
+    handleAddIndex: () => void;
+    handleDeleteDraftIndex: (index: number) => void;
+    updateDraftIndex: <K extends keyof { id: string; originName: string; name: string; columns: string[]; unique: boolean }>(index: number, key: K, value: { id: string; originName: string; name: string; columns: string[]; unique: boolean }[K]) => void;
 
     // AI
     aiNotice: Notice | null;
@@ -240,6 +246,7 @@ export interface WorkbenchRouterProps {
     setShowClearModal: (v: string | null) => void;
     refreshWorkspaceState: () => Promise<void>;
     handleSelectDatabase: (databaseName: string) => void;
+    loadExplorer: (connectionId: string, preferredDatabase?: string) => Promise<void>;
 }
 
 export function WorkbenchRouter(props: WorkbenchRouterProps) {
@@ -349,8 +356,9 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         handleRequestDeleteSelectedRows,
         queryPageSizeOptions,
         handleExecuteQuery,
-        handleBeautifySQL,
-        handleOptimizeSQL,
+        selectedDatabase,
+        handleFillTableData,
+        isFillingTable,
         // History
         historyItems,
         setHistoryItems,
@@ -381,6 +389,10 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         setRenameTableName,
         handleRenameTable,
         isRenamingTable,
+        schemaDraftIndexes,
+        handleAddIndex,
+        handleDeleteDraftIndex,
+        updateDraftIndex,
         // AI
         aiNotice,
         aiForm,
@@ -406,6 +418,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         showClearModal,
         setShowClearModal,
         refreshWorkspaceState,
+        loadExplorer,
     } = props;
 
     if (workMode === "chat") {
@@ -480,10 +493,8 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                 <QueryPage
                     isExecutingQuery={isExecutingQuery}
                     handleExecuteQuery={handleExecuteQuery}
-                    handleBeautifySQL={handleBeautifySQL}
                     isOptimizingSQL={isOptimizingSQL}
                     sqlText={sqlText}
-                    handleOptimizeSQL={handleOptimizeSQL}
                     sqlFileInputRef={sqlFileInputRef}
                     queryNotice={queryNotice}
                     sqlEditorCollapsed={sqlEditorCollapsed}
@@ -527,6 +538,11 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     canDeleteSelectedRows={canDeleteSelectedRows}
                     handleRequestDeleteSelectedRows={handleRequestDeleteSelectedRows}
                     queryPageSizeOptions={queryPageSizeOptions}
+                    selectedConnection={selectedConnection}
+                    selectedDatabase={selectedDatabase}
+                    selectedTable={selectedTable}
+                    handleFillTableData={handleFillTableData}
+                    isFillingTable={isFillingTable}
                 />
             );
         case "history":
@@ -571,6 +587,10 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     setRenameTableName={setRenameTableName}
                     handleRenameTable={handleRenameTable}
                     isRenamingTable={isRenamingTable}
+                    schemaDraftIndexes={schemaDraftIndexes}
+                    handleAddIndex={handleAddIndex}
+                    handleDeleteDraftIndex={handleDeleteDraftIndex}
+                    updateDraftIndex={updateDraftIndex}
                 />
             );
         case "ai":
@@ -594,6 +614,16 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     customTheme={customTheme}
                     setCustomTheme={setCustomTheme}
                     pushToast={pushToast}
+                />
+            );
+        case "create-table":
+            return (
+                <CreateTablePage
+                    selectedConnection={selectedConnection}
+                    selectedDatabase={selectedDatabase}
+                    pushToast={pushToast}
+                    loadExplorer={loadExplorer}
+                    setActivePage={setActivePage}
                 />
             );
         case "settings":

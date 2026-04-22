@@ -20,9 +20,74 @@ interface SidebarTreeProps {
     setTableContextMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; database: string; table: string } | null>>;
     openTableDesigner: (db: string, table: string) => void;
     pushToast: (tone: "success" | "error" | "info", title: string, message: string) => void;
+    dbContextMenu: { x: number; y: number; database: string } | null;
+    setDbContextMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; database: string } | null>>;
+    openCreateTablePage: (database: string) => void;
+    redisCursorHistoryByDatabase: Record<string, number[]>;
+    handleBrowseRedisKeys: (database: string, direction: "next" | "prev") => Promise<void>;
 }
 
 const tablePageSize = 12;
+
+function renderTableItem(
+    databaseName: string,
+    table: TableNode,
+    selectedTable: string,
+    workMode: "normal" | "chat",
+    handlePreviewTable: (db: string, table: string, page?: number) => Promise<void>,
+    setTableContextMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; database: string; table: string } | null>>,
+    pushToast: (tone: "success" | "error" | "info", title: string, message: string) => void,
+) {
+    return (
+        <div
+            key={table.name}
+            className={`navigator-table${table.name === selectedTable ? " navigator-table--active" : ""}`}
+            role="button"
+            tabIndex={0}
+            draggable={workMode === "chat"}
+            onDragStart={(event) => {
+                if (workMode !== "chat") {
+                    event.preventDefault();
+                    return;
+                }
+                event.dataTransfer.effectAllowed = "copy";
+                event.dataTransfer.setData(
+                    "application/x-sql-compass-chat-item",
+                    JSON.stringify({ kind: "table", database: databaseName, table: table.name })
+                );
+                setDragPreview(event, table.name, "数据表");
+            }}
+            onClick={() => handlePreviewTable(databaseName, table.name)}
+            onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setTableContextMenu({
+                    x: Math.min(event.clientX, window.innerWidth - 148),
+                    y: Math.min(event.clientY, window.innerHeight - 72),
+                    database: databaseName,
+                    table: table.name,
+                });
+            }}
+            onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    handlePreviewTable(databaseName, table.name).catch(() => undefined);
+                }
+            }}
+        >
+            <div className="navigator-table__main">
+                <CopyableText
+                    value={table.name}
+                    helperText={table.comment || "暂无表注释"}
+                    onCopied={(value) => pushToast(value ? "success" : "error", value ? "已复制表名" : "复制失败", value || "请重试")}
+                />
+            </div>
+            <span className="navigator-meta">
+                {table.rows === -1 ? "加载中..." : table.rows >= 0 ? table.rows.toLocaleString() : "-"}
+            </span>
+        </div>
+    );
+}
 
 function setDragPreview(event: React.DragEvent<HTMLElement>, title: string, typeLabel: string) {
     const preview = document.createElement("div");
@@ -51,6 +116,11 @@ export function SidebarTree({
     setTableContextMenu,
     openTableDesigner,
     pushToast,
+    dbContextMenu,
+    setDbContextMenu,
+    openCreateTablePage,
+    redisCursorHistoryByDatabase,
+    handleBrowseRedisKeys,
 }: SidebarTreeProps) {
     function toggleDatabaseExpanded(databaseName: string) {
         setExpandedDatabases((current) => ({
@@ -84,6 +154,9 @@ export function SidebarTree({
                 const normalizedPage = Math.min(page, pageCount);
                 const start = (normalizedPage - 1) * tablePageSize;
                 const visibleTables: TableNode[] = filteredTables.slice(start, start + tablePageSize);
+                const hasSchemas = Boolean(database.schemas && database.schemas.length > 0);
+                const isRedisDatabase = explorerTree.engine === "redis";
+                const redisHistory = redisCursorHistoryByDatabase[database.name] ?? [0];
 
                 return (
                     <div key={database.name} className={`navigator-db${isActive ? " navigator-db--active" : ""}`}>
@@ -103,6 +176,15 @@ export function SidebarTree({
                                     setDragPreview(event, database.name, "数据库");
                                 }}
                                 onClick={() => handleSelectDatabase(database.name)}
+                                onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    setDbContextMenu({
+                                        x: Math.min(event.clientX, window.innerWidth - 148),
+                                        y: Math.min(event.clientY, window.innerHeight - 72),
+                                        database: database.name,
+                                    });
+                                }}
                                 onKeyDown={(event) => {
                                     if (event.key === "Enter" || event.key === " ") {
                                         event.preventDefault();
@@ -132,59 +214,57 @@ export function SidebarTree({
 
                         {isExpanded ? (
                             <div className="navigator-table-list">
-                                {visibleTables.map((table) => (
-                                    <div
-                                        key={table.name}
-                                        className={`navigator-table${table.name === selectedTable ? " navigator-table--active" : ""}`}
-                                        role="button"
-                                        tabIndex={0}
-                                        draggable={workMode === "chat"}
-                                        onDragStart={(event) => {
-                                            if (workMode !== "chat") {
-                                                event.preventDefault();
-                                                return;
-                                            }
-                                            event.dataTransfer.effectAllowed = "copy";
-                                            event.dataTransfer.setData(
-                                                "application/x-sql-compass-chat-item",
-                                                JSON.stringify({ kind: "table", database: database.name, table: table.name })
-                                            );
-                                            setDragPreview(event, table.name, "数据表");
-                                        }}
-                                        onClick={() => handlePreviewTable(database.name, table.name)}
-                                        onContextMenu={(event) => {
-                                            event.preventDefault();
-                                            event.stopPropagation();
-                                            setTableContextMenu({
-                                                x: Math.min(event.clientX, window.innerWidth - 148),
-                                                y: Math.min(event.clientY, window.innerHeight - 72),
-                                                database: database.name,
-                                                table: table.name,
-                                            });
-                                        }}
-                                        onKeyDown={(event) => {
-                                            if (event.key === "Enter" || event.key === " ") {
-                                                event.preventDefault();
-                                                handlePreviewTable(database.name, table.name).catch(() => undefined);
-                                            }
-                                        }}
-                                    >
-                                        <div className="navigator-table__main">
-                                            <CopyableText
-                                                value={table.name}
-                                                helperText={table.comment || "暂无表注释"}
-                                                onCopied={(value) => pushToast(value ? "success" : "error", value ? "已复制表名" : "复制失败", value || "请重试")}
-                                            />
-                                        </div>
-                                        <span className="navigator-meta">
-                                            {table.rows === -1 ? "加载中..." : table.rows >= 0 ? table.rows.toLocaleString() : "-"}
-                                        </span>
+                                {hasSchemas
+                                    ? database.schemas!
+                                          .map((schema) => ({
+                                              ...schema,
+                                              tables: schema.tables.filter((table) => {
+                                                  const searchMatched = !tableSearch.trim() || table.name.toLowerCase().includes(tableSearch.trim().toLowerCase());
+                                                  const filterMatched = tableFilter.length === 0 || tableFilter.includes(table.name);
+                                                  return searchMatched && filterMatched;
+                                              }),
+                                          }))
+                                          .filter((schema) => schema.tables.length > 0)
+                                          .map((schema) => (
+                                              <div key={`${database.name}-${schema.name}`} className="navigator-schema-group">
+                                                  <div className="navigator-schema-label">
+                                                      <span>{schema.name}</span>
+                                                      <span>{schema.tableCount}</span>
+                                                  </div>
+                                                  <div className="navigator-schema-tables">
+                                                      {schema.tables.map((table) =>
+                                                          renderTableItem(database.name, table, selectedTable, workMode, handlePreviewTable, setTableContextMenu, pushToast)
+                                                      )}
+                                                  </div>
+                                              </div>
+                                          ))
+                                    : visibleTables.map((table) =>
+                                          renderTableItem(database.name, table, selectedTable, workMode, handlePreviewTable, setTableContextMenu, pushToast)
+                                      )}
+
+                                {(hasSchemas ? filteredTables.length === 0 : visibleTables.length === 0) ? <div className="navigator-empty">没有匹配的表</div> : null}
+
+                                {!hasSchemas && isRedisDatabase ? (
+                                    <div className="navigator-pager">
+                                        <button
+                                            type="button"
+                                            className="mini-ghost-button"
+                                            onClick={() => handleBrowseRedisKeys(database.name, "prev")}
+                                            disabled={redisHistory.length <= 1}
+                                        >
+                                            上一批
+                                        </button>
+                                        <span>{redisHistory.length}</span>
+                                        <button
+                                            type="button"
+                                            className="mini-ghost-button"
+                                            onClick={() => handleBrowseRedisKeys(database.name, "next")}
+                                            disabled={!database.hasMore}
+                                        >
+                                            下一批
+                                        </button>
                                     </div>
-                                ))}
-
-                                {visibleTables.length === 0 ? <div className="navigator-empty">没有匹配的表</div> : null}
-
-                                {pageCount > 1 && visibleTables.length > 0 ? (
+                                ) : !hasSchemas && pageCount > 1 && visibleTables.length > 0 ? (
                                     <div className="navigator-pager">
                                         <button
                                             type="button"
@@ -223,7 +303,7 @@ export function SidebarTree({
                 );
             })}
 
-            {tableContextMenu ? (
+            {tableContextMenu && explorerTree?.canDesignTables ? (
                 <div
                     className="context-menu"
                     style={{
@@ -239,6 +319,26 @@ export function SidebarTree({
                         onClick={() => openTableDesigner(tableContextMenu.database, tableContextMenu.table)}
                     >
                         设计
+                    </button>
+                </div>
+            ) : null}
+
+            {dbContextMenu ? (
+                <div
+                    className="context-menu"
+                    style={{
+                        top: dbContextMenu.y,
+                        left: dbContextMenu.x,
+                    }}
+                    onClick={(event) => event.stopPropagation()}
+                    onContextMenu={(event) => event.preventDefault()}
+                >
+                    <button
+                        type="button"
+                        className="context-menu__item"
+                        onClick={() => openCreateTablePage(dbContextMenu.database)}
+                    >
+                        新建表
                     </button>
                 </div>
             ) : null}

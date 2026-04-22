@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/redis/go-redis/v9"
+	_ "modernc.org/sqlite"
 )
 
 const pingTimeout = 2 * time.Second
@@ -71,6 +75,92 @@ func testRedisConnection(input ConnectionInput) (ConnectionTestResult, error) {
 		Success: true,
 		Message: "Redis ping succeeded",
 		Detail:  fmt.Sprintf("Driver-level ping succeeded for %s", detail),
+	}, nil
+}
+
+func testPostgreSQLConnection(input ConnectionInput) (ConnectionTestResult, error) {
+	dsn, detail, err := buildPostgreSQLDSN(input)
+	if err != nil {
+		return ConnectionTestResult{}, err
+	}
+
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return ConnectionTestResult{}, err
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		return ConnectionTestResult{
+			Success: false,
+			Message: "PostgreSQL authentication failed",
+			Detail:  fmt.Sprintf("Driver-level ping to %s failed: %v", detail, err),
+		}, nil
+	}
+
+	return ConnectionTestResult{
+		Success: true,
+		Message: "PostgreSQL authentication succeeded",
+		Detail:  fmt.Sprintf("Driver-level ping succeeded for %s", detail),
+	}, nil
+}
+
+func testClickHouseConnection(input ConnectionInput) (ConnectionTestResult, error) {
+	dsn, detail, err := buildClickHouseDSN(input, "")
+	if err != nil {
+		return ConnectionTestResult{}, err
+	}
+
+	db, err := sql.Open("clickhouse", dsn)
+	if err != nil {
+		return ConnectionTestResult{}, err
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		return ConnectionTestResult{
+			Success: false,
+			Message: "ClickHouse ping failed",
+			Detail:  fmt.Sprintf("Driver-level ping to %s failed: %v", detail, err),
+		}, nil
+	}
+
+	return ConnectionTestResult{
+		Success: true,
+		Message: "ClickHouse ping succeeded",
+		Detail:  fmt.Sprintf("Driver-level ping succeeded for %s", detail),
+	}, nil
+}
+
+func testSQLiteDriverConnection(input ConnectionInput) (ConnectionTestResult, error) {
+	dsn, detail := buildSQLiteDSN(input.FilePath)
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return ConnectionTestResult{}, err
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		return ConnectionTestResult{
+			Success: false,
+			Message: "SQLite open failed",
+			Detail:  fmt.Sprintf("Driver-level open for %s failed: %v", detail, err),
+		}, nil
+	}
+
+	return ConnectionTestResult{
+		Success: true,
+		Message: "SQLite open succeeded",
+		Detail:  fmt.Sprintf("Driver-level open succeeded for %s", detail),
 	}, nil
 }
 
@@ -163,6 +253,95 @@ func buildRedisOptions(input ConnectionInput) (*redis.Options, string, error) {
 	}
 
 	return options, options.Addr, nil
+}
+
+func buildPostgreSQLDSN(input ConnectionInput) (string, string, error) {
+	if strings.TrimSpace(input.URL) != "" {
+		parsedURL, err := url.Parse(strings.TrimSpace(input.URL))
+		if err != nil {
+			return "", "", fmt.Errorf("invalid PostgreSQL URL: %w", err)
+		}
+		query := parsedURL.Query()
+		if query.Get("connect_timeout") == "" {
+			query.Set("connect_timeout", strconv.Itoa(int(pingTimeout/time.Second)))
+		}
+		parsedURL.RawQuery = query.Encode()
+		return parsedURL.String(), parsedURL.Redacted(), nil
+	}
+
+	if input.Host == "" {
+		return "", "", errors.New("postgresql host is required")
+	}
+	if input.Port <= 0 {
+		return "", "", errors.New("postgresql port must be greater than zero")
+	}
+
+	parsedURL := &url.URL{
+		Scheme: "postgres",
+		Host:   net.JoinHostPort(input.Host, strconv.Itoa(input.Port)),
+		Path:   "/" + firstNonEmpty(input.Database, "postgres"),
+	}
+	if input.Username != "" {
+		parsedURL.User = url.UserPassword(input.Username, input.Password)
+		if input.Password == "" {
+			parsedURL.User = url.User(input.Username)
+		}
+	}
+	query := parsedURL.Query()
+	query.Set("connect_timeout", strconv.Itoa(int(pingTimeout/time.Second)))
+	if query.Get("sslmode") == "" {
+		query.Set("sslmode", "disable")
+	}
+	parsedURL.RawQuery = query.Encode()
+
+	return parsedURL.String(), parsedURL.Redacted(), nil
+}
+
+func buildSQLiteDSN(filePath string) (string, string) {
+	cleanPath := filepath.Clean(strings.TrimSpace(filePath))
+	return cleanPath, cleanPath
+}
+
+func buildClickHouseDSN(input ConnectionInput, databaseOverride string) (string, string, error) {
+	if strings.TrimSpace(input.URL) != "" {
+		parsedURL, err := url.Parse(strings.TrimSpace(input.URL))
+		if err != nil {
+			return "", "", fmt.Errorf("invalid ClickHouse URL: %w", err)
+		}
+		if strings.TrimSpace(databaseOverride) != "" {
+			parsedURL.Path = "/" + strings.TrimSpace(databaseOverride)
+		}
+		query := parsedURL.Query()
+		if query.Get("dial_timeout") == "" {
+			query.Set("dial_timeout", pingTimeout.String())
+		}
+		parsedURL.RawQuery = query.Encode()
+		return parsedURL.String(), parsedURL.Redacted(), nil
+	}
+
+	if input.Host == "" {
+		return "", "", errors.New("clickhouse host is required")
+	}
+	if input.Port <= 0 {
+		return "", "", errors.New("clickhouse port must be greater than zero")
+	}
+
+	parsedURL := &url.URL{
+		Scheme: "clickhouse",
+		Host:   net.JoinHostPort(input.Host, strconv.Itoa(input.Port)),
+		Path:   "/" + firstNonEmpty(strings.TrimSpace(databaseOverride), input.Database, "default"),
+	}
+	if input.Username != "" {
+		parsedURL.User = url.UserPassword(input.Username, input.Password)
+		if input.Password == "" {
+			parsedURL.User = url.User(input.Username)
+		}
+	}
+	query := parsedURL.Query()
+	query.Set("dial_timeout", pingTimeout.String())
+	parsedURL.RawQuery = query.Encode()
+
+	return parsedURL.String(), parsedURL.Redacted(), nil
 }
 
 func flattenURLQuery(parsed *url.URL) map[string]string {

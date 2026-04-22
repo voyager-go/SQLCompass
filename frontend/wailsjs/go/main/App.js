@@ -10,6 +10,10 @@ export function BeautifySQL(arg1) {
   return window['go']['main']['App']['BeautifySQL'](arg1);
 }
 
+export function BrowseRedisKeys(arg1) {
+  return window['go']['main']['App']['BrowseRedisKeys'](arg1);
+}
+
 export function ChatWithDatabase(arg1) {
   return window['go']['main']['App']['ChatWithDatabase'](arg1);
 }
@@ -22,6 +26,14 @@ export function ClearStorageData(arg1) {
   return window['go']['main']['App']['ClearStorageData'](arg1);
 }
 
+export function CreateDatabase(arg1) {
+  return window['go']['main']['App']['CreateDatabase'](arg1);
+}
+
+export function CreateTable(arg1) {
+  return window['go']['main']['App']['CreateTable'](arg1);
+}
+
 export function DeleteConnection(arg1) {
   return window['go']['main']['App']['DeleteConnection'](arg1);
 }
@@ -32,6 +44,10 @@ export function ExecuteQuery(arg1) {
 
 export function ExportTextFile(arg1) {
   return window['go']['main']['App']['ExportTextFile'](arg1);
+}
+
+export function FillTableData(arg1) {
+  return window['go']['main']['App']['FillTableData'](arg1);
 }
 
 export function GenerateFieldComment(arg1) {

@@ -1,5 +1,5 @@
 export type NoticeTone = "success" | "error" | "info";
-export type WorkbenchPage = "connections" | "query" | "history" | "schema" | "transfer" | "ai" | "theme" | "settings";
+export type WorkbenchPage = "connections" | "query" | "history" | "schema" | "create-table" | "transfer" | "ai" | "theme" | "settings";
 export type WorkMode = "normal" | "chat";
 export type ThemeMode = "light" | "dark" | "custom";
 

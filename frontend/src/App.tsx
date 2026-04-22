@@ -4,8 +4,12 @@ import type { IDisposable, editor as MonacoEditorNS } from "monaco-editor";
 import {
     AnalyzeSQL,
     BeautifySQL,
+    BrowseRedisKeys,
+    CreateDatabase,
+    CreateTable,
     ExecuteQuery,
     ExportTextFile,
+    FillTableData,
     GetExplorerTree,
     GetQueryHistory,
     GetStorageInfo,
@@ -283,6 +287,7 @@ function App() {
 
     const [tableDetail, setTableDetail] = useState<TableDetail | null>(null);
     const [tablePageByDatabase, setTablePageByDatabase] = useState<Record<string, number>>({});
+    const [redisCursorHistoryByDatabase, setRedisCursorHistoryByDatabase] = useState<Record<string, number[]>>({});
     const [expandedDatabases, setExpandedDatabases] = useState<Record<string, boolean>>({});
 
     const [sqlText, setSQLText] = useState("");
@@ -315,6 +320,11 @@ function App() {
     const [isExecutingQuery, setIsExecutingQuery] = useState(false);
     const [isOptimizingSQL, setIsOptimizingSQL] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
+    const [isFillingTable, setIsFillingTable] = useState(false);
+    const [showCreateDBModal, setShowCreateDBModal] = useState(false);
+    const [createDBForm, setCreateDBForm] = useState({ name: "", charset: "utf8mb4", collation: "utf8mb4_unicode_ci" });
+    const [isCreatingDB, setIsCreatingDB] = useState(false);
+    const [dbContextMenu, setDbContextMenu] = useState<{ x: number; y: number; database: string } | null>(null);
 
     const selectedConnection = workspaceState.connections.find((item) => item.id === selectedConnectionId) ?? null;
     const primaryFieldNames = useMemo(() => tableDetail?.fields.filter((field) => field.primary).map((field) => field.name) ?? [], [tableDetail]);
@@ -507,8 +517,16 @@ function App() {
         const tree = (await GetExplorerTree({ connectionId, database: preferredDatabase })) as ExplorerTree;
         setExplorerTree(tree);
 
+        if (tree.engine === "redis") {
+            const nextHistory: Record<string, number[]> = {};
+            tree.databases.forEach((db) => {
+                nextHistory[db.name] = [0];
+            });
+            setRedisCursorHistoryByDatabase(nextHistory);
+        }
+
         // 2. 异步加载行数
-        if (tree.databases && tree.databases.length > 0) {
+        if (tree.engine !== "redis" && tree.databases && tree.databases.length > 0) {
             loadTableRowCounts(connectionId, tree);
         }
 
@@ -530,6 +548,62 @@ function App() {
                 setSelectedTable("");
             }
         }
+    }
+
+    async function handleBrowseRedisKeys(databaseName: string, direction: "next" | "prev") {
+        if (!selectedConnection || !explorerTree || explorerTree.engine !== "redis") {
+            return;
+        }
+
+        const currentDatabase = explorerTree.databases.find((db) => db.name === databaseName);
+        if (!currentDatabase) {
+            return;
+        }
+
+        const history = redisCursorHistoryByDatabase[databaseName] ?? [0];
+        const cursor = direction === "next"
+            ? (currentDatabase.nextCursor ?? 0)
+            : history[Math.max(0, history.length - 2)] ?? 0;
+
+        const result = (await BrowseRedisKeys({
+            connectionId: selectedConnection.id,
+            database: databaseName,
+            cursor,
+            count: 50,
+        })) as import("./types/runtime").RedisKeyBrowseResult;
+
+        setExplorerTree((prev) => {
+            if (!prev) {
+                return prev;
+            }
+            return {
+                ...prev,
+                databases: prev.databases.map((db) =>
+                    db.name === databaseName
+                        ? {
+                              ...db,
+                              tables: result.keys,
+                              nextCursor: result.nextCursor,
+                              hasMore: result.hasMore,
+                          }
+                        : db,
+                ),
+            };
+        });
+
+        setRedisCursorHistoryByDatabase((prev) => {
+            const current = prev[databaseName] ?? [0];
+            if (direction === "next") {
+                return {
+                    ...prev,
+                    [databaseName]: [...current, cursor],
+                };
+            }
+            return {
+                ...prev,
+                [databaseName]: current.slice(0, Math.max(1, current.length - 1)),
+            };
+        });
     }
 
     // 异步加载表行数
@@ -591,6 +665,7 @@ function App() {
         if (browserPreview || !connectionId || !database || !table) {
             setTableDetail(null);
             schema.setSchemaDraftFields([]);
+            schema.setSchemaDraftIndexes([]);
             return;
         }
 
@@ -604,6 +679,13 @@ function App() {
                 originName: field.name,
                 needsAiComment: field.comment.trim() === "",
                 aiLoading: false,
+            })),
+        );
+        schema.setSchemaDraftIndexes(
+            detail.indexes.map((idx) => ({
+                ...idx,
+                id: browserGeneratedID(),
+                originName: idx.name,
             })),
         );
     }
@@ -738,6 +820,26 @@ function App() {
             window.removeEventListener("keydown", handleKeyDown);
         };
     }, [tableContextMenu]);
+
+    useEffect(() => {
+        if (!dbContextMenu) {
+            return;
+        }
+
+        const closeMenu = () => setDbContextMenu(null);
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                setDbContextMenu(null);
+            }
+        };
+
+        window.addEventListener("click", closeMenu);
+        window.addEventListener("keydown", handleKeyDown);
+        return () => {
+            window.removeEventListener("click", closeMenu);
+            window.removeEventListener("keydown", handleKeyDown);
+        };
+    }, [dbContextMenu]);
 
     useEffect(() => {
         const monaco = monacoRef.current;
@@ -1557,6 +1659,71 @@ function App() {
         event.target.value = "";
     }
 
+    async function handleFillTableData() {
+        if (!selectedConnection || !selectedDatabase || !selectedTable) {
+            setQueryNotice({ tone: "info", message: "请先选择连接、数据库和数据表。" });
+            return;
+        }
+        try {
+            setIsFillingTable(true);
+            const result = (await FillTableData({
+                connectionId: selectedConnection.id,
+                database: selectedDatabase,
+                table: selectedTable,
+                count: 100,
+            })) as { success: boolean; message: string; insertedRows: number };
+            if (result.success) {
+                pushToast("success", "填充完成", result.message);
+                await handlePreviewTable(selectedDatabase, selectedTable, 1);
+                await loadExplorer(selectedConnection.id, selectedDatabase);
+            } else {
+                setQueryNotice({ tone: "error", message: result.message });
+            }
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setQueryNotice({ tone: "error", message });
+        } finally {
+            setIsFillingTable(false);
+        }
+    }
+
+    async function handleCreateDatabase() {
+        if (!selectedConnection || !createDBForm.name.trim()) {
+            return;
+        }
+        try {
+            setIsCreatingDB(true);
+            const result = (await CreateDatabase({
+                connectionId: selectedConnection.id,
+                databaseName: createDBForm.name.trim(),
+                charset: createDBForm.charset,
+                collation: createDBForm.collation,
+            })) as { success: boolean; message: string };
+            if (result.success) {
+                pushToast("success", "创建成功", result.message);
+                setShowCreateDBModal(false);
+                setCreateDBForm({ name: "", charset: "utf8mb4", collation: "utf8mb4_unicode_ci" });
+                await loadExplorer(selectedConnection.id);
+            } else {
+                setWorkspaceNotice({ tone: "error", message: result.message });
+            }
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setWorkspaceNotice({ tone: "error", message });
+        } finally {
+            setIsCreatingDB(false);
+        }
+    }
+
+    function openCreateTablePage(databaseName: string) {
+        setSelectedDatabase(databaseName);
+        setSelectedTable("");
+        setActivePage("create-table");
+        setTableContextMenu(null);
+        setDbContextMenu(null);
+        schema.setSchemaDraftFields([]);
+    }
+
     return (
         <>
             {showSplash && <SplashScreen />}
@@ -1598,6 +1765,12 @@ function App() {
                     activePage={activePage}
                     setActivePage={setActivePage}
                     saveFilterSettings={saveFilterSettings}
+                    setShowCreateDBModal={setShowCreateDBModal}
+                    dbContextMenu={dbContextMenu}
+                    setDbContextMenu={setDbContextMenu}
+                    openCreateTablePage={openCreateTablePage}
+                    redisCursorHistoryByDatabase={redisCursorHistoryByDatabase}
+                    handleBrowseRedisKeys={handleBrowseRedisKeys}
                 />
 
             <main className="workbench">
@@ -1706,8 +1879,10 @@ function App() {
                         handleRequestDeleteSelectedRows={handleRequestDeleteSelectedRows}
                         queryPageSizeOptions={QUERY_PAGE_SIZE_OPTIONS}
                         handleExecuteQuery={handleExecuteQuery}
-                        handleBeautifySQL={handleBeautifySQL}
-                        handleOptimizeSQL={handleOptimizeSQL}
+                        selectedDatabase={selectedDatabase}
+                        selectedTable={selectedTable}
+                        handleFillTableData={handleFillTableData}
+                        isFillingTable={isFillingTable}
                         historyItems={historyItems}
                         setHistoryItems={setHistoryItems}
                         historyPage={historyPage}
@@ -1718,7 +1893,6 @@ function App() {
                         setActivePage={setActivePage}
                         setSidebarView={setSidebarView}
                         setQueryNotice={setQueryNotice}
-                        selectedTable={selectedTable}
                         schemaNotice={schema.schemaNotice}
                         schemaDraftFields={schema.schemaDraftFields}
                         mysqlTypeOptions={schema.mysqlTypeOptions}
@@ -1736,6 +1910,10 @@ function App() {
                         setRenameTableName={schema.setRenameTableName}
                         handleRenameTable={schema.handleRenameTable}
                         isRenamingTable={schema.isRenamingTable}
+                        schemaDraftIndexes={schema.schemaDraftIndexes}
+                        handleAddIndex={schema.handleAddIndex}
+                        handleDeleteDraftIndex={schema.handleDeleteDraftIndex}
+                        updateDraftIndex={schema.updateDraftIndex}
                         aiNotice={ai.aiNotice}
                         aiForm={ai.aiForm}
                         setAIForm={ai.setAIForm}
@@ -1759,6 +1937,7 @@ function App() {
                         setShowClearModal={setShowClearModal}
                         refreshWorkspaceState={refreshWorkspaceState}
                         handleSelectDatabase={handleSelectDatabase}
+                        loadExplorer={loadExplorer}
                     />
                 </div>
             </main>
@@ -1786,6 +1965,65 @@ function App() {
                 handleConfirmDeleteSelectedRows={handleConfirmDeleteSelectedRows}
             />
 
+            {showCreateDBModal ? (
+                <div className="modal-backdrop" onClick={() => setShowCreateDBModal(false)}>
+                    <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+                        <div className="section-title">
+                            <div>
+                                <h3>新建数据库</h3>
+                                <p>在当前连接中创建一个新的 MySQL 数据库。</p>
+                            </div>
+                        </div>
+                        <label className="field">
+                            <span>数据库名称</span>
+                            <input
+                                value={createDBForm.name}
+                                onChange={(event) => setCreateDBForm((current) => ({ ...current, name: event.target.value }))}
+                                placeholder="例如：my_new_db"
+                            />
+                        </label>
+                        <label className="field">
+                            <span>字符集</span>
+                            <select
+                                value={createDBForm.charset}
+                                onChange={(event) => setCreateDBForm((current) => ({ ...current, charset: event.target.value }))}
+                            >
+                                <option value="utf8mb4">utf8mb4</option>
+                                <option value="utf8">utf8</option>
+                                <option value="latin1">latin1</option>
+                                <option value="gbk">gbk</option>
+                            </select>
+                        </label>
+                        <label className="field">
+                            <span>排序规则</span>
+                            <select
+                                value={createDBForm.collation}
+                                onChange={(event) => setCreateDBForm((current) => ({ ...current, collation: event.target.value }))}
+                            >
+                                <option value="utf8mb4_unicode_ci">utf8mb4_unicode_ci</option>
+                                <option value="utf8mb4_general_ci">utf8mb4_general_ci</option>
+                                <option value="utf8mb4_bin">utf8mb4_bin</option>
+                                <option value="utf8_unicode_ci">utf8_unicode_ci</option>
+                                <option value="utf8_general_ci">utf8_general_ci</option>
+                                <option value="latin1_swedish_ci">latin1_swedish_ci</option>
+                            </select>
+                        </label>
+                        <div className="toolbar-actions toolbar-actions--end">
+                            <button type="button" className="ghost-button" onClick={() => setShowCreateDBModal(false)}>
+                                取消
+                            </button>
+                            <button
+                                type="button"
+                                className="primary-button"
+                                onClick={handleCreateDatabase}
+                                disabled={isCreatingDB || !createDBForm.name.trim()}
+                            >
+                                {isCreatingDB ? "创建中..." : "确认创建"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
 
             </div>
         </>

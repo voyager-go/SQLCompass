@@ -8,17 +8,25 @@ export function AnalyzeSQL(arg1:string):Promise<workspace.SQLAnalysis>;
 
 export function BeautifySQL(arg1:workspace.SQLOptimizeRequest):Promise<workspace.SQLOptimizeResult>;
 
+export function BrowseRedisKeys(arg1:workspace.RedisKeyBrowseRequest):Promise<workspace.RedisKeyBrowseResult>;
+
 export function ChatWithDatabase(arg1:workspace.ChatDatabaseRequest):Promise<workspace.ChatDatabaseResponse>;
 
 export function ClearAIAPIKey():Promise<workspace.AISettingsView>;
 
 export function ClearStorageData(arg1:string):Promise<workspace.SetStoragePathResult>;
 
+export function CreateDatabase(arg1:workspace.CreateDatabaseRequest):Promise<workspace.CreateDatabaseResult>;
+
+export function CreateTable(arg1:workspace.CreateTableRequest):Promise<workspace.CreateTableResult>;
+
 export function DeleteConnection(arg1:string):Promise<void>;
 
 export function ExecuteQuery(arg1:workspace.QueryRequest):Promise<workspace.QueryResult>;
 
 export function ExportTextFile(arg1:workspace.ExportFileRequest):Promise<workspace.ExportFileResult>;
+
+export function FillTableData(arg1:workspace.FillTableRequest):Promise<workspace.FillTableResult>;
 
 export function GenerateFieldComment(arg1:workspace.AIFieldCommentRequest):Promise<workspace.AIFieldCommentResult>;
 

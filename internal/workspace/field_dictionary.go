@@ -580,7 +580,7 @@ func extractJSONBlock(content string) string {
 }
 
 func (s *Service) buildChatSchemaContext(record store.ConnectionRecord, databaseName string, selectedTable string, message string) string {
-	tree, err := s.getMySQLExplorerTree(record, databaseName)
+	tree, err := s.getExplorerTreeByRecord(record, databaseName)
 	if err != nil || len(tree.Databases) == 0 {
 		return "当前无法读取数据库结构，请优先使用连接信息。"
 	}
@@ -610,7 +610,12 @@ func (s *Service) buildChatSchemaContext(record store.ConnectionRecord, database
 
 	interestingTables := []string{}
 	if strings.TrimSpace(selectedTable) != "" {
-		interestingTables = append(interestingTables, selectedTable)
+		for _, item := range strings.Split(selectedTable, ",") {
+			trimmed := strings.TrimSpace(item)
+			if trimmed != "" {
+				interestingTables = appendUniqueTable(interestingTables, trimmed)
+			}
+		}
 	}
 
 	lowerMessage := strings.ToLower(message)
@@ -624,7 +629,7 @@ func (s *Service) buildChatSchemaContext(record store.ConnectionRecord, database
 	}
 
 	for _, tableName := range interestingTables {
-		detail, err := s.getMySQLTableDetail(record, currentDatabase.Name, tableName)
+		detail, err := s.getTableDetailByRecord(record, currentDatabase.Name, tableName)
 		if err != nil {
 			continue
 		}
@@ -645,7 +650,7 @@ func (s *Service) buildChatSchemaContext(record store.ConnectionRecord, database
 }
 
 func (s *Service) buildChatRepairSchemaContext(record store.ConnectionRecord, databaseName string, selectedTable string, message string, attemptedSQL string) string {
-	tree, err := s.getMySQLExplorerTree(record, databaseName)
+	tree, err := s.getExplorerTreeByRecord(record, databaseName)
 	if err != nil || len(tree.Databases) == 0 {
 		return "当前无法读取数据库结构，请优先依据已有报错继续谨慎推断。"
 	}
@@ -665,7 +670,12 @@ func (s *Service) buildChatRepairSchemaContext(record store.ConnectionRecord, da
 
 	candidates := []string{}
 	if strings.TrimSpace(selectedTable) != "" {
-		candidates = appendUniqueTable(candidates, selectedTable)
+		for _, item := range strings.Split(selectedTable, ",") {
+			trimmed := strings.TrimSpace(item)
+			if trimmed != "" {
+				candidates = appendUniqueTable(candidates, trimmed)
+			}
+		}
 	}
 	for _, tableName := range extractTableNamesFromSQL(attemptedSQL) {
 		candidates = appendUniqueTable(candidates, tableName)
@@ -690,7 +700,7 @@ func (s *Service) buildChatRepairSchemaContext(record store.ConnectionRecord, da
 	}
 
 	for _, tableName := range candidates {
-		detail, err := s.getMySQLTableDetail(record, currentDatabase.Name, tableName)
+		detail, err := s.getTableDetailByRecord(record, currentDatabase.Name, tableName)
 		if err != nil {
 			continue
 		}

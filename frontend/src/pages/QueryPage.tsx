@@ -3,6 +3,7 @@ import type { editor as MonacoEditorNS } from "monaco-editor";
 import type { Monaco } from "@monaco-editor/react";
 import { NoticeBanner } from "../components/NoticeBanner";
 import type { QueryResult, TableDetail } from "../types/runtime";
+import type { WorkbenchPage } from "../lib/constants";
 import { formatCellPreview, isTextLikeType } from "../lib/utils";
 
 type NoticeTone = "success" | "error" | "info";
@@ -18,10 +19,8 @@ type SelectedSnippet = {
 interface QueryPageProps {
     isExecutingQuery: boolean;
     handleExecuteQuery: (page: number) => void;
-    handleBeautifySQL: () => void;
     isOptimizingSQL: boolean;
     sqlText: string;
-    handleOptimizeSQL: () => void;
     sqlFileInputRef: React.RefObject<HTMLInputElement | null>;
     queryNotice: { tone: NoticeTone; message: string } | null;
     sqlEditorCollapsed: boolean;
@@ -65,15 +64,19 @@ interface QueryPageProps {
     canDeleteSelectedRows: boolean;
     handleRequestDeleteSelectedRows: () => void;
     queryPageSizeOptions: number[];
+    selectedConnection: { id: string } | null;
+    selectedDatabase: string;
+    selectedTable: string;
+    handleFillTableData: () => Promise<void>;
+    isFillingTable: boolean;
+    setActivePage?: (v: WorkbenchPage) => void;
 }
 
 export function QueryPage({
     isExecutingQuery,
     handleExecuteQuery,
-    handleBeautifySQL,
     isOptimizingSQL,
     sqlText,
-    handleOptimizeSQL,
     sqlFileInputRef,
     queryNotice,
     sqlEditorCollapsed,
@@ -117,6 +120,11 @@ export function QueryPage({
     canDeleteSelectedRows,
     handleRequestDeleteSelectedRows,
     queryPageSizeOptions,
+    selectedConnection,
+    selectedDatabase,
+    selectedTable,
+    handleFillTableData,
+    isFillingTable,
 }: QueryPageProps) {
     return (
         <section className="page-panel page-panel--wide page-panel--scrollable">
@@ -125,11 +133,14 @@ export function QueryPage({
                     <button type="button" className="primary-button" onClick={() => handleExecuteQuery(1)} disabled={isExecutingQuery}>
                         {isExecutingQuery ? "执行中..." : "执行"}
                     </button>
-                    <button type="button" className="ghost-button" onClick={handleBeautifySQL} disabled={isOptimizingSQL || !sqlText.trim()}>
-                        {isOptimizingSQL ? "处理中..." : "美化"}
-                    </button>
-                    <button type="button" className="ghost-button" onClick={handleOptimizeSQL} disabled={isOptimizingSQL || !sqlText.trim()}>
-                        {isOptimizingSQL ? "处理中..." : "优化"}
+                    <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={handleFillTableData}
+                        disabled={isFillingTable || !selectedConnection || !selectedDatabase || !selectedTable}
+                        title={!selectedTable ? "请先选择数据表" : "根据表结构填充测试数据"}
+                    >
+                        {isFillingTable ? "填充中..." : "填充"}
                     </button>
                     <button type="button" className="ghost-button" onClick={() => sqlFileInputRef.current?.click()}>
                         导入

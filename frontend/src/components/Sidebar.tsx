@@ -38,6 +38,12 @@ interface SidebarProps {
     activePage: WorkbenchPage;
     setActivePage: (v: WorkbenchPage) => void;
     saveFilterSettings: () => void;
+    setShowCreateDBModal: React.Dispatch<React.SetStateAction<boolean>>;
+    dbContextMenu: { x: number; y: number; database: string } | null;
+    setDbContextMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; database: string } | null>>;
+    openCreateTablePage: (database: string) => void;
+    redisCursorHistoryByDatabase: Record<string, number[]>;
+    handleBrowseRedisKeys: (database: string, direction: "next" | "prev") => Promise<void>;
 }
 
 export function Sidebar({
@@ -74,6 +80,12 @@ export function Sidebar({
     activePage,
     setActivePage,
     saveFilterSettings,
+    setShowCreateDBModal,
+    dbContextMenu,
+    setDbContextMenu,
+    openCreateTablePage,
+    redisCursorHistoryByDatabase,
+    handleBrowseRedisKeys,
 }: SidebarProps) {
     return (
         <aside className={`sidebar${sidebarCollapsed ? " sidebar--collapsed" : ""}`}>
@@ -146,6 +158,19 @@ export function Sidebar({
                             <div className="sidebar-title sidebar-title--with-actions">
                                 <span>数据库 / 数据表</span>
                                 <div className="sidebar-title__actions">
+                                    {selectedConnection && (
+                                        <button
+                                            type="button"
+                                            className="sidebar-icon-btn"
+                                            onClick={() => setShowCreateDBModal(true)}
+                                            title="新建数据库"
+                                        >
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                            </svg>
+                                        </button>
+                                    )}
                                     <button
                                         type="button"
                                         className={`sidebar-icon-btn${showDatabaseFilter ? " sidebar-icon-btn--active" : ""}`}
@@ -280,6 +305,11 @@ export function Sidebar({
                                     setTableContextMenu={setTableContextMenu}
                                     openTableDesigner={openTableDesigner}
                                     pushToast={pushToast}
+                                    dbContextMenu={dbContextMenu}
+                                    setDbContextMenu={setDbContextMenu}
+                                    openCreateTablePage={openCreateTablePage}
+                                    redisCursorHistoryByDatabase={redisCursorHistoryByDatabase}
+                                    handleBrowseRedisKeys={handleBrowseRedisKeys}
                                 />
                             </div>
                         </div>
