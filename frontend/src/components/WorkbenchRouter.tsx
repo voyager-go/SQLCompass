@@ -649,6 +649,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     pushToast={pushToast}
                     loadExplorer={loadExplorer}
                     setActivePage={setActivePage}
+                    aiConfigured={workspaceState.ai.apiKeyConfigured}
                 />
             );
         case "settings":

@@ -410,8 +410,8 @@ body[data-theme="custom"] .history-item-meta {
 }
 
 .page-panel--wide {
-    max-width: 1100px;
-    margin: 0 auto;
+    padding-left: 16px;
+    padding-right: 16px;
 }
 
 .page-panel--full {
@@ -663,6 +663,15 @@ body[data-theme="custom"] .history-item-meta {
 .icon-btn--delete:hover {
     background: rgba(194, 65, 12, 0.06);
     border-color: rgba(194, 65, 12, 0.25);
+}
+
+.icon-btn--add {
+    color: var(--sidebar-accent);
+}
+
+.icon-btn--add:hover {
+    background: rgba(37, 99, 235, 0.08);
+    border-color: rgba(37, 99, 235, 0.3);
 }
 
 /* ================================================================
@@ -1413,6 +1422,12 @@ body[data-theme="dark"] .connection-card__item--active {
 
 .schema-form-card {
     min-width: 0;
+    background: var(--surface-overlay);
+}
+
+.schema-detail-card,
+.schema-form-card .code-block {
+    background: var(--surface-1);
 }
 
 .schema-table-shell {
@@ -1456,6 +1471,12 @@ body[data-theme="dark"] .connection-card__item--active {
 
 .schema-table td .icon-btn {
     margin: 0 auto;
+}
+
+/* Prevent combobox dropdown from triggering table scroll */
+.schema-table td {
+    position: relative;
+    vertical-align: middle;
 }
 
 .checkbox-cell {
@@ -2929,6 +2950,10 @@ body[data-theme="dark"] .connection-card__item--active {
     width: 100%;
 }
 
+.combobox-wrap .combobox-dropdown {
+    z-index: 100;
+}
+
 .combobox-input {
     width: 100%;
     padding: 6px 22px 6px 8px;
@@ -2960,6 +2985,10 @@ body[data-theme="dark"] .connection-card__item--active {
     padding: 4px;
 }
 
+.combobox-dropdown--portal {
+    z-index: 9999;
+}
+
 .combobox-option {
     display: flex;
     align-items: center;
@@ -2974,6 +3003,58 @@ body[data-theme="dark"] .connection-card__item--active {
 .combobox-option:hover,
 .combobox-option--active {
     background: var(--surface-3);
+}
+
+/* Multi-select Combobox */
+.combobox-wrap--multi .multiselect-input {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    background: var(--input-bg);
+    min-height: 32px;
+    cursor: text;
+}
+
+.combobox-wrap--multi .multiselect-input input {
+    border: none;
+    outline: none;
+    background: transparent;
+    padding: 2px 4px;
+    font-size: 12.5px;
+    color: var(--text-primary);
+    min-width: 60px;
+    flex: 1;
+}
+
+.combobox-wrap--multi .multiselect-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    background: rgba(37, 99, 235, 0.08);
+    color: #2563eb;
+    border-radius: 4px;
+    font-size: 11.5px;
+    white-space: nowrap;
+}
+
+.combobox-wrap--multi .multiselect-tag button {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    opacity: 0.6;
+    padding: 0 1px;
+}
+
+.combobox-wrap--multi .multiselect-tag button:hover {
+    opacity: 1;
 }
 
 /* AI index name button */

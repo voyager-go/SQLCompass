@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 
 interface TypeComboboxProps {
     options: string[];
@@ -11,6 +12,7 @@ export function TypeCombobox({ options, value, onChange, placeholder }: TypeComb
     const [open, setOpen] = useState(false);
     const [inputValue, setInputValue] = useState(value);
     const [activeIndex, setActiveIndex] = useState(0);
+    const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -21,6 +23,41 @@ export function TypeCombobox({ options, value, onChange, placeholder }: TypeComb
     useEffect(() => {
         setInputValue(value);
     }, [value]);
+
+    /* Sync dropdown position when opening */
+    useEffect(() => {
+        if (open && wrapRef.current) {
+            const rect = wrapRef.current.getBoundingClientRect();
+            setDropdownPos({
+                top: rect.bottom + window.scrollY + 2,
+                left: rect.left + window.scrollX,
+                width: rect.width,
+            });
+        } else {
+            setDropdownPos(null);
+        }
+    }, [open]);
+
+    /* Recalculate on scroll/resize so portal stays aligned */
+    useEffect(() => {
+        if (!open) return;
+        function update() {
+            if (wrapRef.current) {
+                const rect = wrapRef.current.getBoundingClientRect();
+                setDropdownPos({
+                    top: rect.bottom + window.scrollY + 2,
+                    left: rect.left + window.scrollX,
+                    width: rect.width,
+                });
+            }
+        }
+        window.addEventListener("scroll", update, true);
+        window.addEventListener("resize", update);
+        return () => {
+            window.removeEventListener("scroll", update, true);
+            window.removeEventListener("resize", update);
+        };
+    }, [open]);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -60,43 +97,51 @@ export function TypeCombobox({ options, value, onChange, placeholder }: TypeComb
         [open, filtered, activeIndex, inputValue, value, onChange]
     );
 
+    const dropdownEl =
+        open && filtered.length > 0 && dropdownPos ? (
+            <div
+                className="combobox-dropdown combobox-dropdown--portal"
+                style={{ position: "absolute", top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
+            >
+                {filtered.map((opt, idx) => (
+                    <div
+                        key={opt}
+                        className={`combobox-option${idx === activeIndex ? " combobox-option--active" : ""}`}
+                        onMouseEnter={() => setActiveIndex(idx)}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            onChange(opt);
+                            setInputValue(opt);
+                            setOpen(false);
+                        }}
+                    >
+                        {opt}
+                    </div>
+                ))}
+            </div>
+        ) : null;
+
     return (
-        <div className="combobox-wrap" ref={wrapRef}>
-            <input
-                ref={inputRef}
-                className="combobox-input"
-                value={inputValue}
-                placeholder={placeholder}
-                onChange={(e) => {
-                    setInputValue(e.target.value);
-                    setOpen(true);
-                    setActiveIndex(0);
-                }}
-                onFocus={() => {
-                    setOpen(true);
-                    setActiveIndex(0);
-                }}
-                onKeyDown={handleKeyDown}
-            />
-            {open && filtered.length > 0 ? (
-                <div className="combobox-dropdown">
-                    {filtered.map((opt, idx) => (
-                        <div
-                            key={opt}
-                            className={`combobox-option${idx === activeIndex ? " combobox-option--active" : ""}`}
-                            onMouseEnter={() => setActiveIndex(idx)}
-                            onMouseDown={(e) => {
-                                e.preventDefault();
-                                onChange(opt);
-                                setInputValue(opt);
-                                setOpen(false);
-                            }}
-                        >
-                            {opt}
-                        </div>
-                    ))}
-                </div>
-            ) : null}
-        </div>
+        <>
+            <div className="combobox-wrap" ref={wrapRef}>
+                <input
+                    ref={inputRef}
+                    className="combobox-input"
+                    value={inputValue}
+                    placeholder={placeholder}
+                    onChange={(e) => {
+                        setInputValue(e.target.value);
+                        setOpen(true);
+                        setActiveIndex(0);
+                    }}
+                    onFocus={() => {
+                        setOpen(true);
+                        setActiveIndex(0);
+                    }}
+                    onKeyDown={handleKeyDown}
+                />
+            </div>
+            {dropdownEl ? createPortal(dropdownEl, document.body) : null}
+        </>
     );
 }
