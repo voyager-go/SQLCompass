@@ -114,7 +114,6 @@ export interface WorkbenchRouterProps {
     // Query
     isOptimizingSQL: boolean;
     sqlText: string;
-    sqlFileInputRef: React.RefObject<HTMLInputElement | null>;
     queryNotice: Notice | null;
     sqlEditorCollapsed: boolean;
     setSQLEditorCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
@@ -322,7 +321,6 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         // Query
         isOptimizingSQL,
         sqlText,
-        sqlFileInputRef,
         queryNotice,
         sqlEditorCollapsed,
         setSQLEditorCollapsed,
@@ -514,7 +512,6 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     handleExecuteQuery={handleExecuteQuery}
                     isOptimizingSQL={isOptimizingSQL}
                     sqlText={sqlText}
-                    sqlFileInputRef={sqlFileInputRef}
                     queryNotice={queryNotice}
                     sqlEditorCollapsed={sqlEditorCollapsed}
                     setSQLEditorCollapsed={setSQLEditorCollapsed}

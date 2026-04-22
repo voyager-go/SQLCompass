@@ -45,6 +45,12 @@ interface SidebarProps {
     openCreateTablePage: (database: string) => void;
     redisCursorHistoryByDatabase: Record<string, number[]>;
     handleBrowseRedisKeys: (database: string, direction: "next" | "prev") => Promise<void>;
+    onExportDatabaseStructure: (database: string) => void;
+    onExportDatabaseStructureAndData: (database: string) => void;
+    onImportSQLToDatabase: (database: string) => void;
+    onImportCSVToDatabase: (database: string) => void;
+    onTruncateTable: (database: string, table: string) => void;
+    onDropTable: (database: string, table: string) => void;
 }
 
 export function Sidebar({
@@ -88,6 +94,12 @@ export function Sidebar({
     openCreateTablePage,
     redisCursorHistoryByDatabase,
     handleBrowseRedisKeys,
+    onExportDatabaseStructure,
+    onExportDatabaseStructureAndData,
+    onImportSQLToDatabase,
+    onImportCSVToDatabase,
+    onTruncateTable,
+    onDropTable,
 }: SidebarProps) {
     const isRedisExplorer = explorerTree?.engine === "redis";
     const selectedRedisDatabase = explorerTree?.databases.find((db) => db.name === selectedDatabase) ?? null;
@@ -325,6 +337,12 @@ export function Sidebar({
                                     openCreateTablePage={openCreateTablePage}
                                     redisCursorHistoryByDatabase={redisCursorHistoryByDatabase}
                                     handleBrowseRedisKeys={handleBrowseRedisKeys}
+                                    onExportDatabaseStructure={onExportDatabaseStructure}
+                                    onExportDatabaseStructureAndData={onExportDatabaseStructureAndData}
+                                    onImportSQLToDatabase={onImportSQLToDatabase}
+                                    onImportCSVToDatabase={onImportCSVToDatabase}
+                                    onTruncateTable={onTruncateTable}
+                                    onDropTable={onDropTable}
                                 />
                             </div>
                         </div>

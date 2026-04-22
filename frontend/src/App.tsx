@@ -1,5 +1,5 @@
 import { type Monaco } from "@monaco-editor/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IDisposable, editor as MonacoEditorNS } from "monaco-editor";
 import {
     AnalyzeSQL,
@@ -110,6 +110,14 @@ type TableContextMenuState = {
     table: string;
 };
 
+type DangerConfirmState = {
+    open: boolean;
+    title: string;
+    message: string;
+    actionLabel: string;
+    onConfirm: (() => void) | null;
+};
+
 type SQLCompletionSpec = {
     label: string;
     insertText: string;
@@ -201,7 +209,6 @@ const sqlKeywordSpecs: SQLCompletionSpec[] = [
 
 function App() {
     const browserPreview = !hasWailsBridge();
-    const sqlFileInputRef = useRef<HTMLInputElement | null>(null);
     const sqlEditorRef = useRef<MonacoEditorNS.IStandaloneCodeEditor | null>(null);
     const monacoRef = useRef<Monaco | null>(null);
     const chatStreamRef = useRef<HTMLDivElement | null>(null);
@@ -313,6 +320,18 @@ function App() {
     const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
     const [tableContextMenu, setTableContextMenu] = useState<TableContextMenuState | null>(null);
 
+    // Database import / export
+    const [isExportingDB, setIsExportingDB] = useState(false);
+    const [isImportingDB, setIsImportingDB] = useState(false);
+    const dbImportSQLInputRef = useRef<HTMLInputElement | null>(null);
+    const dbImportCSVInputRef = useRef<HTMLInputElement | null>(null);
+    const [dbImportTargetDatabase, setDbImportTargetDatabase] = useState("");
+    const [csvImportModalOpen, setCsvImportModalOpen] = useState(false);
+    const [csvImportHeaders, setCsvImportHeaders] = useState<string[]>([]);
+    const [csvImportRows, setCsvImportRows] = useState<string[][]>([]);
+    const [csvImportTargetTable, setCsvImportTargetTable] = useState("");
+    const [csvImportTables, setCsvImportTables] = useState<string[]>([]);
+
     const [workspaceNotice, setWorkspaceNotice] = useState<Notice | null>(null);
     const [queryNotice, setQueryNotice] = useState<Notice | null>(null);
     const [, setTransferNotice] = useState<Notice | null>(null);
@@ -328,6 +347,13 @@ function App() {
     const [isCreatingDB, setIsCreatingDB] = useState(false);
     const [dbContextMenu, setDbContextMenu] = useState<{ x: number; y: number; database: string } | null>(null);
     const [chatBlockerModalOpen, setChatBlockerModalOpen] = useState(false);
+    const [dangerConfirm, setDangerConfirm] = useState<DangerConfirmState>({
+        open: false,
+        title: "",
+        message: "",
+        actionLabel: "",
+        onConfirm: null,
+    });
 
     const selectedConnection = workspaceState.connections.find((item) => item.id === selectedConnectionId) ?? null;
     const primaryFieldNames = useMemo(() => tableDetail?.fields.filter((field) => field.primary).map((field) => field.name) ?? [], [tableDetail]);
@@ -824,6 +850,459 @@ function App() {
         }
     }
 
+    function quoteIdentifierForEngine(name: string, engine: string): string {
+        const normalized = engine.toLowerCase();
+        if (normalized === "postgresql" || normalized === "sqlite") {
+            return `"${name.replace(/"/g, "\"\"")}"`;
+        }
+        return `\`${name.replace(/`/g, "``")}\``;
+    }
+
+    function stringifySQLValueForEngine(value: string): string {
+        if (value === "NULL" || value === "null") {
+            return "NULL";
+        }
+        return `'${value.replace(/'/g, "''")}'`;
+    }
+
+    async function handleExportDatabaseStructure(database: string) {
+        if (!selectedConnection || !explorerTree) {
+            pushToast("error", "导出失败", "请先选择连接");
+            return;
+        }
+        const dbNode = explorerTree.databases.find((d) => d.name === database);
+        if (!dbNode) {
+            pushToast("error", "导出失败", "未找到数据库");
+            return;
+        }
+        try {
+            setIsExportingDB(true);
+            let sql = `-- Database: ${database}\n-- Engine: ${explorerTree.engine}\n-- Exported at: ${new Date().toISOString()}\n\n`;
+            const tables = dbNode.schemas
+                ? dbNode.schemas.flatMap((s) => s.tables)
+                : dbNode.tables;
+            for (const table of tables) {
+                const detail = (await GetTableDetail({
+                    connectionId: selectedConnection.id,
+                    database,
+                    table: table.name,
+                })) as TableDetail;
+                sql += detail.ddl + "\n\n";
+            }
+            await exportTextFile("sql", `${database}-structure.sql`, sql, `导出数据库 ${database} 结构`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "导出失败";
+            pushToast("error", "导出失败", message);
+        } finally {
+            setIsExportingDB(false);
+        }
+    }
+
+    async function handleExportDatabaseStructureAndData(database: string) {
+        if (!selectedConnection || !explorerTree) {
+            pushToast("error", "导出失败", "请先选择连接");
+            return;
+        }
+        const dbNode = explorerTree.databases.find((d) => d.name === database);
+        if (!dbNode) {
+            pushToast("error", "导出失败", "未找到数据库");
+            return;
+        }
+        try {
+            setIsExportingDB(true);
+            const engine = explorerTree.engine;
+            let sql = `-- Database: ${database}\n-- Engine: ${engine}\n-- Exported at: ${new Date().toISOString()}\n\n`;
+            const tables = dbNode.schemas
+                ? dbNode.schemas.flatMap((s) => s.tables)
+                : dbNode.tables;
+
+            for (const table of tables) {
+                const detail = (await GetTableDetail({
+                    connectionId: selectedConnection.id,
+                    database,
+                    table: table.name,
+                })) as TableDetail;
+                sql += detail.ddl + "\n\n";
+
+                if (detail.fields.length === 0) continue;
+
+                const columns = detail.fields.map((f) => f.name);
+                const qColumns = columns.map((c) => quoteIdentifierForEngine(c, engine)).join(", ");
+                const qTable = quoteIdentifierForEngine(table.name, engine);
+
+                let page = 1;
+                const pageSize = 500;
+                while (true) {
+                    const result = (await ExecuteQuery({
+                        connectionId: selectedConnection.id,
+                        database,
+                        sql: `SELECT ${qColumns} FROM ${qTable}`,
+                        page,
+                        pageSize,
+                    })) as QueryResult;
+
+                    if (result.rows.length === 0) break;
+
+                    for (const row of result.rows) {
+                        const values = columns.map((col) => stringifySQLValueForEngine(row[col] ?? ""));
+                        sql += `INSERT INTO ${qTable} (${qColumns}) VALUES (${values.join(", ")});\n`;
+                    }
+
+                    if (!result.hasNextPage) break;
+                    page++;
+                }
+                sql += "\n";
+            }
+
+            await exportTextFile("sql", `${database}-full.sql`, sql, `导出数据库 ${database} 结构及数据`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "导出失败";
+            pushToast("error", "导出失败", message);
+        } finally {
+            setIsExportingDB(false);
+        }
+    }
+
+    function handleImportSQLToDatabase(database: string) {
+        setDbImportTargetDatabase(database);
+        dbImportSQLInputRef.current?.click();
+    }
+
+    function handleImportCSVToDatabase(database: string) {
+        setDbImportTargetDatabase(database);
+        dbImportCSVInputRef.current?.click();
+    }
+
+    function handleTruncateTable(database: string, table: string) {
+        if (!selectedConnection) return;
+        const engine = selectedConnection.engine;
+        const qTable = quoteIdentifierForEngine(table, engine);
+        setDangerConfirm({
+            open: true,
+            title: "截断表",
+            message: `确定要截断表 "${table}" 吗？该操作会清空表中所有数据，且不可恢复。`,
+            actionLabel: "确认截断",
+            onConfirm: async () => {
+                setDangerConfirm((prev) => ({ ...prev, open: false }));
+                try {
+                    await ExecuteQuery({
+                        connectionId: selectedConnection.id,
+                        database,
+                        sql: `TRUNCATE TABLE ${qTable};`,
+                        page: 1,
+                        pageSize: 1,
+                    });
+                    pushToast("success", "操作成功", `表 "${table}" 已截断`);
+                    await loadExplorer(selectedConnection.id, database);
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : "截断表失败";
+                    pushToast("error", "操作失败", message);
+                }
+            },
+        });
+    }
+
+    function handleDropTable(database: string, table: string) {
+        if (!selectedConnection) return;
+        const engine = selectedConnection.engine;
+        const qTable = quoteIdentifierForEngine(table, engine);
+        setDangerConfirm({
+            open: true,
+            title: "删除表",
+            message: `确定要删除表 "${table}" 吗？该操作会永久删除表及其所有数据，且不可恢复。`,
+            actionLabel: "确认删除",
+            onConfirm: async () => {
+                setDangerConfirm((prev) => ({ ...prev, open: false }));
+                try {
+                    await ExecuteQuery({
+                        connectionId: selectedConnection.id,
+                        database,
+                        sql: `DROP TABLE ${qTable};`,
+                        page: 1,
+                        pageSize: 1,
+                    });
+                    pushToast("success", "操作成功", `表 "${table}" 已删除`);
+                    if (selectedTable === table) {
+                        setSelectedTable("");
+                        setTableDetail(null);
+                    }
+                    await loadExplorer(selectedConnection.id, database);
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : "删除表失败";
+                    pushToast("error", "操作失败", message);
+                }
+            },
+        });
+    }
+
+    function splitSQLStatements(sql: string): string[] {
+        const statements: string[] = [];
+        let current = "";
+        let inString = false;
+        let stringChar = "";
+        let escaped = false;
+
+        for (let i = 0; i < sql.length; i++) {
+            const char = sql[i];
+
+            if (escaped) {
+                current += char;
+                escaped = false;
+                continue;
+            }
+
+            if (char === "\\") {
+                current += char;
+                escaped = true;
+                continue;
+            }
+
+            if (inString) {
+                current += char;
+                if (char === stringChar) {
+                    inString = false;
+                }
+                continue;
+            }
+
+            if (char === "'" || char === "`" || char === '"') {
+                current += char;
+                inString = true;
+                stringChar = char;
+                continue;
+            }
+
+            if (char === ";") {
+                current += char;
+                const trimmed = current.trim();
+                if (trimmed) {
+                    statements.push(trimmed);
+                }
+                current = "";
+                continue;
+            }
+
+            current += char;
+        }
+
+        const trimmed = current.trim();
+        if (trimmed) {
+            statements.push(trimmed);
+        }
+
+        return statements.filter((s) => s.length > 0);
+    }
+
+    async function handleImportSQLFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+        const file = event.target.files?.[0];
+        if (!file || !selectedConnection || !dbImportTargetDatabase) {
+            event.target.value = "";
+            return;
+        }
+
+        try {
+            setIsImportingDB(true);
+            const content = await file.text();
+            const statements = splitSQLStatements(content);
+            let executed = 0;
+            let failed = 0;
+
+            for (const stmt of statements) {
+                try {
+                    await ExecuteQuery({
+                        connectionId: selectedConnection.id,
+                        database: dbImportTargetDatabase,
+                        sql: stmt,
+                        page: 1,
+                        pageSize: 1,
+                    });
+                    executed++;
+                } catch {
+                    failed++;
+                }
+            }
+
+            if (failed > 0) {
+                pushToast("info", "导入完成", `成功 ${executed} 条，失败 ${failed} 条`);
+            } else {
+                pushToast("success", "导入完成", `成功执行 ${executed} 条 SQL`);
+            }
+            await loadExplorer(selectedConnection.id, dbImportTargetDatabase);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "导入失败";
+            pushToast("error", "导入失败", message);
+        } finally {
+            setIsImportingDB(false);
+            event.target.value = "";
+        }
+    }
+
+    function parseCSV(text: string): { headers: string[]; rows: string[][] } {
+        const lines: string[] = [];
+        let currentLine = "";
+        let inQuotes = false;
+
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const nextChar = text[i + 1];
+
+            if (inQuotes) {
+                if (char === '"') {
+                    if (nextChar === '"') {
+                        currentLine += '"';
+                        i++;
+                    } else {
+                        inQuotes = false;
+                    }
+                } else {
+                    currentLine += char;
+                }
+            } else {
+                if (char === '"') {
+                    inQuotes = true;
+                } else if (char === "\n") {
+                    lines.push(currentLine);
+                    currentLine = "";
+                } else if (char === "\r") {
+                    // skip
+                } else {
+                    currentLine += char;
+                }
+            }
+        }
+        if (currentLine.length > 0 || text.endsWith("\n")) {
+            lines.push(currentLine);
+        }
+
+        if (lines.length === 0) {
+            return { headers: [], rows: [] };
+        }
+
+        const headers = lines[0].split(",").map((h) => h.trim());
+        const rows = lines.slice(1).map((line) => {
+            const cells: string[] = [];
+            let cell = "";
+            let inQ = false;
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (inQ) {
+                    if (char === '"') {
+                        const next = line[i + 1];
+                        if (next === '"') {
+                            cell += '"';
+                            i++;
+                        } else {
+                            inQ = false;
+                        }
+                    } else {
+                        cell += char;
+                    }
+                } else {
+                    if (char === '"') {
+                        inQ = true;
+                    } else if (char === ",") {
+                        cells.push(cell);
+                        cell = "";
+                    } else {
+                        cell += char;
+                    }
+                }
+            }
+            cells.push(cell);
+            return cells;
+        });
+
+        return { headers, rows };
+    }
+
+    async function handleImportCSVFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+        const file = event.target.files?.[0];
+        if (!file || !selectedConnection || !dbImportTargetDatabase) {
+            event.target.value = "";
+            return;
+        }
+
+        try {
+            const content = await file.text();
+            const { headers, rows } = parseCSV(content);
+            if (headers.length === 0) {
+                pushToast("error", "导入失败", "CSV 文件为空或格式错误");
+                event.target.value = "";
+                return;
+            }
+
+            setCsvImportHeaders(headers);
+            setCsvImportRows(rows);
+            setCsvImportTargetTable("");
+
+            const tree = (await GetExplorerTree({
+                connectionId: selectedConnection.id,
+                database: dbImportTargetDatabase,
+            })) as ExplorerTree;
+            const dbNode = tree.databases.find((d) => d.name === dbImportTargetDatabase);
+            const tables = dbNode
+                ? (dbNode.schemas ? dbNode.schemas.flatMap((s) => s.tables) : dbNode.tables).map((t) => t.name)
+                : [];
+            setCsvImportTables(tables);
+            setCsvImportModalOpen(true);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "导入失败";
+            pushToast("error", "导入失败", message);
+        } finally {
+            event.target.value = "";
+        }
+    }
+
+    async function handleExecuteCSVImport() {
+        if (!selectedConnection || !dbImportTargetDatabase || !csvImportTargetTable) {
+            pushToast("error", "导入失败", "请选择目标表");
+            return;
+        }
+        if (csvImportRows.length === 0) {
+            pushToast("info", "提示", "没有数据需要导入");
+            return;
+        }
+
+        try {
+            setIsImportingDB(true);
+            const engine = selectedConnection.engine;
+            const qTable = quoteIdentifierForEngine(csvImportTargetTable, engine);
+            const qColumns = csvImportHeaders.map((h) => quoteIdentifierForEngine(h, engine)).join(", ");
+            let inserted = 0;
+            let failed = 0;
+
+            for (const row of csvImportRows) {
+                const values = row.map((v) => stringifySQLValueForEngine(v));
+                const sql = `INSERT INTO ${qTable} (${qColumns}) VALUES (${values.join(", ")});`;
+                try {
+                    await ExecuteQuery({
+                        connectionId: selectedConnection.id,
+                        database: dbImportTargetDatabase,
+                        sql,
+                        page: 1,
+                        pageSize: 1,
+                    });
+                    inserted++;
+                } catch {
+                    failed++;
+                }
+            }
+
+            if (failed > 0) {
+                pushToast("info", "导入完成", `成功 ${inserted} 条，失败 ${failed} 条`);
+            } else {
+                pushToast("success", "导入完成", `成功插入 ${inserted} 条数据`);
+            }
+            setCsvImportModalOpen(false);
+            await loadExplorer(selectedConnection.id, dbImportTargetDatabase);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "导入失败";
+            pushToast("error", "导入失败", message);
+        } finally {
+            setIsImportingDB(false);
+        }
+    }
+
     useEffect(() => {
         if (!toast) {
             return;
@@ -1275,6 +1754,10 @@ function App() {
             setSQLAnalysis(result.analysis);
             setQueryNotice({ tone: "success", message: result.message });
             await loadHistory(selectedConnection.id);
+            const nonMutatingTypes = ["SELECT", "META", "PREVIEW", "REDIS", "REDIS_KEY"];
+            if (!nonMutatingTypes.includes(result.statementType)) {
+                await loadExplorer(selectedConnection.id, selectedDatabase);
+            }
         } catch (error) {
             const message = getErrorMessage(error);
             setQueryResult(null);
@@ -1617,6 +2100,12 @@ function App() {
     }
 
     async function handleExportQuerySQL() {
+        if (selectedResultRows.length > 0 && queryResult && selectedTable) {
+            const sql = buildInsertStatement(selectedTable, queryResult.columns, selectedResultRows);
+            await exportTextFile("sql", `selected-rows-${Date.now()}.sql`, sql, `导出 ${selectedResultRows.length} 条选中记录的插入语句`);
+            return;
+        }
+
         if (!queryResult?.effectiveSql.trim()) {
             setTransferNotice({ tone: "info", message: "当前没有可导出的 SQL。" });
             return;
@@ -1734,23 +2223,6 @@ function App() {
         }
     }
 
-    async function handleImportSQLFile(event: ChangeEvent<HTMLInputElement>) {
-        const file = event.target.files?.[0];
-        if (!file) {
-            return;
-        }
-
-        const content = await file.text();
-        setSQLText(content);
-        setSQLEditorCollapsed(false);
-        setPreviewContext(null);
-        setQueryErrorDetail("");
-        setSelectedSnippet(null);
-        setActivePage("query");
-        setQueryNotice({ tone: "success", message: `已加载 SQL 文件：${file.name}` });
-        event.target.value = "";
-    }
-
     async function handleFillTableData() {
         if (!selectedConnection || !selectedDatabase || !selectedTable) {
             setQueryNotice({ tone: "info", message: "请先选择连接、数据库和数据表。" });
@@ -1850,8 +2322,6 @@ function App() {
             {showSplash && <SplashScreen />}
             <div className={`studio-shell${sidebarCollapsed ? " studio-shell--collapsed" : ""}`}>
                 <FloatingToast toast={toast} />
-                <input ref={sqlFileInputRef} type="file" accept=".sql,.txt" hidden onChange={handleImportSQLFile} />
-
                 <Sidebar
                     sidebarCollapsed={sidebarCollapsed}
                     setSidebarCollapsed={setSidebarCollapsed}
@@ -1893,6 +2363,12 @@ function App() {
                     openCreateTablePage={openCreateTablePage}
                     redisCursorHistoryByDatabase={redisCursorHistoryByDatabase}
                     handleBrowseRedisKeys={handleBrowseRedisKeys}
+                    onExportDatabaseStructure={handleExportDatabaseStructure}
+                    onExportDatabaseStructureAndData={handleExportDatabaseStructureAndData}
+                    onImportSQLToDatabase={handleImportSQLToDatabase}
+                    onImportCSVToDatabase={handleImportCSVToDatabase}
+                    onTruncateTable={handleTruncateTable}
+                    onDropTable={handleDropTable}
                 />
 
             <main className="workbench">
@@ -1958,7 +2434,6 @@ function App() {
                         pushToast={pushToast}
                         isOptimizingSQL={isOptimizingSQL}
                         sqlText={sqlText}
-                        sqlFileInputRef={sqlFileInputRef}
                         queryNotice={queryNotice}
                         sqlEditorCollapsed={sqlEditorCollapsed}
                         setSQLEditorCollapsed={setSQLEditorCollapsed}
@@ -2211,6 +2686,72 @@ function App() {
                         <div className="toolbar-actions toolbar-actions--end">
                             <button type="button" className="primary-button" onClick={() => setChatBlockerModalOpen(false)}>
                                 知道了
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
+            {dangerConfirm.open ? (
+                <div className="modal-backdrop" onClick={() => setDangerConfirm((prev) => ({ ...prev, open: false }))}>
+                    <div className="modal-card modal-card--danger" onClick={(event) => event.stopPropagation()}>
+                        <div className="section-title">
+                            <div>
+                                <h3 style={{ color: "#dc2626" }}>{dangerConfirm.title}</h3>
+                                <p>危险操作，请谨慎确认。</p>
+                            </div>
+                        </div>
+                        <p style={{ margin: "12px 0", color: "var(--text-primary)" }}>
+                            {dangerConfirm.message}
+                        </p>
+                        <div className="toolbar-actions toolbar-actions--end">
+                            <button type="button" className="ghost-button" onClick={() => setDangerConfirm((prev) => ({ ...prev, open: false }))}>
+                                取消
+                            </button>
+                            <button
+                                type="button"
+                                className="primary-button primary-button--danger"
+                                onClick={() => dangerConfirm.onConfirm?.()}
+                            >
+                                {dangerConfirm.actionLabel}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
+            <input ref={dbImportSQLInputRef} type="file" accept=".sql,.txt" hidden onChange={handleImportSQLFileChange} />
+            <input ref={dbImportCSVInputRef} type="file" accept=".csv,.txt" hidden onChange={handleImportCSVFileChange} />
+
+            {csvImportModalOpen ? (
+                <div className="modal-backdrop" onClick={() => setCsvImportModalOpen(false)}>
+                    <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+                        <div className="section-title">
+                            <div>
+                                <h3>CSV 导入设置</h3>
+                                <p>选择要导入的目标表</p>
+                            </div>
+                        </div>
+                        <label className="field">
+                            <span>目标表</span>
+                            <select value={csvImportTargetTable} onChange={(event) => setCsvImportTargetTable(event.target.value)}>
+                                <option value="">请选择表</option>
+                                {csvImportTables.map((t) => (
+                                    <option key={t} value={t}>
+                                        {t}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <p style={{ margin: "12px 0", color: "var(--text-secondary)", fontSize: 13 }}>
+                            共 {csvImportRows.length} 行数据，列：{csvImportHeaders.join(", ")}
+                        </p>
+                        <div className="toolbar-actions toolbar-actions--end">
+                            <button type="button" className="ghost-button" onClick={() => setCsvImportModalOpen(false)}>
+                                取消
+                            </button>
+                            <button type="button" className="primary-button" onClick={handleExecuteCSVImport} disabled={!csvImportTargetTable || isImportingDB}>
+                                {isImportingDB ? "导入中..." : "确认导入"}
                             </button>
                         </div>
                     </div>

@@ -37,6 +37,12 @@ interface SidebarTreeProps {
     openCreateTablePage: (database: string) => void;
     redisCursorHistoryByDatabase: Record<string, number[]>;
     handleBrowseRedisKeys: (database: string, direction: "next" | "prev") => Promise<void>;
+    onExportDatabaseStructure: (database: string) => void;
+    onExportDatabaseStructureAndData: (database: string) => void;
+    onImportSQLToDatabase: (database: string) => void;
+    onImportCSVToDatabase: (database: string) => void;
+    onTruncateTable: (database: string, table: string) => void;
+    onDropTable: (database: string, table: string) => void;
 }
 
 const tablePageSize = 12;
@@ -48,7 +54,10 @@ function renderTableItem(
     workMode: "normal" | "chat",
     handlePreviewTable: (db: string, table: string, page?: number) => Promise<void>,
     setTableContextMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; database: string; table: string } | null>>,
+    setDbContextMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; database: string } | null>>,
     pushToast: (tone: "success" | "error" | "info", title: string, message: string) => void,
+    onTruncateTable: (database: string, table: string) => void,
+    onDropTable: (database: string, table: string) => void,
 ) {
     const isRedisKey = table.engine === "redis";
     return (
@@ -74,6 +83,7 @@ function renderTableItem(
             onContextMenu={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
+                setDbContextMenu(null);
                 setTableContextMenu({
                     x: Math.min(event.clientX, window.innerWidth - 148),
                     y: Math.min(event.clientY, window.innerHeight - 72),
@@ -135,6 +145,12 @@ export function SidebarTree({
     openCreateTablePage,
     redisCursorHistoryByDatabase,
     handleBrowseRedisKeys,
+    onExportDatabaseStructure,
+    onExportDatabaseStructureAndData,
+    onImportSQLToDatabase,
+    onImportCSVToDatabase,
+    onTruncateTable,
+    onDropTable,
 }: SidebarTreeProps) {
     function toggleDatabaseExpanded(databaseName: string) {
         setExpandedDatabases((current) => ({
@@ -210,6 +226,7 @@ export function SidebarTree({
                                 onContextMenu={(event) => {
                                     event.preventDefault();
                                     event.stopPropagation();
+                                    setTableContextMenu(null);
                                     setDbContextMenu({
                                         x: Math.min(event.clientX, window.innerWidth - 148),
                                         y: Math.min(event.clientY, window.innerHeight - 72),
@@ -264,13 +281,13 @@ export function SidebarTree({
                                                   </div>
                                                   <div className="navigator-schema-tables">
                                                       {schema.tables.map((table) =>
-                                                          renderTableItem(database.name, table, selectedTable, workMode, handlePreviewTable, setTableContextMenu, pushToast)
+                                                          renderTableItem(database.name, table, selectedTable, workMode, handlePreviewTable, setTableContextMenu, setDbContextMenu, pushToast, onTruncateTable, onDropTable)
                                                       )}
                                                   </div>
                                               </div>
                                           ))
                                     : visibleTables.map((table) =>
-                                          renderTableItem(database.name, table, selectedTable, workMode, handlePreviewTable, setTableContextMenu, pushToast)
+                                          renderTableItem(database.name, table, selectedTable, workMode, handlePreviewTable, setTableContextMenu, setDbContextMenu, pushToast, onTruncateTable, onDropTable)
                                       )}
 
                                 {(hasSchemas ? filteredTables.length === 0 : visibleTables.length === 0) ? <div className="navigator-empty">没有匹配的表</div> : null}
@@ -363,7 +380,10 @@ export function SidebarTree({
                         <button
                             type="button"
                             className="context-menu__item"
-                            onClick={() => openTableDesigner(tableContextMenu.database, tableContextMenu.table)}
+                            onClick={() => {
+                                setTableContextMenu(null);
+                                openTableDesigner(tableContextMenu.database, tableContextMenu.table);
+                            }}
                         >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -372,6 +392,35 @@ export function SidebarTree({
                             设计
                         </button>
                     ) : null}
+                    <div className="context-menu__divider" />
+                    <button
+                        type="button"
+                        className="context-menu__item context-menu__item--danger"
+                        onClick={() => {
+                            setTableContextMenu(null);
+                            onTruncateTable(tableContextMenu.database, tableContextMenu.table);
+                        }}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        截断表
+                    </button>
+                    <button
+                        type="button"
+                        className="context-menu__item context-menu__item--danger"
+                        onClick={() => {
+                            setTableContextMenu(null);
+                            onDropTable(tableContextMenu.database, tableContextMenu.table);
+                        }}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        删除表
+                    </button>
                 </div>
             ) : null}
 
@@ -404,7 +453,10 @@ export function SidebarTree({
                         <button
                             type="button"
                             className="context-menu__item"
-                            onClick={() => openCreateTablePage(dbContextMenu.database)}
+                            onClick={() => {
+                                setDbContextMenu(null);
+                                openCreateTablePage(dbContextMenu.database);
+                            }}
                         >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -413,6 +465,67 @@ export function SidebarTree({
                             新建表
                         </button>
                     ) : null}
+                    <div className="context-menu__divider" />
+                    <button
+                        type="button"
+                        className="context-menu__item"
+                        onClick={() => {
+                            setDbContextMenu(null);
+                            onExportDatabaseStructure(dbContextMenu.database);
+                        }}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        导出结构
+                    </button>
+                    <button
+                        type="button"
+                        className="context-menu__item"
+                        onClick={() => {
+                            setDbContextMenu(null);
+                            onExportDatabaseStructureAndData(dbContextMenu.database);
+                        }}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        导出结构及数据
+                    </button>
+                    <button
+                        type="button"
+                        className="context-menu__item"
+                        onClick={() => {
+                            setDbContextMenu(null);
+                            onImportSQLToDatabase(dbContextMenu.database);
+                        }}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        导入 SQL
+                    </button>
+                    <button
+                        type="button"
+                        className="context-menu__item"
+                        onClick={() => {
+                            setDbContextMenu(null);
+                            onImportCSVToDatabase(dbContextMenu.database);
+                        }}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        导入 CSV
+                    </button>
                 </div>
             ) : null}
         </>

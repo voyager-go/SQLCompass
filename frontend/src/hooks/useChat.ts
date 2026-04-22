@@ -263,7 +263,7 @@ export function useChat(deps: UseChatDeps) {
         const cols = item.result.columns ?? [];
         const header = cols.join("\t");
         const rows = item.result.rows.slice(0, 50).map((r: Record<string, string>) => cols.map((c: string) => r[c] ?? "").join("\t"));
-        const lines = [`查询类型：${item.result.statementType || "SELECT"}`, `耗时：${item.result.durationMs} ms`, `行数：${item.result.rows.length}`, "", header, ...rows];
+        const lines = [header, ...rows];
         if (item.result.rows.length > 50) {
             lines.push("", `... 共 ${item.result.rows.length} 行，仅展示前 50 行 ...`);
         }
