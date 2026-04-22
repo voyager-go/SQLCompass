@@ -33,6 +33,7 @@ interface ConnectionsPageProps {
     handleDeleteConnection: (profile: ConnectionProfile) => Promise<void>;
     handleTestConnection: () => Promise<void>;
     handleSaveConnection: () => Promise<void>;
+    resetConnectionForm: (engine?: string) => void;
     updateConnectionField: UpdateConnectionField;
     pushToast: (tone: NoticeTone, title: string, message: string) => void;
 }
@@ -53,6 +54,7 @@ export function ConnectionsPage({
     handleDeleteConnection,
     handleTestConnection,
     handleSaveConnection,
+    resetConnectionForm,
     updateConnectionField,
     pushToast,
 }: ConnectionsPageProps) {
@@ -151,6 +153,16 @@ export function ConnectionsPage({
                     <div className="section-title section-title--with-actions">
                         <h3>{connectionDraft.id ? "编辑连接" : "新建连接"}</h3>
                         <div className="toolbar-actions toolbar-actions--compact">
+                            <button
+                                type="button"
+                                className="ghost-button ghost-button--sm"
+                                onClick={() => {
+                                    resetConnectionForm("mysql");
+                                    pushToast("info", "新建连接", "已重置为新的连接表单");
+                                }}
+                            >
+                                新建
+                            </button>
                             <button
                                 type="button"
                                 className="ghost-button ghost-button--sm"

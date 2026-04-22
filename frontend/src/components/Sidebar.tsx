@@ -39,6 +39,7 @@ interface SidebarProps {
     setActivePage: (v: WorkbenchPage) => void;
     saveFilterSettings: () => void;
     setShowCreateDBModal: React.Dispatch<React.SetStateAction<boolean>>;
+    setCreateDBForm: React.Dispatch<React.SetStateAction<{ name: string; charset: string; collation: string }>>;
     dbContextMenu: { x: number; y: number; database: string } | null;
     setDbContextMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; database: string } | null>>;
     openCreateTablePage: (database: string) => void;
@@ -81,12 +82,19 @@ export function Sidebar({
     setActivePage,
     saveFilterSettings,
     setShowCreateDBModal,
+    setCreateDBForm,
     dbContextMenu,
     setDbContextMenu,
     openCreateTablePage,
     redisCursorHistoryByDatabase,
     handleBrowseRedisKeys,
 }: SidebarProps) {
+    const isRedisExplorer = explorerTree?.engine === "redis";
+    const selectedRedisDatabase = explorerTree?.databases.find((db) => db.name === selectedDatabase) ?? null;
+    const redisKeyTypes = selectedRedisDatabase
+        ? Array.from(new Set(selectedRedisDatabase.tables.map((table) => table.keyType).filter(Boolean) as string[])).sort()
+        : [];
+
     return (
         <aside className={`sidebar${sidebarCollapsed ? " sidebar--collapsed" : ""}`}>
             <div className="sidebar-brand">
@@ -156,13 +164,22 @@ export function Sidebar({
                     {sidebarView === "database" ? (
                         <div className="sidebar-section sidebar-section--fill">
                             <div className="sidebar-title sidebar-title--with-actions">
-                                <span>数据库 / 数据表</span>
+                                <span>{isRedisExplorer ? "逻辑库 / Keys" : "数据库 / 数据表"}</span>
                                 <div className="sidebar-title__actions">
-                                    {selectedConnection && (
+                                    {selectedConnection && explorerTree && !isRedisExplorer && explorerTree.engine !== "sqlite" && (
                                         <button
                                             type="button"
                                             className="sidebar-icon-btn"
-                                            onClick={() => setShowCreateDBModal(true)}
+                                            onClick={() => {
+                                                const engine = explorerTree?.engine ?? "mysql";
+                                                const defaults = engine === "postgresql"
+                                                    ? { name: "", charset: "UTF8", collation: "" }
+                                                    : engine === "clickhouse"
+                                                    ? { name: "", charset: "", collation: "" }
+                                                    : { name: "", charset: "utf8mb4", collation: "utf8mb4_unicode_ci" };
+                                                setCreateDBForm(defaults);
+                                                setShowCreateDBModal(true);
+                                            }}
                                             title="新建数据库"
                                         >
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -212,7 +229,7 @@ export function Sidebar({
                             {showDatabaseFilter && explorerTree && (
                                 <div className="filter-panel">
                                     <div className="filter-panel__header">
-                                        <span>筛选数据库</span>
+                                        <span>{isRedisExplorer ? "筛选逻辑库" : "筛选数据库"}</span>
                                         <button
                                             type="button"
                                             className="filter-panel__clear"
@@ -246,7 +263,7 @@ export function Sidebar({
                             {showTableFilter && selectedDatabase && explorerTree && (
                                 <div className="filter-panel">
                                     <div className="filter-panel__header">
-                                        <span>筛选数据表</span>
+                                        <span>{isRedisExplorer ? "筛选 Key" : "筛选数据表"}</span>
                                         <button
                                             type="button"
                                             className="filter-panel__clear"
@@ -256,22 +273,20 @@ export function Sidebar({
                                         </button>
                                     </div>
                                     <div className="filter-panel__list">
-                                        {explorerTree.databases
-                                            .find((db) => db.name === selectedDatabase)
-                                            ?.tables.map((table) => (
-                                                <label key={table.name} className="filter-panel__item">
+                                        {(isRedisExplorer ? redisKeyTypes : selectedRedisDatabase?.tables.map((table) => table.name) ?? []).map((item) => (
+                                                <label key={item} className="filter-panel__item">
                                                     <input
                                                         type="checkbox"
-                                                        checked={tableFilter.includes(table.name)}
+                                                        checked={tableFilter.includes(item)}
                                                         onChange={(e) => {
                                                             if (e.target.checked) {
-                                                                setTableFilter((prev) => [...prev, table.name]);
+                                                                setTableFilter((prev) => [...prev, item]);
                                                             } else {
-                                                                setTableFilter((prev) => prev.filter((n) => n !== table.name));
+                                                                setTableFilter((prev) => prev.filter((n) => n !== item));
                                                             }
                                                         }}
                                                     />
-                                                    <span>{table.name}</span>
+                                                    <span>{item}</span>
                                                 </label>
                                             ))}
                                     </div>
@@ -283,7 +298,7 @@ export function Sidebar({
                                     value={tableSearch}
                                     onChange={(event) => setTableSearch(event.target.value)}
                                     disabled={!selectedDatabase}
-                                    placeholder={selectedDatabase ? "搜索当前数据库中的表" : "先选择数据库再搜索表"}
+                                    placeholder={selectedDatabase ? (isRedisExplorer ? "搜索当前逻辑库中的 Key" : "搜索当前数据库中的表") : (isRedisExplorer ? "先选择逻辑库再搜索 Key" : "先选择数据库再搜索表")}
                                 />
                             </div>
                             <div className="navigator-shell">

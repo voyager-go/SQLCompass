@@ -64,7 +64,7 @@ interface QueryPageProps {
     canDeleteSelectedRows: boolean;
     handleRequestDeleteSelectedRows: () => void;
     queryPageSizeOptions: number[];
-    selectedConnection: { id: string } | null;
+    selectedConnection: { id: string; engine?: string } | null;
     selectedDatabase: string;
     selectedTable: string;
     handleFillTableData: () => Promise<void>;
@@ -139,6 +139,7 @@ export function QueryPage({
                         onClick={handleFillTableData}
                         disabled={isFillingTable || !selectedConnection || !selectedDatabase || !selectedTable}
                         title={!selectedTable ? "请先选择数据表" : "根据表结构填充测试数据"}
+                        style={selectedConnection && ["redis", "mongodb"].includes(selectedConnection.engine ?? "") ? { display: "none" } : undefined}
                     >
                         {isFillingTable ? "填充中..." : "填充"}
                     </button>
@@ -362,6 +363,26 @@ export function QueryPage({
                             <span>{queryResult.columns.length} 列</span>
                             {selectedResultRows.length > 0 ? <span>已选 {selectedResultRows.length} 项</span> : null}
                         </div>
+
+                        {queryResult.statementType === "REDIS_KEY" && queryResult.rows[0] ? (
+                            <div className="detail-card">
+                                <div className="section-title">
+                                    <div>
+                                        <h3>Key 详情</h3>
+                                        <p>结构化展示 Redis Key 的基本信息与预览值。</p>
+                                    </div>
+                                </div>
+                                <div className="schema-detail-grid">
+                                    <div className="summary-item"><span>Key</span><strong>{queryResult.rows[0].key}</strong></div>
+                                    <div className="summary-item"><span>Type</span><strong>{queryResult.rows[0].type}</strong></div>
+                                    <div className="summary-item"><span>TTL</span><strong>{queryResult.rows[0].ttl}</strong></div>
+                                    <div className="summary-item"><span>Encoding</span><strong>{queryResult.rows[0].encoding}</strong></div>
+                                </div>
+                                <div className="code-block code-block--wide code-block--tall" style={{ marginTop: 16 }}>
+                                    <pre>{queryResult.rows[0].preview}</pre>
+                                </div>
+                            </div>
+                        ) : null}
 
                         {queryResult.columns.length > 0 ? (
                             <>

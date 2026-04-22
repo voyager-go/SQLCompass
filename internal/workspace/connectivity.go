@@ -97,7 +97,7 @@ func testPostgreSQLConnection(input ConnectionInput) (ConnectionTestResult, erro
 		return ConnectionTestResult{
 			Success: false,
 			Message: "PostgreSQL authentication failed",
-			Detail:  fmt.Sprintf("Driver-level ping to %s failed: %v", detail, err),
+			Detail:  fmt.Sprintf("已成功连到 PostgreSQL 服务，但认证被拒绝。Driver-level ping to %s failed: %v", detail, err),
 		}, nil
 	}
 

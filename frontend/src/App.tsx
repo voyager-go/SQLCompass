@@ -1702,7 +1702,8 @@ function App() {
             if (result.success) {
                 pushToast("success", "创建成功", result.message);
                 setShowCreateDBModal(false);
-                setCreateDBForm({ name: "", charset: "utf8mb4", collation: "utf8mb4_unicode_ci" });
+                const resetEngine = selectedConnection?.engine ?? "mysql";
+                setCreateDBForm(resetEngine === "postgresql" ? { name: "", charset: "UTF8", collation: "" } : resetEngine === "clickhouse" ? { name: "", charset: "", collation: "" } : { name: "", charset: "utf8mb4", collation: "utf8mb4_unicode_ci" });
                 await loadExplorer(selectedConnection.id);
             } else {
                 setWorkspaceNotice({ tone: "error", message: result.message });
@@ -1766,6 +1767,7 @@ function App() {
                     setActivePage={setActivePage}
                     saveFilterSettings={saveFilterSettings}
                     setShowCreateDBModal={setShowCreateDBModal}
+                    setCreateDBForm={setCreateDBForm}
                     dbContextMenu={dbContextMenu}
                     setDbContextMenu={setDbContextMenu}
                     openCreateTablePage={openCreateTablePage}
@@ -1831,6 +1833,7 @@ function App() {
                         handleDeleteConnection={conn.handleDeleteConnection}
                         handleTestConnection={conn.handleTestConnection}
                         handleSaveConnection={conn.handleSaveConnection}
+                        resetConnectionForm={conn.resetConnectionForm}
                         updateConnectionField={conn.updateConnectionField}
                         pushToast={pushToast}
                         isOptimizingSQL={isOptimizingSQL}
@@ -1971,7 +1974,7 @@ function App() {
                         <div className="section-title">
                             <div>
                                 <h3>新建数据库</h3>
-                                <p>在当前连接中创建一个新的 MySQL 数据库。</p>
+                                <p>在当前连接中创建一个新的{selectedConnection?.engine === "clickhouse" ? "ClickHouse" : selectedConnection?.engine === "postgresql" ? "PostgreSQL" : "MySQL"}数据库。</p>
                             </div>
                         </div>
                         <label className="field">
@@ -1982,32 +1985,72 @@ function App() {
                                 placeholder="例如：my_new_db"
                             />
                         </label>
-                        <label className="field">
-                            <span>字符集</span>
-                            <select
-                                value={createDBForm.charset}
-                                onChange={(event) => setCreateDBForm((current) => ({ ...current, charset: event.target.value }))}
-                            >
-                                <option value="utf8mb4">utf8mb4</option>
-                                <option value="utf8">utf8</option>
-                                <option value="latin1">latin1</option>
-                                <option value="gbk">gbk</option>
-                            </select>
-                        </label>
-                        <label className="field">
-                            <span>排序规则</span>
-                            <select
-                                value={createDBForm.collation}
-                                onChange={(event) => setCreateDBForm((current) => ({ ...current, collation: event.target.value }))}
-                            >
-                                <option value="utf8mb4_unicode_ci">utf8mb4_unicode_ci</option>
-                                <option value="utf8mb4_general_ci">utf8mb4_general_ci</option>
-                                <option value="utf8mb4_bin">utf8mb4_bin</option>
-                                <option value="utf8_unicode_ci">utf8_unicode_ci</option>
-                                <option value="utf8_general_ci">utf8_general_ci</option>
-                                <option value="latin1_swedish_ci">latin1_swedish_ci</option>
-                            </select>
-                        </label>
+                        {selectedConnection?.engine !== "clickhouse" && (
+                            <label className="field">
+                                <span>{selectedConnection?.engine === "postgresql" ? "编码" : "字符集"}</span>
+                                <select
+                                    value={createDBForm.charset}
+                                    onChange={(event) => setCreateDBForm((current) => ({ ...current, charset: event.target.value }))}
+                                >
+                                    {selectedConnection?.engine === "postgresql" ? (
+                                        <>
+                                            <option value="UTF8">UTF8</option>
+                                            <option value="LATIN1">LATIN1</option>
+                                            <option value="EUC_JP">EUC_JP</option>
+                                            <option value="EUC_CN">EUC_CN</option>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <option value="utf8mb4">utf8mb4</option>
+                                            <option value="utf8">utf8</option>
+                                            <option value="latin1">latin1</option>
+                                            <option value="gbk">gbk</option>
+                                        </>
+                                    )}
+                                </select>
+                            </label>
+                        )}
+                        {selectedConnection?.engine === "clickhouse" && (
+                            <label className="field">
+                                <span>引擎</span>
+                                <select
+                                    value={createDBForm.charset}
+                                    onChange={(event) => setCreateDBForm((current) => ({ ...current, charset: event.target.value }))}
+                                >
+                                    <option value="">默认 (Atomic)</option>
+                                    <option value="Ordinary">Ordinary</option>
+                                    <option value="Lazy">Lazy</option>
+                                    <option value="Replicated">Replicated</option>
+                                </select>
+                            </label>
+                        )}
+                        {selectedConnection?.engine !== "clickhouse" && (
+                            <label className="field">
+                                <span>排序规则</span>
+                                <select
+                                    value={createDBForm.collation}
+                                    onChange={(event) => setCreateDBForm((current) => ({ ...current, collation: event.target.value }))}
+                                >
+                                    {selectedConnection?.engine === "postgresql" ? (
+                                        <>
+                                            <option value="">默认</option>
+                                            <option value="en_US.UTF-8">en_US.UTF-8</option>
+                                            <option value="zh_CN.UTF-8">zh_CN.UTF-8</option>
+                                            <option value="C">C</option>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <option value="utf8mb4_unicode_ci">utf8mb4_unicode_ci</option>
+                                            <option value="utf8mb4_general_ci">utf8mb4_general_ci</option>
+                                            <option value="utf8mb4_bin">utf8mb4_bin</option>
+                                            <option value="utf8_unicode_ci">utf8_unicode_ci</option>
+                                            <option value="utf8_general_ci">utf8_general_ci</option>
+                                            <option value="latin1_swedish_ci">latin1_swedish_ci</option>
+                                        </>
+                                    )}
+                                </select>
+                            </label>
+                        )}
                         <div className="toolbar-actions toolbar-actions--end">
                             <button type="button" className="ghost-button" onClick={() => setShowCreateDBModal(false)}>
                                 取消

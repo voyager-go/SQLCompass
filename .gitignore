@@ -72,7 +72,8 @@ desktop.pid
 # Sublime
 *.sublime-project
 *.sublime-workspace
-
+# ai editor
+*.codebuddy
 # OS Generated
 # --------------------
 # macOS

@@ -107,6 +107,7 @@ export interface WorkbenchRouterProps {
     handleDeleteConnection: (profile: ConnectionProfile) => Promise<void>;
     handleTestConnection: () => Promise<void>;
     handleSaveConnection: () => Promise<void>;
+    resetConnectionForm: (engine?: string) => void;
     updateConnectionField: UpdateConnectionField;
     pushToast: (tone: NoticeTone, title: string, message: string) => void;
 
@@ -307,6 +308,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         handleDeleteConnection,
         handleTestConnection,
         handleSaveConnection,
+        resetConnectionForm,
         updateConnectionField,
         pushToast,
         // Query
@@ -484,6 +486,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     handleDeleteConnection={handleDeleteConnection}
                     handleTestConnection={handleTestConnection}
                     handleSaveConnection={handleSaveConnection}
+                    resetConnectionForm={resetConnectionForm}
                     updateConnectionField={updateConnectionField}
                     pushToast={pushToast}
                 />

@@ -500,6 +500,13 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func maskSecret(value string) string {
 	if value == "" {
 		return ""

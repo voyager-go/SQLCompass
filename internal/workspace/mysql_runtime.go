@@ -2,7 +2,7 @@ package workspace
 
 import (
 	"context"
-	"database/sql"
+	dbsql "database/sql"
 	"errors"
 	"fmt"
 	"net"
@@ -439,7 +439,7 @@ func (s *Service) runMySQLQuery(record store.ConnectionRecord, input QueryReques
 	}, nil
 }
 
-func scanRows(rows *sql.Rows, columns []string) ([]map[string]string, error) {
+func scanRows(rows *dbsql.Rows, columns []string) ([]map[string]string, error) {
 	result := []map[string]string{}
 	for rows.Next() {
 		values := make([]any, len(columns))
@@ -476,7 +476,7 @@ func buildPaginatedSQL(statement string, page int, pageSize int) string {
 	return fmt.Sprintf("%s LIMIT %d OFFSET %d", strings.TrimRight(statement, "; \n\t"), pageSize, offset)
 }
 
-func loadMySQLFields(ctx context.Context, db *sql.DB, databaseName string, tableName string) ([]TableField, error) {
+func loadMySQLFields(ctx context.Context, db *dbsql.DB, databaseName string, tableName string) ([]TableField, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT column_name,
 		       column_type,
@@ -522,7 +522,7 @@ func loadMySQLFields(ctx context.Context, db *sql.DB, databaseName string, table
 	return fields, rows.Err()
 }
 
-func loadMySQLIndexes(ctx context.Context, db *sql.DB, databaseName string, tableName string) ([]TableIndex, error) {
+func loadMySQLIndexes(ctx context.Context, db *dbsql.DB, databaseName string, tableName string) ([]TableIndex, error) {
 	rows, err := db.QueryContext(ctx, fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", escapeIdentifier(databaseName), escapeIdentifier(tableName)))
 	if err != nil {
 		return nil, err
@@ -535,16 +535,16 @@ func loadMySQLIndexes(ctx context.Context, db *sql.DB, databaseName string, tabl
 		KeyName      string
 		SeqInIndex   int64
 		ColumnName   string
-		Collation    sql.NullString
-		Cardinality  sql.NullInt64
-		SubPart      sql.NullInt64
-		Packed       sql.NullString
-		Null         sql.NullString
-		IndexType    sql.NullString
-		Comment      sql.NullString
-		IndexComment sql.NullString
-		Visible      sql.NullString
-		Expression   sql.NullString
+		Collation    dbsql.NullString
+		Cardinality  dbsql.NullInt64
+		SubPart      dbsql.NullInt64
+		Packed       dbsql.NullString
+		Null         dbsql.NullString
+		IndexType    dbsql.NullString
+		Comment      dbsql.NullString
+		IndexComment dbsql.NullString
+		Visible      dbsql.NullString
+		Expression   dbsql.NullString
 	}
 
 	indexOrder := []string{}
@@ -602,7 +602,7 @@ func loadMySQLIndexes(ctx context.Context, db *sql.DB, databaseName string, tabl
 	return items, nil
 }
 
-func loadMySQLDDL(ctx context.Context, db *sql.DB, tableName string) (string, error) {
+func loadMySQLDDL(ctx context.Context, db *dbsql.DB, tableName string) (string, error) {
 	row := db.QueryRowContext(ctx, fmt.Sprintf("SHOW CREATE TABLE `%s`", escapeIdentifier(tableName)))
 	var name string
 	var ddl string
@@ -732,7 +732,7 @@ func escapeIdentifier(name string) string {
 	return strings.ReplaceAll(strings.TrimSpace(name), "`", "``")
 }
 
-func openMySQLDatabase(record store.ConnectionRecord, databaseOverride string) (*sql.DB, error) {
+func openMySQLDatabase(record store.ConnectionRecord, databaseOverride string) (*dbsql.DB, error) {
 	cfg, err := mysqlConfigFromRecord(record)
 	if err != nil {
 		return nil, err
@@ -743,7 +743,7 @@ func openMySQLDatabase(record store.ConnectionRecord, databaseOverride string) (
 	}
 
 	ensureMySQLTimeouts(cfg)
-	db, err := sql.Open("mysql", cfg.FormatDSN())
+	db, err := dbsql.Open("mysql", cfg.FormatDSN())
 	if err != nil {
 		return nil, err
 	}
@@ -870,6 +870,24 @@ func (s *Service) CreateDatabase(input CreateDatabaseRequest) (CreateDatabaseRes
 		return CreateDatabaseResult{}, errors.New("数据库名不能为空")
 	}
 
+	switch record.Engine {
+	case string(database.MySQL), string(database.MariaDB):
+		return s.createMySQLDatabase(record, input)
+	case string(database.PostgreSQL):
+		return s.createPostgreSQLDatabase(record, input)
+	case string(database.ClickHouse):
+		return s.createClickHouseDatabase(record, input)
+	case string(database.SQLite):
+		return CreateDatabaseResult{Success: false, Message: "SQLite 不支持创建数据库，每个文件即为一个数据库"}, nil
+	case string(database.Redis):
+		return CreateDatabaseResult{Success: false, Message: "Redis 不支持创建数据库"}, nil
+	default:
+		return CreateDatabaseResult{Success: false, Message: fmt.Sprintf("%s 暂未接入创建数据库", record.Engine)}, nil
+	}
+}
+
+func (s *Service) createMySQLDatabase(record store.ConnectionRecord, input CreateDatabaseRequest) (CreateDatabaseResult, error) {
+	dbName := strings.TrimSpace(input.DatabaseName)
 	charset := strings.TrimSpace(input.Charset)
 	if charset == "" {
 		charset = "utf8mb4"
@@ -895,6 +913,62 @@ func (s *Service) CreateDatabase(input CreateDatabaseRequest) (CreateDatabaseRes
 	}
 
 	return CreateDatabaseResult{Success: true, Message: fmt.Sprintf("数据库 `%s` 创建成功", dbName)}, nil
+}
+
+func (s *Service) createPostgreSQLDatabase(record store.ConnectionRecord, input CreateDatabaseRequest) (CreateDatabaseResult, error) {
+	dbName := strings.TrimSpace(input.DatabaseName)
+	charset := strings.TrimSpace(input.Charset)
+	if charset == "" {
+		charset = "UTF8"
+	}
+
+	db, err := openPostgreSQLDatabase(record, firstNonEmpty(record.Database, "postgres"))
+	if err != nil {
+		return CreateDatabaseResult{}, err
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	sql := fmt.Sprintf(`CREATE DATABASE %s ENCODING '%s'`, quotePostgreSQLIdentifier(dbName), charset)
+	collation := strings.TrimSpace(input.Collation)
+	if collation != "" {
+		sql += fmt.Sprintf(` LC_COLLATE '%s' LC_CTYPE '%s'`, collation, collation)
+	}
+	sql += ";"
+
+	if _, err := db.ExecContext(ctx, sql); err != nil {
+		return CreateDatabaseResult{Success: false, Message: err.Error()}, nil
+	}
+
+	return CreateDatabaseResult{Success: true, Message: fmt.Sprintf("数据库 %s 创建成功", dbName)}, nil
+}
+
+func (s *Service) createClickHouseDatabase(record store.ConnectionRecord, input CreateDatabaseRequest) (CreateDatabaseResult, error) {
+	dbName := strings.TrimSpace(input.DatabaseName)
+
+	db, err := openClickHouseDatabase(record, "")
+	if err != nil {
+		return CreateDatabaseResult{}, err
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	sql := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", quoteClickHouseIdentifier(dbName))
+	engine := strings.TrimSpace(input.Charset)
+	if engine != "" {
+		sql += fmt.Sprintf(" ENGINE = %s", engine)
+	}
+	sql += ";"
+
+	if _, err := db.ExecContext(ctx, sql); err != nil {
+		return CreateDatabaseResult{Success: false, Message: err.Error()}, nil
+	}
+
+	return CreateDatabaseResult{Success: true, Message: fmt.Sprintf("数据库 %s 创建成功", dbName)}, nil
 }
 
 func (s *Service) CreateTable(input CreateTableRequest) (CreateTableResult, error) {
@@ -1000,12 +1074,31 @@ func (s *Service) FillTableData(input FillTableRequest) (FillTableResult, error)
 		return FillTableResult{}, err
 	}
 
-	database := strings.TrimSpace(input.Database)
-	table := strings.TrimSpace(input.Table)
-	if database == "" || table == "" {
+	dbName := strings.TrimSpace(input.Database)
+	tableName := strings.TrimSpace(input.Table)
+	if dbName == "" || tableName == "" {
 		return FillTableResult{}, errors.New("数据库名和表名不能为空")
 	}
 
+	switch record.Engine {
+	case string(database.MySQL), string(database.MariaDB):
+		return s.fillMySQLTable(record, input)
+	case string(database.PostgreSQL):
+		return s.fillPostgreSQLTable(record, input)
+	case string(database.SQLite):
+		return s.fillSQLiteTable(record, input)
+	case string(database.ClickHouse):
+		return s.fillClickHouseTable(record, input)
+	case string(database.Redis):
+		return FillTableResult{Success: false, Message: "Redis 不支持填充数据"}, nil
+	default:
+		return FillTableResult{Success: false, Message: fmt.Sprintf("%s 暂未接入填充数据", record.Engine)}, nil
+	}
+}
+
+func (s *Service) fillMySQLTable(record store.ConnectionRecord, input FillTableRequest) (FillTableResult, error) {
+	database := strings.TrimSpace(input.Database)
+	table := strings.TrimSpace(input.Table)
 	count := input.Count
 	if count <= 0 {
 		count = 100
@@ -1051,9 +1144,164 @@ func (s *Service) FillTableData(input FillTableRequest) (FillTableResult, error)
 	}
 	defer stmt.Close()
 
+	return executeFill(stmt, ctx, fields, count)
+}
+
+func (s *Service) fillPostgreSQLTable(record store.ConnectionRecord, input FillTableRequest) (FillTableResult, error) {
+	database := strings.TrimSpace(input.Database)
+	table := strings.TrimSpace(input.Table)
+	count := input.Count
+	if count <= 0 {
+		count = 100
+	}
+
+	db, err := openPostgreSQLDatabase(record, database)
+	if err != nil {
+		return FillTableResult{}, err
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	schemaName, bareTable := splitSchemaAndTable(table, "public")
+	fields, err := loadPostgreSQLFields(ctx, db, schemaName, bareTable)
+	if err != nil {
+		return FillTableResult{}, err
+	}
+	if len(fields) == 0 {
+		return FillTableResult{}, errors.New("表中没有字段")
+	}
+
+	var colNames []string
+	var valuePlaceholders []string
+	for _, f := range fields {
+		if f.AutoIncrement {
+			continue
+		}
+		colNames = append(colNames, quotePostgreSQLIdentifier(f.Name))
+		valuePlaceholders = append(valuePlaceholders, fmt.Sprintf("$%d", len(colNames)))
+	}
+
+	if len(colNames) == 0 {
+		return FillTableResult{}, errors.New("没有可插入的字段")
+	}
+
+	tableIdentifier := fmt.Sprintf("%s.%s", quotePostgreSQLIdentifier(schemaName), quotePostgreSQLIdentifier(bareTable))
+	sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		tableIdentifier, strings.Join(colNames, ", "), strings.Join(valuePlaceholders, ", "))
+
+	stmt, err := db.PrepareContext(ctx, sql)
+	if err != nil {
+		return FillTableResult{}, err
+	}
+	defer stmt.Close()
+
+	return executeFill(stmt, ctx, fields, count)
+}
+
+func (s *Service) fillSQLiteTable(record store.ConnectionRecord, input FillTableRequest) (FillTableResult, error) {
+	database := firstNonEmpty(strings.TrimSpace(input.Database), "main")
+	table := strings.TrimSpace(input.Table)
+	count := input.Count
+	if count <= 0 {
+		count = 100
+	}
+
+	db, err := openSQLiteDatabase(record)
+	if err != nil {
+		return FillTableResult{}, err
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	fields, err := loadSQLiteFields(ctx, db, database, table)
+	if err != nil {
+		return FillTableResult{}, err
+	}
+	if len(fields) == 0 {
+		return FillTableResult{}, errors.New("表中没有字段")
+	}
+
+	var colNames []string
+	var valuePlaceholders []string
+	for _, f := range fields {
+		colNames = append(colNames, quoteSQLiteIdentifier(f.Name))
+		valuePlaceholders = append(valuePlaceholders, "?")
+	}
+
+	if len(colNames) == 0 {
+		return FillTableResult{}, errors.New("没有可插入的字段")
+	}
+
+	tableIdentifier := fmt.Sprintf("%s.%s", quoteSQLiteIdentifier(database), quoteSQLiteIdentifier(table))
+	sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		tableIdentifier, strings.Join(colNames, ", "), strings.Join(valuePlaceholders, ", "))
+
+	stmt, err := db.PrepareContext(ctx, sql)
+	if err != nil {
+		return FillTableResult{}, err
+	}
+	defer stmt.Close()
+
+	return executeFill(stmt, ctx, fields, count)
+}
+
+func (s *Service) fillClickHouseTable(record store.ConnectionRecord, input FillTableRequest) (FillTableResult, error) {
+	database := firstNonEmpty(strings.TrimSpace(input.Database), "default")
+	table := strings.TrimSpace(input.Table)
+	count := input.Count
+	if count <= 0 {
+		count = 100
+	}
+
+	db, err := openClickHouseDatabase(record, database)
+	if err != nil {
+		return FillTableResult{}, err
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	fields, err := loadClickHouseFields(ctx, db, database, table)
+	if err != nil {
+		return FillTableResult{}, err
+	}
+	if len(fields) == 0 {
+		return FillTableResult{}, errors.New("表中没有字段")
+	}
+
+	var colNames []string
+	var valuePlaceholders []string
+	for _, f := range fields {
+		colNames = append(colNames, quoteClickHouseIdentifier(f.Name))
+		valuePlaceholders = append(valuePlaceholders, "?")
+	}
+
+	if len(colNames) == 0 {
+		return FillTableResult{}, errors.New("没有可插入的字段")
+	}
+
+	tableIdentifier := fmt.Sprintf("%s.%s", quoteClickHouseIdentifier(database), quoteClickHouseIdentifier(table))
+	sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		tableIdentifier, strings.Join(colNames, ", "), strings.Join(valuePlaceholders, ", "))
+
+	stmt, err := db.PrepareContext(ctx, sql)
+	if err != nil {
+		return FillTableResult{}, err
+	}
+	defer stmt.Close()
+
+	return executeFill(stmt, ctx, fields, count)
+}
+
+func executeFill(stmt *dbsql.Stmt, ctx context.Context, fields []TableField, count int) (FillTableResult, error) {
 	inserted := 0
 	for i := 0; i < count; i++ {
-		args := make([]any, 0, len(colNames))
+		args := make([]any, 0, len(fields))
 		for _, f := range fields {
 			if f.AutoIncrement {
 				continue

@@ -36,6 +36,7 @@ type TableNode struct {
 	Rows     int64  `json:"rows"`
 	Engine   string `json:"engine"`
 	Comment  string `json:"comment"`
+	KeyType  string `json:"keyType,omitempty"`
 	Loading  bool   `json:"loading"` // 行数是否正在加载中
 }
 
@@ -134,6 +135,7 @@ type SQLAnalysis struct {
 type QueryResult struct {
 	Columns       []string            `json:"columns"`
 	Rows          []map[string]string `json:"rows"`
+	Meta          map[string]string   `json:"meta,omitempty"`
 	AffectedRows  int64               `json:"affectedRows"`
 	DurationMS    int64               `json:"durationMs"`
 	EffectiveSQL  string              `json:"effectiveSql"`

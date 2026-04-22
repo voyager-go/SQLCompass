@@ -8,6 +8,7 @@ export type TableNode = {
     rows: number;
     engine: string;
     comment: string;
+    keyType?: string;
     loading?: boolean;
 };
 
@@ -132,6 +133,7 @@ export type SQLAnalysis = {
 export type QueryResult = {
     columns: string[];
     rows: Record<string, string>[];
+    meta?: Record<string, string>;
     affectedRows: number;
     durationMs: number;
     effectiveSql: string;

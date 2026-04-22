@@ -475,7 +475,7 @@ func (s *Service) browseRedisKeys(record store.ConnectionRecord, input RedisKeyB
 		if ttl > 0 {
 			comment = fmt.Sprintf("%s · TTL %s", typeName, ttl.Round(time.Second))
 		}
-		items = append(items, TableNode{Name: key, Rows: -1, Engine: "redis", Comment: comment})
+		items = append(items, TableNode{Name: key, Rows: -1, Engine: "redis", Comment: comment, KeyType: typeName})
 	}
 
 	return RedisKeyBrowseResult{ConnectionID: record.ID, Database: dbName, Cursor: input.Cursor, NextCursor: nextCursor, HasMore: nextCursor != 0, Keys: items}, nil
@@ -712,41 +712,72 @@ func (s *Service) previewRedisKey(record store.ConnectionRecord, input TablePrev
 	}
 	ttl, _ := client.TTL(ctx, input.Table).Result()
 	encoding, _ := client.Do(ctx, "OBJECT", "ENCODING", input.Table).Text()
-
-	preview := ""
+	meta := map[string]string{
+		"key":      input.Table,
+		"type":     typeName,
+		"ttl":      ttl.String(),
+		"encoding": encoding,
+	}
+	var columns []string
+	var rows []map[string]string
 	switch typeName {
 	case "string":
-		preview, _ = client.Get(ctx, input.Table).Result()
+		value, _ := client.Get(ctx, input.Table).Result()
+		meta["preview"] = value
+		columns = []string{"value"}
+		rows = []map[string]string{{"value": value}}
 	case "hash":
 		pairs, _ := client.HGetAll(ctx, input.Table).Result()
-		preview = fmt.Sprint(pairs)
+		columns = []string{"field", "value"}
+		keys := make([]string, 0, len(pairs))
+		for key := range pairs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		rows = make([]map[string]string, 0, len(keys))
+		for _, key := range keys {
+			rows = append(rows, map[string]string{"field": key, "value": pairs[key]})
+		}
 	case "list":
 		values, _ := client.LRange(ctx, input.Table, 0, 19).Result()
-		preview = fmt.Sprint(values)
+		columns = []string{"index", "value"}
+		rows = make([]map[string]string, 0, len(values))
+		for index, value := range values {
+			rows = append(rows, map[string]string{"index": strconv.Itoa(index), "value": value})
+		}
 	case "set":
 		values, _ := client.SMembers(ctx, input.Table).Result()
 		if len(values) > 20 {
 			values = values[:20]
 		}
-		preview = fmt.Sprint(values)
+		sort.Strings(values)
+		columns = []string{"value"}
+		rows = make([]map[string]string, 0, len(values))
+		for _, value := range values {
+			rows = append(rows, map[string]string{"value": value})
+		}
 	case "zset":
 		values, _ := client.ZRangeWithScores(ctx, input.Table, 0, 19).Result()
-		preview = fmt.Sprint(values)
+		columns = []string{"member", "score"}
+		rows = make([]map[string]string, 0, len(values))
+		for _, value := range values {
+			rows = append(rows, map[string]string{"member": value.Member.(string), "score": strconv.FormatFloat(value.Score, 'f', -1, 64)})
+		}
 	case "stream":
 		values, _ := client.XRangeN(ctx, input.Table, "-", "+", 10).Result()
-		preview = fmt.Sprint(values)
+		columns = []string{"id", "field", "value"}
+		rows = []map[string]string{}
+		for _, entry := range values {
+			for field, value := range entry.Values {
+				rows = append(rows, map[string]string{"id": entry.ID, "field": field, "value": fmt.Sprint(value)})
+			}
+		}
 	default:
-		preview = "暂不支持该类型的值预览"
+		meta["preview"] = "暂不支持该类型的值预览"
+		columns = []string{"value"}
+		rows = []map[string]string{{"value": meta["preview"]}}
 	}
-
-	rows := []map[string]string{{
-		"key":      input.Table,
-		"type":     typeName,
-		"ttl":      ttl.String(),
-		"encoding": encoding,
-		"preview":  preview,
-	}}
-	return QueryResult{Columns: []string{"key", "type", "ttl", "encoding", "preview"}, Rows: rows, AffectedRows: 1, DurationMS: 0, EffectiveSQL: input.Table, StatementType: "REDIS_KEY", Message: fmt.Sprintf("已读取 Key %s 的详情", input.Table), Page: 1, PageSize: 1, AutoLimited: false, HasNextPage: false, Analysis: analyzeSQL(input.Table)}, nil
+	return QueryResult{Columns: columns, Rows: rows, Meta: meta, AffectedRows: int64(len(rows)), DurationMS: 0, EffectiveSQL: input.Table, StatementType: "REDIS_KEY", Message: fmt.Sprintf("已读取 Key %s 的详情", input.Table), Page: 1, PageSize: maxInt(1, len(rows)), AutoLimited: false, HasNextPage: false, Analysis: analyzeSQL(input.Table)}, nil
 }
 
 func (s *Service) getPostgreSQLTableRowCounts(record store.ConnectionRecord, databaseName string, tables []string) (TableRowCountResult, error) {

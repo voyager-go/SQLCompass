@@ -2,6 +2,18 @@ import { CopyableText } from "../components/CopyableText";
 import { escapeHTML } from "../lib/utils";
 import type { ExplorerTree, TableNode } from "../types/runtime";
 
+function redisTypeLabel(type?: string) {
+    switch ((type || "").toLowerCase()) {
+        case "string": return "redis-key-tag redis-key-tag--string";
+        case "hash": return "redis-key-tag redis-key-tag--hash";
+        case "list": return "redis-key-tag redis-key-tag--list";
+        case "set": return "redis-key-tag redis-key-tag--set";
+        case "zset": return "redis-key-tag redis-key-tag--zset";
+        case "stream": return "redis-key-tag redis-key-tag--stream";
+        default: return "redis-key-tag";
+    }
+}
+
 interface SidebarTreeProps {
     explorerTree: ExplorerTree | null;
     databaseFilter: string[];
@@ -38,6 +50,7 @@ function renderTableItem(
     setTableContextMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; database: string; table: string } | null>>,
     pushToast: (tone: "success" | "error" | "info", title: string, message: string) => void,
 ) {
+    const isRedisKey = table.engine === "redis";
     return (
         <div
             key={table.name}
@@ -82,8 +95,9 @@ function renderTableItem(
                     onCopied={(value) => pushToast(value ? "success" : "error", value ? "已复制表名" : "复制失败", value || "请重试")}
                 />
             </div>
+            {isRedisKey ? <span className={redisTypeLabel((table as TableNode & { keyType?: string }).keyType)}>{(table as TableNode & { keyType?: string }).keyType || "key"}</span> : null}
             <span className="navigator-meta">
-                {table.rows === -1 ? "加载中..." : table.rows >= 0 ? table.rows.toLocaleString() : "-"}
+                {isRedisKey ? (table.comment || "Key") : table.rows === -1 ? "加载中..." : table.rows >= 0 ? table.rows.toLocaleString() : "-"}
             </span>
         </div>
     );
@@ -323,7 +337,7 @@ export function SidebarTree({
                 </div>
             ) : null}
 
-            {dbContextMenu ? (
+            {dbContextMenu && explorerTree?.canDesignTables ? (
                 <div
                     className="context-menu"
                     style={{
