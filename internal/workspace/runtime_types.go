@@ -301,6 +301,34 @@ type FillTableResult struct {
 	InsertedRows int    `json:"insertedRows"`
 }
 
+type SmartFillTableRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+	Table        string `json:"table"`
+	Count        int    `json:"count"`
+}
+
+type SmartFillTableResult struct {
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	InsertedRows int    `json:"insertedRows"`
+	SQLs         []string `json:"sqls"`
+}
+
+type PreviewSmartFillSQLRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+	Table        string `json:"table"`
+	Count        int    `json:"count"`
+}
+
+type PreviewSmartFillSQLResult struct {
+	Success   bool     `json:"success"`
+	Message   string   `json:"message"`
+	Reasoning string   `json:"reasoning"`
+	SQLs      []string `json:"sqls"`
+}
+
 type CreateTableRequest struct {
 	ConnectionID string            `json:"connectionId"`
 	Database     string            `json:"database"`
@@ -325,12 +353,23 @@ type SchemaFieldInput struct {
 }
 
 type SchemaIndexInput struct {
-	Name    string   `json:"name"`
-	Columns []string `json:"columns"`
-	Unique  bool     `json:"unique"`
+	Name      string   `json:"name"`
+	Columns   []string `json:"columns"`
+	Unique    bool     `json:"unique"`
+	IndexType string   `json:"indexType"`
 }
 
 type CreateTableResult struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
+}
+
+type GenerateIndexNameRequest struct {
+	TableName string   `json:"tableName"`
+	Columns   []string `json:"columns"`
+	Unique    bool     `json:"unique"`
+}
+
+type GenerateIndexNameResult struct {
+	Name string `json:"name"`
 }

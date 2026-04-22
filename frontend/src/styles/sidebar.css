@@ -9,7 +9,8 @@
     display: flex;
     flex-direction: column;
     background: var(--sidebar-bg);
-    border-right: 1px solid var(--sidebar-border);
+    border-right: none;
+    box-shadow: none;
     overflow-y: auto;
     overflow-x: hidden;
     z-index: 10;

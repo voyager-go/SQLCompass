@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { CreateTable } from "../../wailsjs/go/main/App";
+import { TypeCombobox } from "../components/TypeCombobox";
 import type { SchemaFieldInput, SchemaIndexInput } from "../types/runtime";
 import type { WorkbenchPage } from "../lib/constants";
-import { browserGeneratedID, getFieldTypeOptions } from "../lib/utils";
+import { browserGeneratedID, getFieldTypeOptions, getIndexTypeOptions } from "../lib/utils";
 
 interface CreateTablePageProps {
     selectedConnection: { id: string; engine?: string } | null;
@@ -25,12 +26,14 @@ function emptyField(): SchemaFieldInput & { id: string } {
     };
 }
 
-function emptyIndex(): SchemaIndexInput & { id: string } {
+function emptyIndex(engine: string): SchemaIndexInput & { id: string } {
+    const options = getIndexTypeOptions(engine);
     return {
         id: browserGeneratedID(),
         name: "",
         columns: [],
         unique: false,
+        indexType: options.length > 0 ? options[0] : "",
     };
 }
 
@@ -57,7 +60,15 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
 
     function updateField(index: number, key: keyof SchemaFieldInput, value: unknown) {
         setFields((current) =>
-            current.map((field, i) => (i === index ? { ...field, [key]: value } : field))
+            current.map((field, i) => {
+                if (i !== index) {
+                    if (key === "primary" && value === true) {
+                        return { ...field, primary: false };
+                    }
+                    return field;
+                }
+                return { ...field, [key]: value };
+            })
         );
     }
 
@@ -66,7 +77,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
     }
 
     function addIndex() {
-        setIndexes((current) => [...current, emptyIndex()]);
+        setIndexes((current) => [...current, emptyIndex(engine)]);
     }
 
     function updateIndex(index: number, key: keyof SchemaIndexInput, value: unknown) {
@@ -235,13 +246,11 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                                 />
                                             </td>
                                             <td>
-                                                <select value={field.type} onChange={(e) => updateField(index, "type", e.target.value)}>
-                                                    {fieldTypeOptions.map((type) => (
-                                                        <option key={type} value={type}>
-                                                            {type}
-                                                        </option>
-                                                    ))}
-                                                </select>
+                                                <TypeCombobox
+                                                    options={fieldTypeOptions}
+                                                    value={field.type}
+                                                    onChange={(value) => updateField(index, "type", value)}
+                                                />
                                             </td>
                                             <td>
                                                 <label className="checkbox-cell">
@@ -265,8 +274,11 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                                 <input value={field.comment} onChange={(e) => updateField(index, "comment", e.target.value)} placeholder="注释" />
                                             </td>
                                             <td>
-                                                <button type="button" className="text-button text-button--danger" onClick={() => deleteField(index)}>
-                                                    删除
+                                                <button type="button" className="icon-btn icon-btn--delete" title="删除字段" onClick={() => deleteField(index)}>
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                                    </svg>
                                                 </button>
                                             </td>
                                         </tr>
@@ -287,13 +299,14 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                         <th>索引名</th>
                                         <th>字段（逗号分隔）</th>
                                         <th>唯一</th>
+                                        {getIndexTypeOptions(engine).length > 0 ? <th>类型</th> : null}
                                         <th>操作</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {indexes.length === 0 ? (
                                         <tr>
-                                            <td colSpan={4} style={{ textAlign: "center", color: "#999" }}>暂无索引，点击上方「新增索引」添加</td>
+                                            <td colSpan={getIndexTypeOptions(engine).length > 0 ? 5 : 4} style={{ textAlign: "center", color: "#999" }}>暂无索引，点击上方「新增索引」添加</td>
                                         </tr>
                                     ) : (
                                         indexes.map((idx, index) => (
@@ -317,9 +330,26 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                                         <input type="checkbox" checked={idx.unique} onChange={(e) => updateIndex(index, "unique", e.target.checked)} />
                                                     </label>
                                                 </td>
+                                                {getIndexTypeOptions(engine).length > 0 ? (
+                                                    <td>
+                                                        <select
+                                                            value={idx.indexType}
+                                                            onChange={(e) => updateIndex(index, "indexType", e.target.value)}
+                                                        >
+                                                            {getIndexTypeOptions(engine).map((type) => (
+                                                                <option key={type} value={type}>
+                                                                    {type}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                ) : null}
                                                 <td>
-                                                    <button type="button" className="text-button text-button--danger" onClick={() => deleteIndex(index)}>
-                                                        删除
+                                                    <button type="button" className="icon-btn icon-btn--delete" title="删除索引" onClick={() => deleteIndex(index)}>
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                            <polyline points="3 6 5 6 21 6"></polyline>
+                                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                                        </svg>
                                                     </button>
                                                 </td>
                                             </tr>

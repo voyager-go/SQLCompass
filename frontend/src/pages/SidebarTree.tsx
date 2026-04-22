@@ -147,8 +147,14 @@ export function SidebarTree({
         return <div className="sidebar-empty">先选择一个连接，或者先在连接管理里新建连接。</div>;
     }
 
-    const filteredDatabases = databaseFilter.length > 0
-        ? explorerTree.databases.filter((db) => databaseFilter.includes(db.name))
+    const isRedisExplorer = explorerTree.engine === "redis";
+
+    // 只保留实际存在于当前 explorerTree 中的数据库筛选值，避免旧连接残留导致空白
+    const validDatabaseFilter = databaseFilter.filter((name) =>
+        explorerTree.databases.some((db) => db.name === name)
+    );
+    const filteredDatabases = validDatabaseFilter.length > 0
+        ? explorerTree.databases.filter((db) => validDatabaseFilter.includes(db.name))
         : explorerTree.databases;
 
     return (
@@ -160,8 +166,20 @@ export function SidebarTree({
                 let filteredTables = shouldFilterTables
                     ? database.tables.filter((table) => table.name.toLowerCase().includes(tableSearch.trim().toLowerCase()))
                     : database.tables;
-                if (tableFilter.length > 0 && database.name === selectedDatabase) {
-                    filteredTables = filteredTables.filter((table) => tableFilter.includes(table.name));
+
+                // 只保留实际存在于当前 database 中的有效筛选值，避免旧连接/旧库残留导致空白
+                const validTableFilter = isRedisExplorer
+                    ? tableFilter.filter((type) =>
+                          database.tables.some((t) => (t as TableNode & { keyType?: string }).keyType === type)
+                      )
+                    : tableFilter.filter((name) => database.tables.some((t) => t.name === name));
+
+                if (validTableFilter.length > 0 && database.name === selectedDatabase) {
+                    filteredTables = filteredTables.filter((table) =>
+                        isRedisExplorer
+                            ? validTableFilter.includes((table as TableNode & { keyType?: string }).keyType || "")
+                            : validTableFilter.includes(table.name)
+                    );
                 }
                 const page = tablePageByDatabase[database.name] ?? 1;
                 const pageCount = Math.max(1, Math.ceil(filteredTables.length / tablePageSize));
@@ -169,7 +187,6 @@ export function SidebarTree({
                 const start = (normalizedPage - 1) * tablePageSize;
                 const visibleTables: TableNode[] = filteredTables.slice(start, start + tablePageSize);
                 const hasSchemas = Boolean(database.schemas && database.schemas.length > 0);
-                const isRedisDatabase = explorerTree.engine === "redis";
                 const redisHistory = redisCursorHistoryByDatabase[database.name] ?? [0];
 
                 return (
@@ -234,7 +251,7 @@ export function SidebarTree({
                                               ...schema,
                                               tables: schema.tables.filter((table) => {
                                                   const searchMatched = !tableSearch.trim() || table.name.toLowerCase().includes(tableSearch.trim().toLowerCase());
-                                                  const filterMatched = tableFilter.length === 0 || tableFilter.includes(table.name);
+                                                  const filterMatched = validTableFilter.length === 0 || validTableFilter.includes(table.name);
                                                   return searchMatched && filterMatched;
                                               }),
                                           }))
@@ -258,7 +275,7 @@ export function SidebarTree({
 
                                 {(hasSchemas ? filteredTables.length === 0 : visibleTables.length === 0) ? <div className="navigator-empty">没有匹配的表</div> : null}
 
-                                {!hasSchemas && isRedisDatabase ? (
+                                {!hasSchemas && isRedisExplorer ? (
                                     <div className="navigator-pager">
                                         <button
                                             type="button"
@@ -317,7 +334,7 @@ export function SidebarTree({
                 );
             })}
 
-            {tableContextMenu && explorerTree?.canDesignTables ? (
+            {tableContextMenu ? (
                 <div
                     className="context-menu"
                     style={{
@@ -330,14 +347,35 @@ export function SidebarTree({
                     <button
                         type="button"
                         className="context-menu__item"
-                        onClick={() => openTableDesigner(tableContextMenu.database, tableContextMenu.table)}
+                        onClick={() => {
+                            navigator.clipboard.writeText(tableContextMenu.table).catch(() => undefined);
+                            pushToast("success", "已复制", `表名 ${tableContextMenu.table} 已复制到剪贴板`);
+                            setTableContextMenu(null);
+                        }}
                     >
-                        设计
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                        复制表名
                     </button>
+                    {explorerTree?.canDesignTables ? (
+                        <button
+                            type="button"
+                            className="context-menu__item"
+                            onClick={() => openTableDesigner(tableContextMenu.database, tableContextMenu.table)}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                            设计
+                        </button>
+                    ) : null}
                 </div>
             ) : null}
 
-            {dbContextMenu && explorerTree?.canDesignTables ? (
+            {dbContextMenu ? (
                 <div
                     className="context-menu"
                     style={{
@@ -350,10 +388,31 @@ export function SidebarTree({
                     <button
                         type="button"
                         className="context-menu__item"
-                        onClick={() => openCreateTablePage(dbContextMenu.database)}
+                        onClick={() => {
+                            navigator.clipboard.writeText(dbContextMenu.database).catch(() => undefined);
+                            pushToast("success", "已复制", `数据库名 ${dbContextMenu.database} 已复制到剪贴板`);
+                            setDbContextMenu(null);
+                        }}
                     >
-                        新建表
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                        复制名称
                     </button>
+                    {explorerTree?.canDesignTables ? (
+                        <button
+                            type="button"
+                            className="context-menu__item"
+                            onClick={() => openCreateTablePage(dbContextMenu.database)}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            新建表
+                        </button>
+                    ) : null}
                 </div>
             ) : null}
         </>

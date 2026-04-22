@@ -199,6 +199,20 @@ export type FillTableResult = {
     insertedRows: number;
 };
 
+export type PreviewSmartFillSQLRequest = {
+    connectionId: string;
+    database: string;
+    table: string;
+    count: number;
+};
+
+export type PreviewSmartFillSQLResult = {
+    success: boolean;
+    message: string;
+    reasoning: string;
+    sqls: string[];
+};
+
 export type SchemaFieldInput = {
     name: string;
     type: string;
@@ -213,6 +227,7 @@ export type SchemaIndexInput = {
     name: string;
     columns: string[];
     unique: boolean;
+    indexType: string;
 };
 
 export type CreateTableRequest = {
@@ -253,6 +268,16 @@ export type AIFieldCommentRequest = {
 export type AIFieldCommentResult = {
     fieldName: string;
     comment: string;
+};
+
+export type GenerateIndexNameRequest = {
+    tableName: string;
+    columns: string[];
+    unique: boolean;
+};
+
+export type GenerateIndexNameResult = {
+    name: string;
 };
 
 export type SQLOptimizeRequest = {

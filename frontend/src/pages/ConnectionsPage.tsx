@@ -245,7 +245,12 @@ export function ConnectionsPage({
                                             className="color-input-native"
                                             title="自定义颜色"
                                         />
-                                        <span className="color-custom-icon">+</span>
+                                        <span
+                                            className="color-custom-icon"
+                                            style={connectionDraft.groupColor ? { backgroundColor: connectionDraft.groupColor, color: "#fff", border: "none" } : undefined}
+                                        >
+                                            +
+                                        </span>
                                     </div>
                                 </div>
                             </div>

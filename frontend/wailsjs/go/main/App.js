@@ -54,6 +54,10 @@ export function GenerateFieldComment(arg1) {
   return window['go']['main']['App']['GenerateFieldComment'](arg1);
 }
 
+export function GenerateIndexName(arg1) {
+  return window['go']['main']['App']['GenerateIndexName'](arg1);
+}
+
 export function GetBootstrapData() {
   return window['go']['main']['App']['GetBootstrapData']();
 }
@@ -98,6 +102,10 @@ export function OptimizeSQL(arg1) {
   return window['go']['main']['App']['OptimizeSQL'](arg1);
 }
 
+export function PreviewSmartFillSQL(arg1) {
+  return window['go']['main']['App']['PreviewSmartFillSQL'](arg1);
+}
+
 export function PreviewTableData(arg1) {
   return window['go']['main']['App']['PreviewTableData'](arg1);
 }
@@ -124,6 +132,10 @@ export function SelectStorageDirectory() {
 
 export function SetStoragePath(arg1) {
   return window['go']['main']['App']['SetStoragePath'](arg1);
+}
+
+export function SmartFillTableData(arg1) {
+  return window['go']['main']['App']['SmartFillTableData'](arg1);
 }
 
 export function SummarizeChatResult(arg1) {

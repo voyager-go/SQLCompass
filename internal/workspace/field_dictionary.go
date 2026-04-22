@@ -117,6 +117,218 @@ func (s *Service) GenerateFieldComment(input AIFieldCommentRequest) (AIFieldComm
 	}, nil
 }
 
+func (s *Service) GenerateIndexName(input GenerateIndexNameRequest) (GenerateIndexNameResult, error) {
+	if len(input.Columns) == 0 {
+		return GenerateIndexNameResult{}, errors.New("请先选择索引字段")
+	}
+
+	state, err := s.store.LoadConfig()
+	if err != nil {
+		return GenerateIndexNameResult{}, err
+	}
+
+	baseURL, modelName, apiKey := resolveAIConfig(state.AI)
+	if strings.TrimSpace(apiKey) == "" {
+		return GenerateIndexNameResult{}, errors.New("尚未配置 AI API Key")
+	}
+
+	uniqueHint := ""
+	if input.Unique {
+		uniqueHint = "唯一"
+	}
+
+	prompt := fmt.Sprintf(
+		"你是数据库建模助手。请为以下%s索引生成一个规范的索引名称，使用蛇形命名法（小写+下划线），不要超过30个字符，不要解释，只输出名称本身。\n表名：%s\n字段：%s",
+		uniqueHint, input.TableName, strings.Join(input.Columns, ", "),
+	)
+	name, err := callChatCompletion(baseURL, modelName, apiKey, prompt)
+	if err != nil {
+		return GenerateIndexNameResult{}, err
+	}
+
+	name = strings.TrimSpace(name)
+	name = strings.Trim(name, "`\"")
+	name = strings.ReplaceAll(name, " ", "_")
+	name = strings.ToLower(name)
+	if name == "" {
+		return GenerateIndexNameResult{}, errors.New("AI 未返回有效索引名称")
+	}
+
+	return GenerateIndexNameResult{Name: name}, nil
+}
+
+func (s *Service) SmartFillTableData(input SmartFillTableRequest) (SmartFillTableResult, error) {
+	record, err := s.getConnectionRecord(input.ConnectionID)
+	if err != nil {
+		return SmartFillTableResult{}, err
+	}
+
+	database := strings.TrimSpace(input.Database)
+	table := strings.TrimSpace(input.Table)
+	if database == "" || table == "" {
+		return SmartFillTableResult{}, errors.New("数据库名和表名不能为空")
+	}
+
+	count := input.Count
+	if count <= 0 {
+		count = 10
+	}
+	if count > 100 {
+		count = 100
+	}
+
+	detail, err := s.getTableDetailByRecord(record, database, table)
+	if err != nil {
+		return SmartFillTableResult{Success: false, Message: err.Error()}, nil
+	}
+
+	state, err := s.store.LoadConfig()
+	if err != nil {
+		return SmartFillTableResult{}, err
+	}
+
+	baseURL, modelName, apiKey := resolveAIConfig(state.AI)
+	if strings.TrimSpace(apiKey) == "" {
+		return SmartFillTableResult{Success: false, Message: "尚未配置 AI API Key，无法进行智能填充"}, nil
+	}
+
+	prompt := fmt.Sprintf(
+		"你是数据生成助手。请基于以下表结构，生成 %d 条 INSERT 语句来插入有意义的测试数据。\n\n要求：\n1. 数据要符合字段类型和注释语义，真实自然，不要重复模板数据；\n2. 主键自增字段不需要赋值（省略该字段）；\n3. 时间字段使用合理的日期时间；\n4. 字符串字段使用中文或英文真实内容；\n5. 数值字段使用合理范围内的值；\n6. 只输出纯 SQL，不要 markdown 代码块，不要解释；\n7. 每条 INSERT 语句以分号结尾。\n\n当前引擎：%s\n\n表结构：\n%s\n\n请直接输出 %d 条 INSERT 语句：",
+		count, record.Engine, formatTableDetail(detail), count,
+	)
+
+	content, err := callChatCompletion(baseURL, modelName, apiKey, prompt)
+	if err != nil {
+		return SmartFillTableResult{Success: false, Message: "AI 生成失败：" + err.Error()}, nil
+	}
+
+	sqls := extractInsertStatements(content)
+	if len(sqls) == 0 {
+		return SmartFillTableResult{Success: false, Message: "AI 未返回有效的 INSERT 语句"}, nil
+	}
+
+	inserted := 0
+	for _, sql := range sqls {
+		if strings.TrimSpace(sql) == "" {
+			continue
+		}
+		_, err := s.executeQueryByRecord(record, QueryRequest{
+			ConnectionID: input.ConnectionID,
+			Database:     database,
+			SQL:          sql,
+		}, false)
+		if err != nil {
+			return SmartFillTableResult{
+				Success:      false,
+				Message:      fmt.Sprintf("执行到第 %d 条时失败：%s", inserted+1, err.Error()),
+				InsertedRows: inserted,
+				SQLs:         sqls,
+			}, nil
+		}
+		inserted++
+	}
+
+	return SmartFillTableResult{
+		Success:      true,
+		Message:      fmt.Sprintf("AI 智能填充成功，共插入 %d 条数据", inserted),
+		InsertedRows: inserted,
+		SQLs:         sqls,
+	}, nil
+}
+
+func (s *Service) PreviewSmartFillSQL(input PreviewSmartFillSQLRequest) (PreviewSmartFillSQLResult, error) {
+	record, err := s.getConnectionRecord(input.ConnectionID)
+	if err != nil {
+		return PreviewSmartFillSQLResult{}, err
+	}
+
+	database := strings.TrimSpace(input.Database)
+	table := strings.TrimSpace(input.Table)
+	if database == "" || table == "" {
+		return PreviewSmartFillSQLResult{}, errors.New("数据库名和表名不能为空")
+	}
+
+	count := input.Count
+	if count <= 0 {
+		count = 10
+	}
+	if count > 100 {
+		count = 100
+	}
+
+	detail, err := s.getTableDetailByRecord(record, database, table)
+	if err != nil {
+		return PreviewSmartFillSQLResult{Success: false, Message: err.Error()}, nil
+	}
+
+	state, err := s.store.LoadConfig()
+	if err != nil {
+		return PreviewSmartFillSQLResult{}, err
+	}
+
+	baseURL, modelName, apiKey := resolveAIConfig(state.AI)
+	if strings.TrimSpace(apiKey) == "" {
+		return PreviewSmartFillSQLResult{Success: false, Message: "尚未配置 AI API Key，无法预览智能填充"}, nil
+	}
+
+	prompt := fmt.Sprintf(
+		"你是数据生成助手。请基于以下表结构，生成 %d 条 INSERT 语句来插入有意义的测试数据。\n\n要求：\n1. 数据要符合字段类型和注释语义，真实自然，不要重复模板数据；\n2. 主键自增字段不需要赋值（省略该字段）；\n3. 时间字段使用合理的日期时间；\n4. 字符串字段使用中文或英文真实内容；\n5. 数值字段使用合理范围内的值；\n6. 只输出纯 SQL，不要 markdown 代码块，不要解释；\n7. 每条 INSERT 语句以分号结尾；\n8. 在 SQL 之前，先用一行简要说明你的数据生成思路（以【思路】开头）。\n\n当前引擎：%s\n\n表结构：\n%s\n\n请直接输出思路说明和 %d 条 INSERT 语句：",
+		count, record.Engine, formatTableDetail(detail), count,
+	)
+
+	content, err := callChatCompletion(baseURL, modelName, apiKey, prompt)
+	if err != nil {
+		return PreviewSmartFillSQLResult{Success: false, Message: "AI 生成失败：" + err.Error()}, nil
+	}
+
+	// Extract reasoning
+	reasoning := ""
+	lines := strings.Split(content, "\n")
+	var sqlLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "【思路】") || strings.HasPrefix(trimmed, "思路：") || strings.HasPrefix(trimmed, "思路:") {
+			reasoning = strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(trimmed, "【思路】"), "思路："), "思路:")
+			reasoning = strings.TrimSpace(reasoning)
+			continue
+		}
+		if strings.HasPrefix(strings.ToUpper(trimmed), "INSERT") {
+			sqlLines = append(sqlLines, trimmed)
+		}
+	}
+
+	sqls := extractInsertStatements(strings.Join(sqlLines, "\n"))
+	if len(sqls) == 0 {
+		return PreviewSmartFillSQLResult{Success: false, Message: "AI 未返回有效的 INSERT 语句"}, nil
+	}
+
+	return PreviewSmartFillSQLResult{
+		Success:   true,
+		Message:   fmt.Sprintf("AI 已生成 %d 条 INSERT 语句", len(sqls)),
+		Reasoning: reasoning,
+		SQLs:      sqls,
+	}, nil
+}
+
+func extractInsertStatements(content string) []string {
+	trimmed := strings.TrimSpace(content)
+	trimmed = strings.TrimPrefix(trimmed, "```sql")
+	trimmed = strings.TrimPrefix(trimmed, "```SQL")
+	trimmed = strings.TrimPrefix(trimmed, "```")
+	trimmed = strings.TrimSuffix(trimmed, "```")
+	trimmed = strings.TrimSpace(trimmed)
+
+	raws := strings.Split(trimmed, ";")
+	var statements []string
+	for _, raw := range raws {
+		raw = strings.TrimSpace(raw)
+		if strings.HasPrefix(strings.ToUpper(raw), "INSERT") {
+			statements = append(statements, raw+";")
+		}
+	}
+	return statements
+}
+
 func formatTableDetail(detail TableDetail) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("表名: %s\n", detail.Table))

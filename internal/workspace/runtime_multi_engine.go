@@ -1544,11 +1544,15 @@ func buildPostgreSQLCreateTableParts(input CreateTableRequest, tableIdentifier s
 		if idx.Unique {
 			unique = "UNIQUE "
 		}
+		indexType := ""
+		if strings.TrimSpace(idx.IndexType) != "" {
+			indexType = fmt.Sprintf(" USING %s", strings.TrimSpace(idx.IndexType))
+		}
 		columns := make([]string, 0, len(idx.Columns))
 		for _, column := range idx.Columns {
 			columns = append(columns, quotePostgreSQLIdentifier(strings.TrimSpace(column)))
 		}
-		postStatements = append(postStatements, fmt.Sprintf("CREATE %sINDEX %s ON %s (%s);", unique, quotePostgreSQLIdentifier(name), tableIdentifier, strings.Join(columns, ", ")))
+		postStatements = append(postStatements, fmt.Sprintf("CREATE %sINDEX %s ON %s%s (%s);", unique, quotePostgreSQLIdentifier(name), tableIdentifier, indexType, strings.Join(columns, ", ")))
 	}
 	return fieldDefs, postStatements
 }

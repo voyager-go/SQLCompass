@@ -161,6 +161,8 @@ export interface WorkbenchRouterProps {
     selectedDatabase: string;
     handleFillTableData: () => Promise<void>;
     isFillingTable: boolean;
+    handleSmartFillTableData: () => Promise<void>;
+    isSmartFillingTable: boolean;
 
     // History
     historyItems: HistoryItem[];
@@ -193,10 +195,16 @@ export interface WorkbenchRouterProps {
     setRenameTableName: (v: string) => void;
     handleRenameTable: () => Promise<void>;
     isRenamingTable: boolean;
-    schemaDraftIndexes: { id: string; originName: string; name: string; columns: string[]; unique: boolean }[];
+    schemaDraftIndexes: { id: string; originName: string; name: string; columns: string[]; unique: boolean; indexType: string }[];
     handleAddIndex: () => void;
     handleDeleteDraftIndex: (index: number) => void;
-    updateDraftIndex: <K extends keyof { id: string; originName: string; name: string; columns: string[]; unique: boolean }>(index: number, key: K, value: { id: string; originName: string; name: string; columns: string[]; unique: boolean }[K]) => void;
+    updateDraftIndex: <K extends keyof { id: string; originName: string; name: string; columns: string[]; unique: boolean; indexType: string }>(index: number, key: K, value: { id: string; originName: string; name: string; columns: string[]; unique: boolean; indexType: string }[K]) => void;
+    handleGenerateIndexName: (index: number, tableName: string) => Promise<void>;
+    aiConfigured: boolean;
+    handleSaveFields: () => Promise<void>;
+    isSavingFields: boolean;
+    handleSaveIndexes: () => Promise<void>;
+    isSavingIndexes: boolean;
 
     // AI
     aiNotice: Notice | null;
@@ -361,6 +369,8 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         selectedDatabase,
         handleFillTableData,
         isFillingTable,
+        handleSmartFillTableData,
+        isSmartFillingTable,
         // History
         historyItems,
         setHistoryItems,
@@ -395,6 +405,12 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         handleAddIndex,
         handleDeleteDraftIndex,
         updateDraftIndex,
+        handleGenerateIndexName,
+        aiConfigured,
+        handleSaveFields,
+        isSavingFields,
+        handleSaveIndexes,
+        isSavingIndexes,
         // AI
         aiNotice,
         aiForm,
@@ -546,6 +562,8 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     selectedTable={selectedTable}
                     handleFillTableData={handleFillTableData}
                     isFillingTable={isFillingTable}
+                    handleSmartFillTableData={handleSmartFillTableData}
+                    isSmartFillingTable={isSmartFillingTable}
                 />
             );
         case "history":
@@ -575,6 +593,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     schemaNotice={schemaNotice}
                     schemaDraftFields={schemaDraftFields}
                     mysqlTypeOptions={mysqlTypeOptions}
+                    activeEngine={selectedConnection?.engine ?? "mysql"}
                     updateDraftField={updateDraftField}
                     applyFieldSuggestion={applyFieldSuggestion}
                     handleGenerateFieldComment={handleGenerateFieldComment}
@@ -594,6 +613,12 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     handleAddIndex={handleAddIndex}
                     handleDeleteDraftIndex={handleDeleteDraftIndex}
                     updateDraftIndex={updateDraftIndex}
+                    handleGenerateIndexName={handleGenerateIndexName}
+                    aiConfigured={aiConfigured}
+                    handleSaveFields={handleSaveFields}
+                    isSavingFields={isSavingFields}
+                    handleSaveIndexes={handleSaveIndexes}
+                    isSavingIndexes={isSavingIndexes}
                 />
             );
         case "ai":

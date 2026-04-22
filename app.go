@@ -216,6 +216,24 @@ func (a *App) FillTableData(input workspace.FillTableRequest) (workspace.FillTab
 	return service.FillTableData(input)
 }
 
+func (a *App) SmartFillTableData(input workspace.SmartFillTableRequest) (workspace.SmartFillTableResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.SmartFillTableResult{Success: false, Message: err.Error()}, err
+	}
+
+	return service.SmartFillTableData(input)
+}
+
+func (a *App) PreviewSmartFillSQL(input workspace.PreviewSmartFillSQLRequest) (workspace.PreviewSmartFillSQLResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.PreviewSmartFillSQLResult{Success: false, Message: err.Error()}, err
+	}
+
+	return service.PreviewSmartFillSQL(input)
+}
+
 func (a *App) CreateTable(input workspace.CreateTableRequest) (workspace.CreateTableResult, error) {
 	service, err := a.requireWorkspace()
 	if err != nil {
@@ -243,6 +261,15 @@ func (a *App) GenerateFieldComment(input workspace.AIFieldCommentRequest) (works
 	}
 
 	return service.GenerateFieldComment(input)
+}
+
+func (a *App) GenerateIndexName(input workspace.GenerateIndexNameRequest) (workspace.GenerateIndexNameResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.GenerateIndexNameResult{}, err
+	}
+
+	return service.GenerateIndexName(input)
 }
 
 func (a *App) OptimizeSQL(input workspace.SQLOptimizeRequest) (workspace.SQLOptimizeResult, error) {

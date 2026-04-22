@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { SchemaDraftField, TableDetail, AIFieldCommentResult, FieldDictionarySuggestion } from "../types/runtime";
-import { RenameTable, GenerateFieldComment, GetFieldDictionarySuggestion } from "../../wailsjs/go/main/App";
-import { browserGeneratedID, buildAlterSQL, copyText, getFieldTypeOptions } from "../lib/utils";
+import { RenameTable, GenerateFieldComment, GetFieldDictionarySuggestion, GenerateIndexName, ExecuteQuery } from "../../wailsjs/go/main/App";
+import { browserGeneratedID, buildAlterSQL, copyText, getFieldTypeOptions, getIndexTypeOptions } from "../lib/utils";
 import type { NoticeTone } from "../lib/constants";
 import type { SchemaDraftIndex } from "../lib/utils";
 
@@ -50,6 +50,11 @@ export interface UseSchemaReturn {
     handleAddIndex: () => void;
     handleDeleteDraftIndex: (index: number) => void;
     updateDraftIndex: <K extends keyof SchemaDraftIndex>(index: number, key: K, value: SchemaDraftIndex[K]) => void;
+    handleGenerateIndexName: (index: number, tableName: string) => Promise<void>;
+    handleSaveFields: () => Promise<void>;
+    isSavingFields: boolean;
+    handleSaveIndexes: () => Promise<void>;
+    isSavingIndexes: boolean;
 }
 
 export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
@@ -74,6 +79,8 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
     const [renameTableName, setRenameTableName] = useState("");
     const [schemaNotice, setSchemaNotice] = useState<Notice | null>(null);
     const [isRenamingTable, setIsRenamingTable] = useState(false);
+    const [isSavingFields, setIsSavingFields] = useState(false);
+    const [isSavingIndexes, setIsSavingIndexes] = useState(false);
 
     const currentAlterSQL = useMemo(() => buildAlterSQL(activeEngine, tableDetail, selectedTable, schemaDraftFields, schemaDraftIndexes), [activeEngine, tableDetail, selectedTable, schemaDraftFields, schemaDraftIndexes]);
 
@@ -182,14 +189,16 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
 
     function updateDraftField<K extends keyof SchemaDraftField>(index: number, key: K, value: SchemaDraftField[K]) {
         setSchemaDraftFields((current) =>
-            current.map((field, itemIndex) =>
-                itemIndex === index
-                    ? {
-                          ...field,
-                          [key]: value,
-                      }
-                    : field,
-            ),
+            current.map((field, itemIndex) => {
+                if (itemIndex !== index) {
+                    // 当设置当前字段为主键时，取消其他字段的主键状态
+                    if (key === "primary" && value === true) {
+                        return { ...field, primary: false };
+                    }
+                    return field;
+                }
+                return { ...field, [key]: value };
+            }),
         );
     }
 
@@ -217,6 +226,7 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
     }
 
     function handleAddIndex() {
+        const options = getIndexTypeOptions(activeEngine);
         setSchemaDraftIndexes((current) => [
             ...current,
             {
@@ -225,6 +235,7 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
                 name: "",
                 columns: [],
                 unique: false,
+                indexType: options.length > 0 ? options[0] : "",
             },
         ]);
     }
@@ -244,6 +255,29 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
                     : idx,
             ),
         );
+    }
+
+    async function handleGenerateIndexName(index: number, tableName: string) {
+        const idx = schemaDraftIndexes[index];
+        if (!idx || idx.columns.length === 0) {
+            setSchemaNotice({ tone: "error", message: "请先选择索引字段。" });
+            return;
+        }
+        try {
+            const result = (await GenerateIndexName({
+                tableName,
+                columns: idx.columns,
+                unique: idx.unique,
+            })) as { name: string };
+            setSchemaDraftIndexes((current) =>
+                current.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, name: result.name } : item,
+                ),
+            );
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "生成索引名称失败";
+            setSchemaNotice({ tone: "error", message });
+        }
     }
 
     async function handleRenameTable() {
@@ -298,6 +332,131 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
             .catch(() => pushToast("error", "复制失败", "请稍后重试"));
     }
 
+    function validateFields(fields: SchemaDraftField[]): string | null {
+        const names = fields.map((f) => f.name.trim()).filter(Boolean);
+        if (names.length === 0) {
+            return "表至少需要保留一个字段。";
+        }
+        const nameSet = new Set<string>();
+        for (const name of names) {
+            if (nameSet.has(name)) {
+                return `字段名 "${name}" 重复，请检查。`;
+            }
+            nameSet.add(name);
+        }
+        for (const field of fields) {
+            if (!field.name.trim()) {
+                return "存在字段名为空，请补全。";
+            }
+            if (!field.type.trim()) {
+                return `字段 "${field.name}" 的类型不能为空。`;
+            }
+        }
+        const hasPrimary = fields.some((f) => f.primary);
+        if (!hasPrimary) {
+            return "表必须至少包含一个主键字段。";
+        }
+        const autoIncrWithoutPrimary = fields.some((f) => f.autoIncrement && !f.primary);
+        if (autoIncrWithoutPrimary) {
+            return "自增字段必须同时设置为主键。";
+        }
+        return null;
+    }
+
+    function validateIndexes(indexes: SchemaDraftIndex[], fields: SchemaDraftField[]): string | null {
+        const names = indexes.map((idx) => idx.name.trim()).filter(Boolean);
+        const nameSet = new Set<string>();
+        for (const name of names) {
+            if (nameSet.has(name)) {
+                return `索引名 "${name}" 重复，请检查。`;
+            }
+            nameSet.add(name);
+        }
+        const fieldNames = new Set(fields.map((f) => f.name.trim()));
+        for (const idx of indexes) {
+            if (!idx.name.trim()) {
+                return "存在索引名为空，请补全。";
+            }
+            if (idx.columns.length === 0) {
+                return `索引 "${idx.name}" 至少需要包含一个字段。`;
+            }
+            for (const col of idx.columns) {
+                if (!fieldNames.has(col.trim())) {
+                    return `索引 "${idx.name}" 引用了不存在的字段 "${col.trim()}"。`;
+                }
+            }
+        }
+        return null;
+    }
+
+    async function handleSaveFields() {
+        if (!selectedConnection || !selectedDatabase || !selectedTable || !tableDetail) {
+            setSchemaNotice({ tone: "error", message: "请先选择一张真实表。" });
+            return;
+        }
+        const error = validateFields(schemaDraftFields);
+        if (error) {
+            setSchemaNotice({ tone: "error", message: error });
+            return;
+        }
+        const sql = buildAlterSQL(activeEngine, tableDetail, selectedTable, schemaDraftFields, schemaDraftIndexes, "fields");
+        if (sql.startsWith("--")) {
+            setSchemaNotice({ tone: "info", message: "当前没有字段结构变更。" });
+            return;
+        }
+        try {
+            setIsSavingFields(true);
+            await ExecuteQuery({
+                connectionId: selectedConnection.id,
+                database: selectedDatabase,
+                sql,
+                page: 1,
+                pageSize: 1,
+            });
+            setSchemaNotice({ tone: "success", message: "字段结构已保存。" });
+            await loadTable(selectedConnection.id, selectedDatabase, selectedTable);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "保存字段结构失败";
+            setSchemaNotice({ tone: "error", message });
+        } finally {
+            setIsSavingFields(false);
+        }
+    }
+
+    async function handleSaveIndexes() {
+        if (!selectedConnection || !selectedDatabase || !selectedTable || !tableDetail) {
+            setSchemaNotice({ tone: "error", message: "请先选择一张真实表。" });
+            return;
+        }
+        const error = validateIndexes(schemaDraftIndexes, schemaDraftFields);
+        if (error) {
+            setSchemaNotice({ tone: "error", message: error });
+            return;
+        }
+        const sql = buildAlterSQL(activeEngine, tableDetail, selectedTable, schemaDraftFields, schemaDraftIndexes, "indexes");
+        if (sql.startsWith("--")) {
+            setSchemaNotice({ tone: "info", message: "当前没有索引结构变更。" });
+            return;
+        }
+        try {
+            setIsSavingIndexes(true);
+            await ExecuteQuery({
+                connectionId: selectedConnection.id,
+                database: selectedDatabase,
+                sql,
+                page: 1,
+                pageSize: 1,
+            });
+            setSchemaNotice({ tone: "success", message: "索引结构已保存。" });
+            await loadTable(selectedConnection.id, selectedDatabase, selectedTable);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "保存索引结构失败";
+            setSchemaNotice({ tone: "error", message });
+        } finally {
+            setIsSavingIndexes(false);
+        }
+    }
+
     return {
         schemaDraftFields,
         setSchemaDraftFields,
@@ -323,5 +482,10 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
         handleAddIndex,
         handleDeleteDraftIndex,
         updateDraftIndex,
+        handleGenerateIndexName,
+        handleSaveFields,
+        isSavingFields,
+        handleSaveIndexes,
+        isSavingIndexes,
     };
 }

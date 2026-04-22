@@ -54,7 +54,12 @@ export function useCellEditor({
     const [isSavingCell, setIsSavingCell] = useState(false);
 
     function openCellEditor(row: Record<string, string>, rowKey: string, column: string) {
-        if (!previewContext || !tableDetail || previewContext.table !== tableDetail.table) {
+        if (!tableDetail) {
+            return;
+        }
+        // 允许编辑的条件：previewContext 匹配当前表，或 selectedTable 匹配当前表结构
+        const expectedTable = previewContext?.table ?? selectedTable;
+        if (expectedTable !== tableDetail.table) {
             return;
         }
 
@@ -73,11 +78,22 @@ export function useCellEditor({
         });
     }
 
+    function quoteIdentifier(name: string): string {
+        const engine = selectedConnection?.engine ?? "mysql";
+        if (["postgresql", "sqlite"].includes(engine)) {
+            return `"${name.replace(/"/g, "\"\"")}"`;
+        }
+        return `\`${name.replace(/`/g, "``")}\``;
+    }
+
     function buildCellUpdateStatement(editorState: CellEditorState): string {
         const nextValue = fromEditorValue(editorState.nextValue, editorState.fieldType);
-        return `UPDATE \`${selectedTable}\`\nSET \`${editorState.column}\` = ${stringifySQLValue(nextValue)}\nWHERE ${primaryFieldNames
-            .map((fieldName) => `\`${fieldName}\` = ${stringifyResultSQLValue(editorState.row[fieldName] ?? "")}`)
-            .join(" AND ")};`;
+        const qTable = quoteIdentifier(selectedTable);
+        const qColumn = quoteIdentifier(editorState.column);
+        const qPrimaryFields = primaryFieldNames
+            .map((fieldName) => `${quoteIdentifier(fieldName)} = ${stringifyResultSQLValue(editorState.row[fieldName] ?? "")}`)
+            .join(" AND ");
+        return `UPDATE ${qTable}\nSET ${qColumn} = ${stringifySQLValue(nextValue)}\nWHERE ${qPrimaryFields};`;
     }
 
     async function handleConfirmCellEdit() {

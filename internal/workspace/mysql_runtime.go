@@ -1046,7 +1046,11 @@ func (s *Service) createMySQLTable(record store.ConnectionRecord, input CreateTa
 		if idx.Unique {
 			unique = "UNIQUE "
 		}
-		fieldDefs = append(fieldDefs, fmt.Sprintf("%sINDEX `%s` (%s)", unique, escapeIdentifier(name), strings.Join(cols, ", ")))
+		indexType := ""
+		if strings.TrimSpace(idx.IndexType) != "" {
+			indexType = fmt.Sprintf(" USING %s", strings.ToUpper(strings.TrimSpace(idx.IndexType)))
+		}
+		fieldDefs = append(fieldDefs, fmt.Sprintf("%sINDEX `%s`%s (%s)", unique, escapeIdentifier(name), indexType, strings.Join(cols, ", ")))
 	}
 
 	sql := fmt.Sprintf("CREATE TABLE `%s`.`%s` (\n  %s\n);",

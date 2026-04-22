@@ -1,10 +1,12 @@
 import Editor from "@monaco-editor/react";
 import type { editor as MonacoEditorNS } from "monaco-editor";
 import type { Monaco } from "@monaco-editor/react";
+import { useState, useRef, useEffect } from "react";
 import { NoticeBanner } from "../components/NoticeBanner";
 import type { QueryResult, TableDetail } from "../types/runtime";
 import type { WorkbenchPage } from "../lib/constants";
 import { formatCellPreview, isTextLikeType } from "../lib/utils";
+import { PreviewSmartFillSQL } from "../../wailsjs/go/main/App";
 
 type NoticeTone = "success" | "error" | "info";
 
@@ -69,6 +71,8 @@ interface QueryPageProps {
     selectedTable: string;
     handleFillTableData: () => Promise<void>;
     isFillingTable: boolean;
+    handleSmartFillTableData: () => Promise<void>;
+    isSmartFillingTable: boolean;
     setActivePage?: (v: WorkbenchPage) => void;
 }
 
@@ -125,7 +129,90 @@ export function QueryPage({
     selectedTable,
     handleFillTableData,
     isFillingTable,
+    handleSmartFillTableData,
+    isSmartFillingTable,
 }: QueryPageProps) {
+    const [fillMenuOpen, setFillMenuOpen] = useState(false);
+    const fillMenuRef = useRef<HTMLDivElement>(null);
+    const [smartFillModal, setSmartFillModal] = useState<{
+        open: boolean;
+        reasoning: string;
+        sqls: string[];
+        editableSQLs: string[];
+        loading: boolean;
+        executing: boolean;
+        error: string;
+    }>({ open: false, reasoning: "", sqls: [], editableSQLs: [], loading: false, executing: false, error: "" });
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (fillMenuRef.current && !fillMenuRef.current.contains(event.target as Node)) {
+                setFillMenuOpen(false);
+            }
+        }
+        if (fillMenuOpen) {
+            document.addEventListener("mousedown", handleClickOutside);
+        }
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [fillMenuOpen]);
+
+    async function startSmartFill() {
+        if (!selectedConnection || !selectedDatabase || !selectedTable) return;
+        setSmartFillModal({ open: true, reasoning: "", sqls: [], editableSQLs: [], loading: true, executing: false, error: "" });
+        try {
+            const result = (await PreviewSmartFillSQL({
+                connectionId: selectedConnection.id,
+                database: selectedDatabase,
+                table: selectedTable,
+                count: 10,
+            })) as import("../types/runtime").PreviewSmartFillSQLResult;
+            if (result.success) {
+                setSmartFillModal((prev) => ({
+                    ...prev,
+                    loading: false,
+                    reasoning: result.reasoning,
+                    sqls: result.sqls,
+                    editableSQLs: result.sqls,
+                }));
+            } else {
+                setSmartFillModal((prev) => ({ ...prev, loading: false, error: result.message }));
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "预览失败";
+            setSmartFillModal((prev) => ({ ...prev, loading: false, error: message }));
+        }
+    }
+
+    function handleCloseSmartFillModal() {
+        if (smartFillModal.loading || smartFillModal.executing) {
+            if (!window.confirm("当前智能填充正在进行中，关闭将终止操作，是否继续？")) {
+                return;
+            }
+        }
+        setSmartFillModal({ open: false, reasoning: "", sqls: [], editableSQLs: [], loading: false, executing: false, error: "" });
+    }
+
+    async function handleExecuteSmartFill() {
+        if (!smartFillModal.editableSQLs.length) return;
+        setSmartFillModal((prev) => ({ ...prev, executing: true }));
+        try {
+            for (const sql of smartFillModal.editableSQLs) {
+                if (!sql.trim()) continue;
+                await runSQL(sql, 1);
+            }
+            setSmartFillModal({ open: false, reasoning: "", sqls: [], editableSQLs: [], loading: false, executing: false, error: "" });
+            if (selectedDatabase && selectedTable) {
+                await handlePreviewTable(selectedDatabase, selectedTable, 1);
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "执行失败";
+            setSmartFillModal((prev) => ({ ...prev, executing: false, error: message }));
+        }
+    }
+
+    const fillDisabled = isFillingTable || isSmartFillingTable || !selectedConnection || !selectedDatabase || !selectedTable;
+    const hideFill = selectedConnection && ["redis", "mongodb"].includes(selectedConnection.engine ?? "");
+
     return (
         <section className="page-panel page-panel--wide page-panel--scrollable">
             <div className="page-headline">
@@ -133,16 +220,49 @@ export function QueryPage({
                     <button type="button" className="primary-button" onClick={() => handleExecuteQuery(1)} disabled={isExecutingQuery}>
                         {isExecutingQuery ? "执行中..." : "执行"}
                     </button>
-                    <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={handleFillTableData}
-                        disabled={isFillingTable || !selectedConnection || !selectedDatabase || !selectedTable}
-                        title={!selectedTable ? "请先选择数据表" : "根据表结构填充测试数据"}
-                        style={selectedConnection && ["redis", "mongodb"].includes(selectedConnection.engine ?? "") ? { display: "none" } : undefined}
-                    >
-                        {isFillingTable ? "填充中..." : "填充"}
-                    </button>
+                    <div ref={fillMenuRef} style={{ position: "relative", display: hideFill ? "none" : undefined }}>
+                        <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => setFillMenuOpen((v) => !v)}
+                            disabled={fillDisabled}
+                            title={!selectedTable ? "请先选择数据表" : "填充测试数据"}
+                        >
+                            {isFillingTable || isSmartFillingTable ? "填充中..." : "填充 ▾"}
+                        </button>
+                        {fillMenuOpen ? (
+                            <div
+                                className="context-menu"
+                                style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, left: "auto", minWidth: 140 }}
+                            >
+                                <button
+                                    type="button"
+                                    className="context-menu__item"
+                                    onClick={() => {
+                                        setFillMenuOpen(false);
+                                        handleFillTableData();
+                                    }}
+                                >
+                                    常规填充
+                                </button>
+                                <button
+                                    type="button"
+                                    className="context-menu__item"
+                                    onClick={() => {
+                                        setFillMenuOpen(false);
+                                        startSmartFill();
+                                    }}
+                                >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                                        <path d="M2 17l10 5 10-5"></path>
+                                        <path d="M2 12l10 5 10-5"></path>
+                                    </svg>
+                                    智能填充
+                                </button>
+                            </div>
+                        ) : null}
+                    </div>
                     <button type="button" className="ghost-button" onClick={() => sqlFileInputRef.current?.click()}>
                         导入
                     </button>
@@ -468,6 +588,73 @@ export function QueryPage({
                     <div className="empty-block">执行 SQL 或点击左侧某张表后，这里会展示真实数据结果。</div>
                 )}
             </div>
+
+            {smartFillModal.open ? (
+                <div className="modal-backdrop" onClick={handleCloseSmartFillModal}>
+                    <div className="modal-card modal-card--wide" onClick={(event) => event.stopPropagation()}>
+                        <div className="section-title">
+                            <div>
+                                <h3>智能填充</h3>
+                                <p>AI 根据表结构语义生成真实测试数据。</p>
+                            </div>
+                        </div>
+
+                        {smartFillModal.loading ? (
+                            <div className="chat-thinking" style={{ margin: "12px 0", justifyContent: "center" }}>
+                                <span className="chat-thinking__spinner">✦</span>
+                                <span>AI 正在思考数据生成策略...</span>
+                            </div>
+                        ) : null}
+
+                        {smartFillModal.error ? (
+                            <div className="notice notice--error" style={{ marginBottom: 12 }}>
+                                <span>{smartFillModal.error}</span>
+                            </div>
+                        ) : null}
+
+                        {!smartFillModal.loading && smartFillModal.reasoning ? (
+                            <div style={{ marginBottom: 16 }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>思考过程</div>
+                                <div className="chat-reasoning">{smartFillModal.reasoning}</div>
+                            </div>
+                        ) : null}
+
+                        {!smartFillModal.loading && smartFillModal.sqls.length > 0 ? (
+                            <div style={{ marginBottom: 16 }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>生成的 SQL（可修改）</div>
+                                <textarea
+                                    value={smartFillModal.editableSQLs.join("\n")}
+                                    onChange={(e) => setSmartFillModal((prev) => ({ ...prev, editableSQLs: e.target.value.split("\n") }))}
+                                    style={{
+                                        width: "100%",
+                                        minHeight: 160,
+                                        padding: 10,
+                                        border: "1px solid var(--border-soft)",
+                                        borderRadius: 8,
+                                        background: "var(--input-bg)",
+                                        color: "var(--text-primary)",
+                                        fontFamily: "var(--font-mono)",
+                                        fontSize: 12.5,
+                                        lineHeight: 1.6,
+                                        resize: "vertical",
+                                    }}
+                                />
+                            </div>
+                        ) : null}
+
+                        <div className="toolbar-actions toolbar-actions--end">
+                            <button type="button" className="ghost-button" onClick={handleCloseSmartFillModal} disabled={smartFillModal.executing}>
+                                取消
+                            </button>
+                            {!smartFillModal.loading && smartFillModal.sqls.length > 0 ? (
+                                <button type="button" className="primary-button" onClick={handleExecuteSmartFill} disabled={smartFillModal.executing}>
+                                    {smartFillModal.executing ? "执行中..." : "确认执行"}
+                                </button>
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+            ) : null}
         </section>
     );
 }

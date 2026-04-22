@@ -11,6 +11,7 @@ import {
     ExportTextFile,
     FillTableData,
     GetExplorerTree,
+    SmartFillTableData,
     GetQueryHistory,
     GetStorageInfo,
     GetTableDetail,
@@ -321,10 +322,12 @@ function App() {
     const [isOptimizingSQL, setIsOptimizingSQL] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const [isFillingTable, setIsFillingTable] = useState(false);
+    const [isSmartFillingTable, setIsSmartFillingTable] = useState(false);
     const [showCreateDBModal, setShowCreateDBModal] = useState(false);
     const [createDBForm, setCreateDBForm] = useState({ name: "", charset: "utf8mb4", collation: "utf8mb4_unicode_ci" });
     const [isCreatingDB, setIsCreatingDB] = useState(false);
     const [dbContextMenu, setDbContextMenu] = useState<{ x: number; y: number; database: string } | null>(null);
+    const [chatBlockerModalOpen, setChatBlockerModalOpen] = useState(false);
 
     const selectedConnection = workspaceState.connections.find((item) => item.id === selectedConnectionId) ?? null;
     const primaryFieldNames = useMemo(() => tableDetail?.fields.filter((field) => field.primary).map((field) => field.name) ?? [], [tableDetail]);
@@ -460,27 +463,95 @@ function App() {
         });
     }
 
-    // 保存筛选设置到本地存储（仅保留过滤项，不保存面板展开状态）
+    const FILTER_STORAGE_KEY = "sql-compass-filter-settings-v2";
+
+    interface ConnectionFilterSettings {
+        databaseFilter: string[];
+        tableFilter: string[];
+        expandedDatabases: Record<string, boolean>;
+        tablePageByDatabase: Record<string, number>;
+    }
+
+    function getAllFilterSettings(): Record<string, ConnectionFilterSettings> {
+        try {
+            const saved = localStorage.getItem(FILTER_STORAGE_KEY);
+            if (saved) return JSON.parse(saved);
+        } catch {
+            // 兼容旧版本 key
+            try {
+                const legacy = localStorage.getItem("sql-compass-filter-settings");
+                if (legacy) {
+                    const parsed = JSON.parse(legacy);
+                    return {
+                        [selectedConnectionId]: {
+                            databaseFilter: parsed.databaseFilter ?? [],
+                            tableFilter: parsed.tableFilter ?? [],
+                            expandedDatabases: {},
+                            tablePageByDatabase: {},
+                        },
+                    };
+                }
+            } catch {
+                // ignore
+            }
+        }
+        return {};
+    }
+
+    // 保存当前连接的筛选设置到本地存储
     function saveFilterSettings() {
-        const settings = {
+        if (!selectedConnectionId) {
+            pushToast("info", "提示", "请先选择一个连接后再保存筛选设置");
+            return;
+        }
+        const allSettings = getAllFilterSettings();
+        allSettings[selectedConnectionId] = {
             databaseFilter,
             tableFilter,
+            expandedDatabases,
+            tablePageByDatabase,
         };
-        localStorage.setItem("sql-compass-filter-settings", JSON.stringify(settings));
+        localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(allSettings));
         pushToast("success", "已保存", "筛选设置已保存，下次连接时自动恢复");
     }
 
-    // 加载保存的筛选设置（仅恢复过滤项，不自动展开面板）
-    function loadFilterSettings() {
-        try {
-            const saved = localStorage.getItem("sql-compass-filter-settings");
-            if (saved) {
-                const settings = JSON.parse(saved);
-                if (settings.databaseFilter?.length > 0) setDatabaseFilter(settings.databaseFilter);
-                if (settings.tableFilter?.length > 0) setTableFilter(settings.tableFilter);
+    // 加载指定连接的筛选设置；如果没有则清空
+    function loadFilterSettingsForConnection(connectionId: string) {
+        if (!connectionId) {
+            setDatabaseFilter([]);
+            setTableFilter([]);
+            setExpandedDatabases({});
+            setTablePageByDatabase({});
+            return;
+        }
+        const allSettings = getAllFilterSettings();
+        const settings = allSettings[connectionId];
+        if (settings) {
+            setDatabaseFilter(settings.databaseFilter ?? []);
+            setTableFilter(settings.tableFilter ?? []);
+            setExpandedDatabases(settings.expandedDatabases ?? {});
+            setTablePageByDatabase(settings.tablePageByDatabase ?? {});
+        } else {
+            setDatabaseFilter([]);
+            setTableFilter([]);
+            setExpandedDatabases({});
+            setTablePageByDatabase({});
+        }
+    }
+
+    // 清理已不存在连接的残留筛选数据
+    function cleanupFilterSettings(existingConnectionIds: string[]) {
+        const allSettings = getAllFilterSettings();
+        const existingSet = new Set(existingConnectionIds);
+        let changed = false;
+        for (const id of Object.keys(allSettings)) {
+            if (!existingSet.has(id)) {
+                delete allSettings[id];
+                changed = true;
             }
-        } catch {
-            // 忽略加载错误
+        }
+        if (changed) {
+            localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(allSettings));
         }
     }
 
@@ -637,20 +708,27 @@ function App() {
                     counts: Record<string, number>;
                 };
 
-                // 更新 explorerTree 中的行数
+                // 更新 explorerTree 中的行数（同时更新 tables 和 schemas 中的表）
                 setExplorerTree((prev) => {
                     if (!prev) return prev;
                     return {
                         ...prev,
                         databases: prev.databases.map((db) => {
                             if (db.name !== database) return db;
+                            const updateTableRows = (table: typeof db.tables[0]) => ({
+                                ...table,
+                                rows: result.counts[table.name] ?? table.rows,
+                                loading: false,
+                            });
                             return {
                                 ...db,
-                                tables: db.tables.map((table) => ({
-                                    ...table,
-                                    rows: result.counts[table.name] ?? table.rows,
-                                    loading: false,
-                                })),
+                                tables: db.tables.map(updateTableRows),
+                                schemas: db.schemas
+                                    ? db.schemas.map((schema) => ({
+                                          ...schema,
+                                          tables: schema.tables.map(updateTableRows),
+                                      }))
+                                    : db.schemas,
                             };
                         }),
                     };
@@ -686,8 +764,10 @@ function App() {
                 ...idx,
                 id: browserGeneratedID(),
                 originName: idx.name,
+                indexType: idx.indexType || "",
             })),
         );
+        schema.setSchemaNotice(null);
     }
 
     async function loadHistory(connectionId: string) {
@@ -963,10 +1043,12 @@ function App() {
             });
     }, [browserPreview]);
 
-    // 组件挂载时加载保存的筛选设置
+    // 清理已删除连接的残留筛选数据
     useEffect(() => {
-        loadFilterSettings();
-    }, []);
+        if (workspaceState.connections.length > 0) {
+            cleanupFilterSettings(workspaceState.connections.map((c) => c.id));
+        }
+    }, [workspaceState.connections]);
 
     useEffect(() => {
         if (workspaceState.connections.length === 0) {
@@ -1009,9 +1091,10 @@ function App() {
         chat.setChatPendingAction(null);
         chat.setChatContextDatabase("");
         chat.setChatContextTables([]);
-        setTablePageByDatabase({});
-        setExpandedDatabases({});
         setSelectedSnippet(null);
+
+        // 按连接加载独立的筛选记忆
+        loadFilterSettingsForConnection(selectedConnectionId);
 
         // 不自动选中数据库，让用户在左侧树中自行选择
         loadExplorer(selectedConnectionId, "").catch((error: unknown) => {
@@ -1120,6 +1203,10 @@ function App() {
             setWorkspaceNotice({ tone: "error", message: "请先选择连接。" });
             return;
         }
+        if (workMode === "chat") {
+            setChatBlockerModalOpen(true);
+            return;
+        }
 
         try {
             setIsExecutingQuery(true);
@@ -1203,6 +1290,11 @@ function App() {
     }
 
     function openTableDesigner(databaseName: string, tableName: string) {
+        if (workMode === "chat") {
+            setChatBlockerModalOpen(true);
+            setTableContextMenu(null);
+            return;
+        }
         setSelectedDatabase(databaseName);
         setSelectedTable(tableName);
         setActivePage("schema");
@@ -1687,6 +1779,34 @@ function App() {
         }
     }
 
+    async function handleSmartFillTableData() {
+        if (!selectedConnection || !selectedDatabase || !selectedTable) {
+            setQueryNotice({ tone: "info", message: "请先选择连接、数据库和数据表。" });
+            return;
+        }
+        try {
+            setIsSmartFillingTable(true);
+            const result = (await SmartFillTableData({
+                connectionId: selectedConnection.id,
+                database: selectedDatabase,
+                table: selectedTable,
+                count: 10,
+            })) as { success: boolean; message: string; insertedRows: number; sqls: string[] };
+            if (result.success) {
+                pushToast("success", "AI 智能填充完成", result.message);
+                await handlePreviewTable(selectedDatabase, selectedTable, 1);
+                await loadExplorer(selectedConnection.id, selectedDatabase);
+            } else {
+                setQueryNotice({ tone: "error", message: result.message });
+            }
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setQueryNotice({ tone: "error", message });
+        } finally {
+            setIsSmartFillingTable(false);
+        }
+    }
+
     async function handleCreateDatabase() {
         if (!selectedConnection || !createDBForm.name.trim()) {
             return;
@@ -1886,6 +2006,8 @@ function App() {
                         selectedTable={selectedTable}
                         handleFillTableData={handleFillTableData}
                         isFillingTable={isFillingTable}
+                        handleSmartFillTableData={handleSmartFillTableData}
+                        isSmartFillingTable={isSmartFillingTable}
                         historyItems={historyItems}
                         setHistoryItems={setHistoryItems}
                         historyPage={historyPage}
@@ -1917,6 +2039,12 @@ function App() {
                         handleAddIndex={schema.handleAddIndex}
                         handleDeleteDraftIndex={schema.handleDeleteDraftIndex}
                         updateDraftIndex={schema.updateDraftIndex}
+                        handleGenerateIndexName={schema.handleGenerateIndexName}
+                        aiConfigured={workspaceState.ai.apiKeyConfigured}
+                        handleSaveFields={schema.handleSaveFields}
+                        isSavingFields={schema.isSavingFields}
+                        handleSaveIndexes={schema.handleSaveIndexes}
+                        isSavingIndexes={schema.isSavingIndexes}
                         aiNotice={ai.aiNotice}
                         aiForm={ai.aiForm}
                         setAIForm={ai.setAIForm}
@@ -2062,6 +2190,27 @@ function App() {
                                 disabled={isCreatingDB || !createDBForm.name.trim()}
                             >
                                 {isCreatingDB ? "创建中..." : "确认创建"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
+            {chatBlockerModalOpen ? (
+                <div className="modal-backdrop" onClick={() => setChatBlockerModalOpen(false)}>
+                    <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+                        <div className="section-title">
+                            <div>
+                                <h3>操作受限</h3>
+                                <p>当前处于 Chat 模式，该操作不可用。</p>
+                            </div>
+                        </div>
+                        <p style={{ margin: "12px 0", color: "var(--text-primary)" }}>
+                            请先关闭 Chat 模式后再进行此操作。
+                        </p>
+                        <div className="toolbar-actions toolbar-actions--end">
+                            <button type="button" className="primary-button" onClick={() => setChatBlockerModalOpen(false)}>
+                                知道了
                             </button>
                         </div>
                     </div>

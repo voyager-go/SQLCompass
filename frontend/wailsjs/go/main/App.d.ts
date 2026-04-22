@@ -30,6 +30,8 @@ export function FillTableData(arg1:workspace.FillTableRequest):Promise<workspace
 
 export function GenerateFieldComment(arg1:workspace.AIFieldCommentRequest):Promise<workspace.AIFieldCommentResult>;
 
+export function GenerateIndexName(arg1:any):Promise<any>;
+
 export function GetBootstrapData():Promise<appmeta.ProductOverview>;
 
 export function GetCrashLogs():Promise<Array<store.CrashLogEntry>>;
@@ -52,6 +54,8 @@ export function GrantStoragePermission():Promise<workspace.SetStoragePathResult>
 
 export function OptimizeSQL(arg1:workspace.SQLOptimizeRequest):Promise<workspace.SQLOptimizeResult>;
 
+export function PreviewSmartFillSQL(arg1:any):Promise<any>;
+
 export function PreviewTableData(arg1:workspace.TablePreviewRequest):Promise<workspace.QueryResult>;
 
 export function RenameTable(arg1:workspace.RenameTableInput):Promise<workspace.RenameTableResult>;
@@ -65,6 +69,8 @@ export function SaveConnection(arg1:workspace.ConnectionInput):Promise<workspace
 export function SelectStorageDirectory():Promise<string>;
 
 export function SetStoragePath(arg1:string):Promise<workspace.SetStoragePathResult>;
+
+export function SmartFillTableData(arg1:workspace.SmartFillTableRequest):Promise<workspace.SmartFillTableResult>;
 
 export function SummarizeChatResult(arg1:workspace.ChatResultSummaryRequest):Promise<workspace.ChatResultSummary>;
 

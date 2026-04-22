@@ -645,8 +645,12 @@ body[data-theme="custom"] .history-item-meta {
     border-color: rgba(37, 99, 235, 0.25);
 }
 
-.icon-btn--delete:hover {
+.icon-btn--delete {
     color: var(--danger);
+}
+
+.icon-btn--delete:hover {
+    background: rgba(194, 65, 12, 0.06);
     border-color: rgba(194, 65, 12, 0.25);
 }
 
@@ -1391,17 +1395,12 @@ body[data-theme="dark"] .connection-card__item--active {
    ================================================================ */
 
 .schema-layout {
-    display: grid;
-    grid-template-columns: 1.2fr 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 20px;
-    align-items: start;
 }
 
 .schema-form-card {
-    min-width: 0;
-}
-
-.schema-ddl-card {
     min-width: 0;
 }
 
@@ -1442,6 +1441,10 @@ body[data-theme="dark"] .connection-card__item--active {
     background: var(--input-bg);
     color: var(--text-primary);
     font-size: 12.5px;
+}
+
+.schema-table td .icon-btn {
+    margin: 0 auto;
 }
 
 .checkbox-cell {
@@ -2871,8 +2874,8 @@ body[data-theme="dark"] .connection-card__item--active {
    ================================================================ */
 
 .schema-detail-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 20px;
 }
 
@@ -2881,11 +2884,11 @@ body[data-theme="dark"] .connection-card__item--active {
 }
 
 .schema-alter-block {
-    margin-top: 16px;
-    padding: 16px;
-    border-radius: 12px;
-    background: rgba(245, 158, 11, 0.04);
-    border: 1px solid rgba(245, 158, 11, 0.15);
+    margin-top: 8px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: var(--code-light-bg);
+    border: 1px solid var(--panel-border);
 }
 
 .diagnostic-list {
@@ -2895,6 +2898,126 @@ body[data-theme="dark"] .connection-card__item--active {
     font-size: 12.5px;
     color: var(--text-secondary);
 }
+
+.diagnostic-empty {
+    padding: 24px 16px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 13px;
+    opacity: 0.7;
+}
+
+/* Combobox for field type */
+.combobox-wrap {
+    position: relative;
+    width: 100%;
+}
+
+.combobox-input {
+    width: 100%;
+    padding: 6px 22px 6px 8px;
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    background: var(--input-bg);
+    color: var(--text-primary);
+    font-size: 12.5px;
+    outline: none;
+}
+
+.combobox-input:focus {
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(45, 116, 214, 0.08);
+}
+
+.combobox-dropdown {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 50;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--surface-overlay);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(19, 35, 60, 0.14);
+    padding: 4px;
+}
+
+.combobox-option {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12.5px;
+    color: var(--text-primary);
+    transition: background 0.1s ease;
+}
+
+.combobox-option:hover,
+.combobox-option--active {
+    background: var(--surface-3);
+}
+
+/* AI index name button */
+.index-ai-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0;
+    margin-left: 4px;
+    opacity: 0.35;
+    transition: all 0.15s ease;
+    vertical-align: middle;
+}
+
+.index-ai-btn:hover {
+    opacity: 1;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(79, 140, 255, 0.08));
+    color: #7c3aed;
+}
+
+.index-ai-btn--active {
+    opacity: 0.7;
+    cursor: pointer;
+}
+
+.index-ai-btn--active:hover {
+    opacity: 1;
+}
+
+/* SQL Highlight Block (lightweight) */
+.sql-highlight {
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: var(--code-light-bg);
+    border: 1px solid var(--panel-border);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.65;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+.code-block .sh-kw, .sql-highlight .sh-kw { color: #3a6ea5; font-weight: 600; }
+.code-block .sh-str, .sql-highlight .sh-str { color: #488068; }
+.code-block .sh-num, .sql-highlight .sh-num { color: #b07830; }
+.code-block .sh-cmt, .sql-highlight .sh-cmt { color: #93a3bc; font-style: italic; }
+.code-block .sh-fnc, .sql-highlight .sh-fnc { color: #7c3aed; }
+
+body[data-theme="dark"] .code-block .sh-kw, body[data-theme="dark"] .sql-highlight .sh-kw { color: #7aa2ff; }
+body[data-theme="dark"] .code-block .sh-str, body[data-theme="dark"] .sql-highlight .sh-str { color: #85d6a5; }
+body[data-theme="dark"] .code-block .sh-num, body[data-theme="dark"] .sql-highlight .sh-num { color: #f0b36a; }
+body[data-theme="dark"] .code-block .sh-cmt, body[data-theme="dark"] .sql-highlight .sh-cmt { color: #6f85a8; }
+body[data-theme="dark"] .code-block .sh-fnc, body[data-theme="dark"] .sql-highlight .sh-fnc { color: #c4b5fd; }
 
 /* ================================================================
    CHAT PAGE EXTENSIONS
@@ -3345,8 +3468,8 @@ body[data-theme="dark"] .connection-card__item--active {
 .context-menu {
     position: fixed;
     z-index: 1000;
-    min-width: 180px;
-    padding: 4px 0;
+    min-width: 140px;
+    padding: 4px;
     background: var(--surface-overlay);
     border: 1px solid var(--panel-border);
     border-radius: 10px;
@@ -3364,11 +3487,12 @@ body[data-theme="dark"] .connection-card__item--active {
     align-items: center;
     gap: 8px;
     width: 100%;
-    padding: 8px 14px;
+    padding: 7px 10px;
     border: none;
+    border-radius: 7px;
     background: transparent;
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: 12.5px;
     cursor: pointer;
     text-align: left;
     transition: background 0.1s ease;
@@ -3376,6 +3500,11 @@ body[data-theme="dark"] .connection-card__item--active {
 
 .context-menu__item:hover {
     background: var(--surface-3);
+}
+
+.context-menu__item svg {
+    flex-shrink: 0;
+    opacity: 0.7;
 }
 
 /* Theme Preview Panel Extensions */
