@@ -452,3 +452,102 @@ export type ChatDropPayload = {
     database: string;
     table?: string;
 };
+
+export type PerformanceRequest = {
+    connectionId: string;
+    database: string;
+    metricType: string;
+};
+
+export type PerformanceResult = {
+    metricType: string;
+    columns: string[];
+    rows: Record<string, string>[];
+    supported: boolean;
+    message: string;
+};
+
+export type DatabaseUsersRequest = {
+    connectionId: string;
+    database: string;
+};
+
+export type DatabaseUser = {
+    name: string;
+    host: string;
+    grants: string;
+};
+
+export type DatabaseUsersResult = {
+    users: DatabaseUser[];
+    supported: boolean;
+    message: string;
+};
+
+export type TransactionRequest = {
+    connectionId: string;
+    database: string;
+    action: string;
+};
+
+export type TransactionResult = {
+    success: boolean;
+    message: string;
+};
+
+export type BatchExecuteRequest = {
+    connectionId: string;
+    database: string;
+    sqls: string[];
+    stopOnError: boolean;
+};
+
+export type BatchExecuteResult = {
+    success: number;
+    failed: number;
+    total: number;
+    errors: string[];
+    message: string;
+};
+
+export type ConnectionPoolStatus = {
+    entries: { key: string; lastUsed: string; openedAt: string }[];
+    total: number;
+};
+
+export type ImportFileRequest = {
+    connectionId: string;
+    database: string;
+    table: string;
+    filePath: string;
+    format: string;
+    delimiter: string;
+    hasHeader: boolean;
+    encoding: string;
+    mode: string;
+};
+
+export type ImportPreviewRequest = {
+    filePath: string;
+    format: string;
+    delimiter: string;
+    hasHeader: boolean;
+    encoding: string;
+    limit: number;
+};
+
+export type ImportPreviewResult = {
+    columns: string[];
+    rows: Record<string, string>[];
+    total: number;
+    format: string;
+    message: string;
+};
+
+export type ImportResult = {
+    success: boolean;
+    message: string;
+    insertedRows: number;
+    skippedRows: number;
+    sql: string;
+};

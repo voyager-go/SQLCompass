@@ -35,6 +35,16 @@ type ConnectionRecord struct {
 	Notes       string `json:"notes"`
 	Group       string `json:"group"`
 	GroupColor  string `json:"groupColor"`
+	SSLMode     string `json:"sslMode"`     // "disable" | "require" | "verify-ca" | "verify-full"
+	SSLCACert   string `json:"sslCaCert"`   // Path to CA certificate
+	SSLClientCert string `json:"sslClientCert"` // Path to client certificate
+	SSLClientKey  string `json:"sslClientKey"`  // Path to client key
+	SSHHost     string `json:"sshHost"`     // SSH tunnel host
+	SSHPort     int    `json:"sshPort"`     // SSH tunnel port
+	SSHUser     string `json:"sshUser"`     // SSH tunnel username
+	SSHPassword string `json:"sshPassword"` // SSH tunnel password
+	SSHKeyFile  string `json:"sshKeyFile"`  // Path to SSH private key
+	UseSSH      bool   `json:"useSSH"`      // Whether to use SSH tunnel
 	CreatedAt   string `json:"createdAt"`
 	UpdatedAt   string `json:"updatedAt"`
 }

@@ -3,11 +3,13 @@ import {
     ClearStorageData,
     GetCrashLogs,
     GetStorageInfo,
+    GetConnectionPoolStatus,
+    CleanupIdleConnections,
     GrantStoragePermission,
     SelectStorageDirectory,
     SetStoragePath,
 } from "../../wailsjs/go/main/App";
-import type { SetStoragePathResult, StorageInfoView } from "../types/runtime";
+import type { SetStoragePathResult, StorageInfoView, ConnectionPoolStatus } from "../types/runtime";
 
 type NoticeTone = "success" | "error" | "info";
 
@@ -67,6 +69,8 @@ export function SettingsPage({
 }: SettingsPageProps) {
     const [crashLogs, setCrashLogs] = useState<CrashLogEntry[]>([]);
     const [showCrashLogModal, setShowCrashLogModal] = useState(false);
+    const [poolStatus, setPoolStatus] = useState<ConnectionPoolStatus | null>(null);
+    const [poolLoading, setPoolLoading] = useState(false);
 
     const handleSetStoragePath = useCallback(async () => {
         if (browserPreview) return;
@@ -123,6 +127,31 @@ export function SettingsPage({
             setShowCrashLogModal(true);
         } catch {
             pushToast("error", "读取失败", "无法读取崩溃日志");
+        }
+    }, [browserPreview, pushToast]);
+
+    const handleFetchPoolStatus = useCallback(async () => {
+        if (browserPreview) return;
+        setPoolLoading(true);
+        try {
+            const status = (await GetConnectionPoolStatus()) as ConnectionPoolStatus;
+            setPoolStatus(status);
+        } catch {
+            pushToast("error", "获取失败", "无法读取连接池状态");
+        } finally {
+            setPoolLoading(false);
+        }
+    }, [browserPreview, pushToast]);
+
+    const handleCleanupIdle = useCallback(async () => {
+        if (browserPreview) return;
+        try {
+            await CleanupIdleConnections();
+            pushToast("success", "清理完成", "已清理空闲连接");
+            const status = (await GetConnectionPoolStatus()) as ConnectionPoolStatus;
+            setPoolStatus(status);
+        } catch {
+            pushToast("error", "清理失败", "无法清理空闲连接");
         }
     }, [browserPreview, pushToast]);
 
@@ -286,6 +315,58 @@ export function SettingsPage({
                     </div>
                 </div>
             )}
+
+            {/* Connection Pool */}
+            <div className="settings-section panel-card" style={{ marginBottom: 20 }}>
+                <div className="section-title">
+                    <div>
+                        <h3>连接池</h3>
+                        <p>查看和管理数据库连接池状态</p>
+                    </div>
+                    <div className="toolbar-actions">
+                        <button type="button" className="ghost-button" onClick={handleFetchPoolStatus} disabled={browserPreview || poolLoading}>
+                            {poolLoading ? "加载中..." : "刷新状态"}
+                        </button>
+                        <button type="button" className="ghost-button ghost-button--danger" onClick={handleCleanupIdle} disabled={browserPreview || !poolStatus}>
+                            清理空闲连接
+                        </button>
+                    </div>
+                </div>
+                {poolStatus ? (
+                    <>
+                        <div className="summary-item" style={{ marginBottom: 12 }}>
+                            <span>活跃连接数</span>
+                            <strong>{poolStatus.total}</strong>
+                        </div>
+                        {poolStatus.entries.length > 0 ? (
+                            <div className="schema-table-shell">
+                                <table className="schema-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Key</th>
+                                            <th>上次使用</th>
+                                            <th>打开时间</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {poolStatus.entries.map((entry, idx) => (
+                                            <tr key={idx}>
+                                                <td><div className="result-cell" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{entry.key}</div></td>
+                                                <td>{entry.lastUsed}</td>
+                                                <td>{entry.openedAt}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <div className="empty-block">暂无活跃连接</div>
+                        )}
+                    </>
+                ) : (
+                    <div className="empty-block">点击"刷新状态"查看连接池</div>
+                )}
+            </div>
 
             {/* Permission Modal */}
             {showPermissionModal && (

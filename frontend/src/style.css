@@ -4135,3 +4135,321 @@ body[data-theme="dark"] .code-block .sh-fnc, body[data-theme="dark"] .sql-highli
     overflow-x: auto;
     color: var(--text-primary);
 }
+
+/* ================================================================
+   PERFORMANCE PAGE
+   ================================================================ */
+
+.performance-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--surface-2);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+}
+
+.perf-tab {
+    padding: 8px 18px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.perf-tab:hover:not(:disabled) {
+    background: var(--surface-3);
+    color: var(--text-primary);
+}
+
+.perf-tab:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.perf-tab--active {
+    background: var(--button-active-bg);
+    border-color: var(--button-active-border);
+    color: var(--button-active-text);
+    font-weight: 600;
+}
+
+/* ================================================================
+   ACCESS CONTROL PAGE
+   ================================================================ */
+
+.access-user-card {
+    background: var(--surface-1);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: box-shadow 0.15s ease;
+}
+
+.access-user-card:hover {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.access-user-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+}
+
+.access-user-card__info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.access-user-card__info strong {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.access-user-card__host {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+}
+
+.access-user-card__toggle {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.access-user-card__grants {
+    padding: 12px 18px 16px;
+    border-top: 1px solid var(--panel-border);
+    background: var(--surface-2);
+}
+
+/* ================================================================
+   IMPORT PAGE
+   ================================================================ */
+
+.import-form .form-grid {
+    margin-top: 12px;
+}
+
+/* ================================================================
+   REDIS SHORTCUTS
+   ================================================================ */
+
+.redis-shortcuts {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* ================================================================
+   MONGODB PIPELINE BUILDER
+   ================================================================ */
+
+.mongo-pipeline {
+    padding: 14px 16px;
+    background: var(--surface-1);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+}
+
+/* ================================================================
+   TRANSACTION CONTROLS
+   ================================================================ */
+
+.tx-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* ── Section Divider for Connection Form ── */
+
+.section-divider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 0 4px;
+    border-top: 1px solid var(--border-soft);
+    margin-top: 8px;
+}
+
+.section-divider__label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    display: flex;
+    align-items: center;
+}
+
+/* ── Performance Page ── */
+
+.performance-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.perf-tab {
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    background: var(--button-ghost-bg);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.perf-tab:hover {
+    border-color: var(--button-ghost-hover-border);
+    color: var(--text-primary);
+}
+
+.perf-tab--active {
+    background: var(--button-active-bg);
+    border-color: var(--button-active-border);
+    color: var(--button-active-text);
+}
+
+/* ── Access Control ── */
+
+.access-user-card {
+    padding: 14px 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    margin-bottom: 8px;
+}
+
+.access-user-card__name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.access-user-card__host {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-left: 8px;
+}
+
+.access-user-card__grants {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: var(--code-light-bg);
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    color: var(--text-secondary);
+}
+
+/* ── Import Page ── */
+
+.import-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.import-form .field-row {
+    display: flex;
+    gap: 12px;
+}
+
+.import-form .field-row > * {
+    flex: 1;
+}
+
+/* ── Transaction Controls ── */
+
+.tx-controls {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding: 6px 0;
+}
+
+.tx-controls .ghost-button {
+    font-size: 12px;
+    padding: 4px 10px;
+}
+
+/* ── Redis Shortcuts ── */
+
+.redis-shortcuts {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+
+.redis-shortcuts button {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: var(--surface-3);
+    border: 1px solid var(--border-soft);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.redis-shortcuts button:hover {
+    background: var(--button-active-bg);
+    border-color: var(--button-active-border);
+    color: var(--button-active-text);
+}
+
+/* ── MongoDB Pipeline Builder ── */
+
+.mongo-pipeline {
+    margin-bottom: 8px;
+    padding: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+}
+
+.mongo-pipeline__stages {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mongo-pipeline__stage {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+
+.mongo-pipeline__stage select {
+    min-width: 110px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-soft);
+    font-size: 13px;
+}
+
+.mongo-pipeline__stage textarea {
+    flex: 1;
+    min-height: 50px;
+    padding: 6px 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    resize: vertical;
+}

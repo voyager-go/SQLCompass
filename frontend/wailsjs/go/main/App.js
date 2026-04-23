@@ -6,6 +6,10 @@ export function AnalyzeSQL(arg1) {
   return window['go']['main']['App']['AnalyzeSQL'](arg1);
 }
 
+export function BatchExecute(arg1) {
+  return window['go']['main']['App']['BatchExecute'](arg1);
+}
+
 export function BeautifySQL(arg1) {
   return window['go']['main']['App']['BeautifySQL'](arg1);
 }
@@ -28,6 +32,10 @@ export function BuildPartitionDDL(arg1) {
 
 export function ChatWithDatabase(arg1) {
   return window['go']['main']['App']['ChatWithDatabase'](arg1);
+}
+
+export function CleanupIdleConnections() {
+  return window['go']['main']['App']['CleanupIdleConnections']();
 }
 
 export function ClearAIAPIKey() {
@@ -58,6 +66,10 @@ export function ExecuteQuery(arg1) {
   return window['go']['main']['App']['ExecuteQuery'](arg1);
 }
 
+export function ExecuteTransaction(arg1) {
+  return window['go']['main']['App']['ExecuteTransaction'](arg1);
+}
+
 export function ExportTextFile(arg1) {
   return window['go']['main']['App']['ExportTextFile'](arg1);
 }
@@ -78,8 +90,16 @@ export function GetBootstrapData() {
   return window['go']['main']['App']['GetBootstrapData']();
 }
 
+export function GetConnectionPoolStatus() {
+  return window['go']['main']['App']['GetConnectionPoolStatus']();
+}
+
 export function GetCrashLogs() {
   return window['go']['main']['App']['GetCrashLogs']();
+}
+
+export function GetDatabaseUsers(arg1) {
+  return window['go']['main']['App']['GetDatabaseUsers'](arg1);
 }
 
 export function GetExplorerTree(arg1) {
@@ -88,6 +108,10 @@ export function GetExplorerTree(arg1) {
 
 export function GetFieldDictionarySuggestion(arg1) {
   return window['go']['main']['App']['GetFieldDictionarySuggestion'](arg1);
+}
+
+export function GetPerformanceMetrics(arg1) {
+  return window['go']['main']['App']['GetPerformanceMetrics'](arg1);
 }
 
 export function GetQueryHistory(arg1) {

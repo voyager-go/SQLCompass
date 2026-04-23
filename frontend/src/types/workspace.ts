@@ -12,6 +12,16 @@ export type ConnectionInput = {
     notes: string;
     group: string;
     groupColor: string;
+    sslMode: string;
+    sslCaCert: string;
+    sslClientCert: string;
+    sslClientKey: string;
+    sshHost: string;
+    sshPort: number;
+    sshUser: string;
+    sshPassword: string;
+    sshKeyFile: string;
+    useSSH: boolean;
 };
 
 export type ConnectionProfile = Omit<ConnectionInput, "password"> & {

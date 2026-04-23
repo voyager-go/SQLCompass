@@ -290,7 +290,23 @@ func openRedisClient(record store.ConnectionRecord) (*redis.Client, error) {
 }
 
 func connectionInputFromRecord(record store.ConnectionRecord) ConnectionInput {
-	return ConnectionInput{Engine: record.Engine, Host: record.Host, Port: record.Port, Username: record.Username, Password: record.Password, Database: record.Database, FilePath: record.FilePath, URL: record.URL}
+	return ConnectionInput{
+		Engine:   record.Engine,
+		Host:     record.Host,
+		Port:     record.Port,
+		Username: record.Username,
+		Password: record.Password,
+		Database: record.Database,
+		FilePath: record.FilePath,
+		URL:      record.URL,
+		SSLMode:  record.SSLMode,
+		UseSSH:   record.UseSSH,
+		SSHHost:  record.SSHHost,
+		SSHPort:  record.SSHPort,
+		SSHUser:  record.SSHUser,
+		SSHPassword: record.SSHPassword,
+		SSHKeyFile:  record.SSHKeyFile,
+	}
 }
 
 func parseRedisKeyspaceInfo(info string) map[int]int {

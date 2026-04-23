@@ -131,6 +131,36 @@ func (p *ConnectionPool) Cleanup() {
 	}
 }
 
+// Status returns the current status of all pooled connections.
+func (p *ConnectionPool) Status() ConnectionPoolStatus {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	entries := make([]PoolEntryInfo, 0, len(p.entries))
+	for key, entry := range p.entries {
+		entries = append(entries, PoolEntryInfo{
+			Key:      key,
+			LastUsed: entry.lastUsed.Format(time.RFC3339),
+			OpenedAt: entry.openedAt.Format(time.RFC3339),
+		})
+	}
+
+	return ConnectionPoolStatus{
+		Entries: entries,
+		Total:   len(entries),
+	}
+}
+
+// GetConnectionPoolStatus returns the current connection pool status.
+func (s *Service) GetConnectionPoolStatus() ConnectionPoolStatus {
+	return s.pool.Status()
+}
+
+// CleanupIdleConnections removes expired connections from the pool.
+func (s *Service) CleanupIdleConnections() {
+	s.pool.Cleanup()
+}
+
 // StartCleanup starts a background goroutine that periodically cleans up expired connections.
 func (p *ConnectionPool) StartCleanup(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Minute)

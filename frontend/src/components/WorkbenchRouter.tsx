@@ -5,6 +5,9 @@ import { HistoryPage } from "../pages/HistoryPage";
 import { SchemaPage } from "../pages/SchemaPage";
 import { CreateTablePage } from "../pages/CreateTablePage";
 import { PartitionPage } from "../pages/PartitionPage";
+import { PerformancePage } from "../pages/PerformancePage";
+import { AccessControlPage } from "../pages/AccessControlPage";
+import { ImportPage } from "../pages/ImportPage";
 import { AIPage } from "../pages/AIPage";
 import { ThemePage } from "../pages/ThemePage";
 import { SettingsPage } from "../pages/SettingsPage";
@@ -564,6 +567,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     isFillingTable={isFillingTable}
                     handleSmartFillTableData={handleSmartFillTableData}
                     isSmartFillingTable={isSmartFillingTable}
+                    pushToast={pushToast}
                 />
             );
         case "history":
@@ -649,6 +653,31 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         case "partition":
             return (
                 <PartitionPage
+                    selectedConnection={selectedConnection}
+                    selectedDatabase={selectedDatabase}
+                    selectedTable={selectedTable}
+                    pushToast={pushToast}
+                />
+            );
+        case "performance":
+            return (
+                <PerformancePage
+                    selectedConnection={selectedConnection}
+                    selectedDatabase={selectedDatabase}
+                    pushToast={pushToast}
+                />
+            );
+        case "access-control":
+            return (
+                <AccessControlPage
+                    selectedConnection={selectedConnection}
+                    selectedDatabase={selectedDatabase}
+                    pushToast={pushToast}
+                />
+            );
+        case "import":
+            return (
+                <ImportPage
                     selectedConnection={selectedConnection}
                     selectedDatabase={selectedDatabase}
                     selectedTable={selectedTable}

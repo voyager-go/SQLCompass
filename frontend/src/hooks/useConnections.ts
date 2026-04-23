@@ -108,6 +108,16 @@ export function useConnections(options: UseConnectionsOptions): UseConnectionsRe
             notes: profile.notes,
             group: profile.group || "默认分组",
             groupColor: profile.groupColor || "",
+            sslMode: profile.sslMode || "disable",
+            sslCaCert: profile.sslCaCert || "",
+            sslClientCert: profile.sslClientCert || "",
+            sslClientKey: profile.sslClientKey || "",
+            sshHost: profile.sshHost || "",
+            sshPort: profile.sshPort || 22,
+            sshUser: profile.sshUser || "",
+            sshPassword: "",
+            sshKeyFile: profile.sshKeyFile || "",
+            useSSH: profile.useSSH || false,
         });
         setActivePage("connections");
     }

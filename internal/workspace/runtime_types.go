@@ -504,3 +504,79 @@ type ImportResult struct {
 	SkippedRows  int    `json:"skippedRows"`
 	SQL          string `json:"sql"` // The generated INSERT SQL
 }
+
+// --- Performance metrics types ---
+
+type PerformanceRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+	MetricType   string `json:"metricType"` // "slow_queries" | "status" | "variables" | "processlist" | "innodb_status"
+}
+
+type PerformanceResult struct {
+	MetricType string              `json:"metricType"`
+	Columns    []string            `json:"columns"`
+	Rows       []map[string]string `json:"rows"`
+	Supported  bool                `json:"supported"`
+	Message    string              `json:"message"`
+}
+
+// --- Database users & access control types ---
+
+type DatabaseUsersRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+}
+
+type DatabaseUser struct {
+	Name   string `json:"name"`
+	Host   string `json:"host"`
+	Grants string `json:"grants"`
+}
+
+type DatabaseUsersResult struct {
+	Users     []DatabaseUser `json:"users"`
+	Supported bool           `json:"supported"`
+	Message   string         `json:"message"`
+}
+
+// --- Connection pool status types ---
+
+type ConnectionPoolStatus struct {
+	Entries []PoolEntryInfo `json:"entries"`
+	Total   int             `json:"total"`
+}
+
+type PoolEntryInfo struct {
+	Key      string `json:"key"`
+	LastUsed string `json:"lastUsed"`
+	OpenedAt string `json:"openedAt"`
+}
+
+// --- Transaction control types ---
+
+type TransactionRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+	Action       string `json:"action"` // "begin" | "commit" | "rollback"
+}
+
+type TransactionResult struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+type BatchExecuteRequest struct {
+	ConnectionID string   `json:"connectionId"`
+	Database     string   `json:"database"`
+	SQLs         []string `json:"sqls"`
+	StopOnError  bool     `json:"stopOnError"`
+}
+
+type BatchExecuteResult struct {
+	Success int      `json:"success"`
+	Failed  int      `json:"failed"`
+	Total   int      `json:"total"`
+	Errors  []string `json:"errors"`
+	Message string   `json:"message"`
+}

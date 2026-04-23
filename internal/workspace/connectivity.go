@@ -217,6 +217,18 @@ func buildMySQLDSN(input ConnectionInput) (string, string, error) {
 	cfg.Addr = net.JoinHostPort(input.Host, strconv.Itoa(input.Port))
 	cfg.DBName = input.Database
 
+	// SSL/TLS configuration for MySQL
+	if input.SSLMode != "" && input.SSLMode != "disable" {
+		cfg.Params = map[string]string{}
+		if input.SSLMode == "require" || input.SSLMode == "verify-full" {
+			cfg.Params["tls"] = "true"
+		}
+		if input.SSLCACert != "" {
+			cfg.Params["tls"] = "custom"
+			// Register custom TLS config will be handled at connection time
+		}
+	}
+
 	return cfg.FormatDSN(), redactMySQLTarget(cfg), nil
 }
 
@@ -265,6 +277,18 @@ func buildPostgreSQLDSN(input ConnectionInput) (string, string, error) {
 		if query.Get("connect_timeout") == "" {
 			query.Set("connect_timeout", strconv.Itoa(int(pingTimeout/time.Second)))
 		}
+		if query.Get("sslmode") == "" && input.SSLMode != "" {
+			query.Set("sslmode", input.SSLMode)
+		}
+		if input.SSLCACert != "" {
+			query.Set("sslrootcert", input.SSLCACert)
+		}
+		if input.SSLClientCert != "" {
+			query.Set("sslcert", input.SSLClientCert)
+		}
+		if input.SSLClientKey != "" {
+			query.Set("sslkey", input.SSLClientKey)
+		}
 		parsedURL.RawQuery = query.Encode()
 		return parsedURL.String(), parsedURL.Redacted(), nil
 	}
@@ -290,7 +314,20 @@ func buildPostgreSQLDSN(input ConnectionInput) (string, string, error) {
 	query := parsedURL.Query()
 	query.Set("connect_timeout", strconv.Itoa(int(pingTimeout/time.Second)))
 	if query.Get("sslmode") == "" {
-		query.Set("sslmode", "disable")
+		sslMode := "disable"
+		if input.SSLMode != "" {
+			sslMode = input.SSLMode
+		}
+		query.Set("sslmode", sslMode)
+	}
+	if input.SSLCACert != "" {
+		query.Set("sslrootcert", input.SSLCACert)
+	}
+	if input.SSLClientCert != "" {
+		query.Set("sslcert", input.SSLClientCert)
+	}
+	if input.SSLClientKey != "" {
+		query.Set("sslkey", input.SSLClientKey)
 	}
 	parsedURL.RawQuery = query.Encode()
 

@@ -273,6 +273,25 @@ func (s *Service) importCSV(record store.ConnectionRecord, input ImportFileReque
 	if input.Mode == "truncate_insert" {
 		truncateSQL := fmt.Sprintf("TRUNCATE TABLE %s;", quoteIdentifierForEngine(record.Engine, input.Table))
 		insertSQLs = append([]string{truncateSQL}, insertSQLs...)
+	} else if input.Mode == "upsert" {
+		// Convert INSERT statements to INSERT ... ON DUPLICATE KEY UPDATE
+		for i, sql := range insertSQLs {
+			if strings.HasPrefix(sql, "INSERT INTO") {
+				// Extract the column list from the INSERT statement
+				parenStart := strings.Index(sql, "(")
+				parenEnd := strings.Index(sql, ") VALUES")
+				if parenStart >= 0 && parenEnd > parenStart {
+					colList := sql[parenStart+1 : parenEnd]
+					cols := strings.Split(colList, ",")
+					var updateParts []string
+					for _, col := range cols {
+						trimmed := strings.TrimSpace(col)
+						updateParts = append(updateParts, fmt.Sprintf("%s = VALUES(%s)", trimmed, trimmed))
+					}
+					insertSQLs[i] = sql[:len(sql)-1] + " ON DUPLICATE KEY UPDATE " + strings.Join(updateParts, ", ") + ";"
+				}
+			}
+		}
 	}
 
 	return s.executeRelationalImport(record, input.Database, insertSQLs, insertedRows, skippedRows)

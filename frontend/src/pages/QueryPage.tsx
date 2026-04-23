@@ -4,10 +4,10 @@ import type { Monaco } from "@monaco-editor/react";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { NoticeBanner } from "../components/NoticeBanner";
 import { FillTableModal } from "../components/FillTableModal";
-import type { QueryResult, TableDetail } from "../types/runtime";
+import type { QueryResult, TableDetail, TransactionResult, BatchExecuteResult } from "../types/runtime";
 import type { WorkbenchPage } from "../lib/constants";
 import { formatCellPreview, isTextLikeType } from "../lib/utils";
-import { PreviewSmartFillSQL } from "../../wailsjs/go/main/App";
+import { PreviewSmartFillSQL, ExecuteTransaction, BatchExecute } from "../../wailsjs/go/main/App";
 
 type NoticeTone = "success" | "error" | "info";
 
@@ -74,6 +74,7 @@ interface QueryPageProps {
     handleSmartFillTableData: () => Promise<void>;
     isSmartFillingTable: boolean;
     setActivePage?: (v: WorkbenchPage) => void;
+    pushToast?: (tone: NoticeTone, title: string, message: string) => void;
 }
 
 export function QueryPage({
@@ -130,6 +131,7 @@ export function QueryPage({
     isFillingTable,
     handleSmartFillTableData,
     isSmartFillingTable,
+    pushToast,
 }: QueryPageProps) {
     const [fillMenuOpen, setFillMenuOpen] = useState(false);
     const fillMenuRef = useRef<HTMLDivElement>(null);
@@ -148,6 +150,21 @@ export function QueryPage({
     const [colMenuOpen, setColMenuOpen] = useState(false);
     const colMenuRef = useRef<HTMLDivElement>(null);
     const [sortState, setSortState] = useState<{ column: string | null; direction: "asc" | "desc" | null }>({ column: null, direction: null });
+
+    // Transaction state
+    const [txStatus, setTxStatus] = useState<string>("");
+    const [txLoading, setTxLoading] = useState(false);
+    const [batchModalOpen, setBatchModalOpen] = useState(false);
+    const [batchSQLText, setBatchSQLText] = useState("");
+    const [batchStopOnError, setBatchStopOnError] = useState(true);
+    const [batchLoading, setBatchLoading] = useState(false);
+    const [batchResult, setBatchResult] = useState<BatchExecuteResult | null>(null);
+
+    // MongoDB pipeline state
+    const [mongoPipelineOpen, setMongoPipelineOpen] = useState(false);
+    const [mongoStages, setMongoStages] = useState<{ stage: string; json: string }[]>([
+        { stage: "$match", json: "{}" },
+    ]);
 
     useEffect(() => {
         if (queryResult) {
@@ -274,6 +291,92 @@ export function QueryPage({
 
     const fillDisabled = isFillingTable || isSmartFillingTable || !selectedConnection || !selectedDatabase || !selectedTable;
     const hideFill = selectedConnection && ["redis", "mongodb"].includes(selectedConnection.engine ?? "");
+
+    // Transaction handlers
+    async function handleTransaction(action: "begin" | "commit" | "rollback") {
+        if (!selectedConnection || !selectedDatabase) return;
+        setTxLoading(true);
+        try {
+            const res = (await ExecuteTransaction({
+                connectionId: selectedConnection.id,
+                database: selectedDatabase,
+                action,
+            })) as TransactionResult;
+            setTxStatus(res.success ? `${action.toUpperCase()} 成功: ${res.message}` : `${action.toUpperCase()} 失败: ${res.message}`);
+            if (pushToast) {
+                pushToast(res.success ? "success" : "error", action.toUpperCase(), res.message);
+            }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "操作失败";
+            setTxStatus(`${action.toUpperCase()} 失败: ${msg}`);
+            if (pushToast) pushToast("error", action.toUpperCase(), msg);
+        } finally {
+            setTxLoading(false);
+        }
+    }
+
+    async function handleBatchExecute() {
+        if (!selectedConnection || !selectedDatabase || !batchSQLText.trim()) return;
+        const sqls = batchSQLText.split(";").map((s) => s.trim()).filter(Boolean);
+        if (sqls.length === 0) return;
+        setBatchLoading(true);
+        setBatchResult(null);
+        try {
+            const res = (await BatchExecute({
+                connectionId: selectedConnection.id,
+                database: selectedDatabase,
+                sqls,
+                stopOnError: batchStopOnError,
+            })) as BatchExecuteResult;
+            setBatchResult(res);
+            if (pushToast) {
+                pushToast(res.failed === 0 ? "success" : "error", "批量执行", res.message);
+            }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "批量执行失败";
+            if (pushToast) pushToast("error", "批量执行", msg);
+        } finally {
+            setBatchLoading(false);
+        }
+    }
+
+    // Redis shortcut handler
+    function handleRedisShortcut(cmd: string) {
+        if (cmd === "FLUSHDB") {
+            if (!window.confirm("FLUSHDB 将删除当前数据库所有 Key，确认继续？")) return;
+        }
+        setSQLText(cmd);
+    }
+
+    // MongoDB pipeline builder
+    const MONGO_STAGES = ["$match", "$group", "$sort", "$limit", "$project", "$unwind"] as const;
+
+    function addMongoStage() {
+        setMongoStages((prev) => [...prev, { stage: "$match", json: "{}" }]);
+    }
+
+    function removeMongoStage(index: number) {
+        setMongoStages((prev) => prev.filter((_, i) => i !== index));
+    }
+
+    function updateMongoStage(index: number, field: "stage" | "json", value: string) {
+        setMongoStages((prev) => prev.map((s, i) => (i === index ? { ...s, [field]: value } : s)));
+    }
+
+    function generateMongoPipeline() {
+        const stages = mongoStages
+            .map((s) => {
+                try {
+                    return `{ ${s.stage}: ${s.json} }`;
+                } catch {
+                    return `{ ${s.stage}: ${s.json} }`;
+                }
+            })
+            .join(", ");
+        const table = selectedTable || "collection";
+        setSQLText(`db.${table}.aggregate([${stages}])`);
+        setMongoPipelineOpen(false);
+    }
 
     return (
         <section className="page-panel page-panel--wide page-panel--scrollable">
@@ -420,6 +523,95 @@ export function QueryPage({
                     </div>
                 ) : null}
             </div>
+
+            {/* Transaction Controls */}
+            <div className="tx-controls" style={{ marginTop: 12 }}>
+                <button type="button" className="mini-ghost-button" onClick={() => handleTransaction("begin")} disabled={txLoading || !selectedConnection}>
+                    BEGIN
+                </button>
+                <button type="button" className="mini-ghost-button" onClick={() => handleTransaction("commit")} disabled={txLoading || !selectedConnection}>
+                    COMMIT
+                </button>
+                <button type="button" className="mini-ghost-button" onClick={() => handleTransaction("rollback")} disabled={txLoading || !selectedConnection}>
+                    ROLLBACK
+                </button>
+                <button type="button" className="mini-ghost-button" onClick={() => setBatchModalOpen(true)} disabled={!selectedConnection}>
+                    批量执行
+                </button>
+            </div>
+
+            {/* Transaction Status */}
+            {txStatus ? (
+                <div className="notice-banner notice-banner--info" style={{ marginTop: 8 }}>
+                    <span className="notice-banner__icon">i</span>
+                    <span className="notice-banner__text">{txStatus}</span>
+                </div>
+            ) : null}
+
+            {/* Redis Shortcuts */}
+            {selectedConnection?.engine === "redis" ? (
+                <div className="redis-shortcuts" style={{ marginTop: 12 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginRight: 8 }}>快捷命令</span>
+                    {["PING", "INFO", "DBSIZE", "FLUSHDB", "CONFIG GET *"].map((cmd) => (
+                        <button
+                            key={cmd}
+                            type="button"
+                            className={`mini-ghost-button${cmd === "FLUSHDB" ? " ghost-button--danger" : ""}`}
+                            onClick={() => handleRedisShortcut(cmd)}
+                        >
+                            {cmd}
+                        </button>
+                    ))}
+                </div>
+            ) : null}
+
+            {/* MongoDB Pipeline Builder */}
+            {selectedConnection?.engine === "mongodb" ? (
+                <div style={{ marginTop: 12 }}>
+                    <button
+                        type="button"
+                        className="mini-ghost-button"
+                        onClick={() => setMongoPipelineOpen((v) => !v)}
+                    >
+                        {mongoPipelineOpen ? "收起聚合构建器 ▴" : "聚合构建器 ▾"}
+                    </button>
+                    {mongoPipelineOpen ? (
+                        <div className="mongo-pipeline" style={{ marginTop: 10 }}>
+                            {mongoStages.map((stage, idx) => (
+                                <div key={idx} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
+                                    <select
+                                        value={stage.stage}
+                                        onChange={(e) => updateMongoStage(idx, "stage", e.target.value)}
+                                        style={{ padding: "6px 8px", border: "1px solid var(--border-soft)", borderRadius: 6, background: "var(--input-bg)", color: "var(--text-primary)", fontSize: 12.5 }}
+                                    >
+                                        {MONGO_STAGES.map((s) => (
+                                            <option key={s} value={s}>{s}</option>
+                                        ))}
+                                    </select>
+                                    <textarea
+                                        value={stage.json}
+                                        onChange={(e) => updateMongoStage(idx, "json", e.target.value)}
+                                        rows={2}
+                                        placeholder="{}"
+                                        style={{ flex: 1, padding: 8, border: "1px solid var(--border-soft)", borderRadius: 6, background: "var(--input-bg)", color: "var(--text-primary)", fontFamily: "var(--font-mono)", fontSize: 12, resize: "vertical" }}
+                                    />
+                                    <button type="button" className="mini-ghost-button ghost-button--danger" onClick={() => removeMongoStage(idx)}>
+                                        ✕
+                                    </button>
+                                </div>
+                            ))}
+                            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                                <button type="button" className="mini-ghost-button" onClick={addMongoStage}>
+                                    + 添加阶段
+                                </button>
+                                <button type="button" className="mini-primary-button" onClick={generateMongoPipeline}>
+                                    生成语句
+                                </button>
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
 
             <div className="result-board">
                 <div className="result-board__header">
@@ -796,6 +988,64 @@ export function QueryPage({
                                     {smartFillModal.executing ? "执行中..." : "确认执行"}
                                 </button>
                             ) : null}
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
+            {/* Batch Execute Modal */}
+            {batchModalOpen ? (
+                <div className="modal-backdrop" onClick={() => setBatchModalOpen(false)}>
+                    <div className="modal-card modal-card--wide" onClick={(e) => e.stopPropagation()}>
+                        <div className="section-title">
+                            <div>
+                                <h3>批量执行</h3>
+                                <p>输入多条 SQL 语句，用分号分隔</p>
+                            </div>
+                        </div>
+                        <textarea
+                            value={batchSQLText}
+                            onChange={(e) => setBatchSQLText(e.target.value)}
+                            rows={8}
+                            placeholder="SELECT * FROM table1;&#10;SELECT * FROM table2;"
+                            style={{
+                                width: "100%",
+                                padding: 12,
+                                border: "1px solid var(--border-soft)",
+                                borderRadius: 8,
+                                background: "var(--input-bg)",
+                                color: "var(--text-primary)",
+                                fontFamily: "var(--font-mono)",
+                                fontSize: 13,
+                                lineHeight: 1.6,
+                                resize: "vertical",
+                            }}
+                        />
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13, color: "var(--text-primary)" }}>
+                            <input type="checkbox" checked={batchStopOnError} onChange={(e) => setBatchStopOnError(e.target.checked)} />
+                            遇到错误时停止
+                        </label>
+                        {batchResult ? (
+                            <div style={{ marginTop: 12, padding: 12, background: "var(--surface-2)", borderRadius: 8, border: "1px solid var(--panel-border)" }}>
+                                <div style={{ fontSize: 13, color: "var(--text-primary)", marginBottom: 6 }}>
+                                    <strong>总执行:</strong> {batchResult.total} | <strong>成功:</strong> <span style={{ color: "#059669" }}>{batchResult.success}</span> | <strong>失败:</strong> <span style={{ color: "#dc2626" }}>{batchResult.failed}</span>
+                                </div>
+                                {batchResult.errors.length > 0 ? (
+                                    <div style={{ fontSize: 12, color: "#dc2626", fontFamily: "var(--font-mono)" }}>
+                                        {batchResult.errors.map((e, i) => (
+                                            <div key={i}>{e}</div>
+                                        ))}
+                                    </div>
+                                ) : null}
+                            </div>
+                        ) : null}
+                        <div className="toolbar-actions toolbar-actions--end" style={{ marginTop: 16 }}>
+                            <button type="button" className="ghost-button" onClick={() => setBatchModalOpen(false)} disabled={batchLoading}>
+                                取消
+                            </button>
+                            <button type="button" className="primary-button" onClick={handleBatchExecute} disabled={batchLoading || !batchSQLText.trim()}>
+                                {batchLoading ? "执行中..." : "执行"}
+                            </button>
                         </div>
                     </div>
                 </div>

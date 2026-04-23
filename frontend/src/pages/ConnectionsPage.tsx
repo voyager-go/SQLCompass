@@ -181,6 +181,16 @@ export function ConnectionsPage({
                                         url: "",
                                         filePath: "",
                                         notes: "",
+                                        sslMode: "disable",
+                                        sslCaCert: "",
+                                        sslClientCert: "",
+                                        sslClientKey: "",
+                                        sshHost: "",
+                                        sshPort: 22,
+                                        sshUser: "",
+                                        sshPassword: "",
+                                        sshKeyFile: "",
+                                        useSSH: false,
                                     });
                                     pushToast("info", "快速填充", "已自动填充本地 MySQL 默认配置");
                                 }}
@@ -303,6 +313,64 @@ export function ConnectionsPage({
                                     <span>连接 URL</span>
                                     <input value={connectionDraft.url} onChange={(event) => updateConnectionField("url", event.target.value)} placeholder="可选" />
                                 </label>
+
+                                {/* SSL/TLS Configuration */}
+                                <div className="field field--full section-divider">
+                                    <span className="section-divider__label">SSL/TLS</span>
+                                </div>
+                                <label className="field field--half">
+                                    <span>SSL 模式</span>
+                                    <select value={connectionDraft.sslMode || "disable"} onChange={(event) => updateConnectionField("sslMode", event.target.value)}>
+                                        <option value="disable">禁用</option>
+                                        <option value="require">要求加密</option>
+                                        <option value="verify-ca">验证 CA</option>
+                                        <option value="verify-full">完全验证</option>
+                                    </select>
+                                </label>
+                                <label className="field field--half">
+                                    <span>CA 证书路径</span>
+                                    <input value={connectionDraft.sslCaCert || ""} onChange={(event) => updateConnectionField("sslCaCert", event.target.value)} placeholder="可选" />
+                                </label>
+                                <label className="field field--half">
+                                    <span>客户端证书路径</span>
+                                    <input value={connectionDraft.sslClientCert || ""} onChange={(event) => updateConnectionField("sslClientCert", event.target.value)} placeholder="可选" />
+                                </label>
+                                <label className="field field--half">
+                                    <span>客户端密钥路径</span>
+                                    <input value={connectionDraft.sslClientKey || ""} onChange={(event) => updateConnectionField("sslClientKey", event.target.value)} placeholder="可选" />
+                                </label>
+
+                                {/* SSH Tunnel Configuration */}
+                                <div className="field field--full section-divider">
+                                    <span className="section-divider__label">
+                                        <input type="checkbox" checked={connectionDraft.useSSH || false} onChange={(event) => updateConnectionField("useSSH", event.target.checked)} style={{ marginRight: 6 }} />
+                                        SSH 隧道
+                                    </span>
+                                </div>
+                                {connectionDraft.useSSH ? (
+                                    <>
+                                        <label className="field field--half">
+                                            <span>SSH 主机</span>
+                                            <input value={connectionDraft.sshHost || ""} onChange={(event) => updateConnectionField("sshHost", event.target.value)} placeholder="跳板机地址" />
+                                        </label>
+                                        <label className="field field--half">
+                                            <span>SSH 端口</span>
+                                            <input type="number" value={connectionDraft.sshPort || 22} onChange={(event) => updateConnectionField("sshPort", Number(event.target.value))} />
+                                        </label>
+                                        <label className="field field--half">
+                                            <span>SSH 用户名</span>
+                                            <input value={connectionDraft.sshUser || ""} onChange={(event) => updateConnectionField("sshUser", event.target.value)} />
+                                        </label>
+                                        <label className="field field--half">
+                                            <span>SSH 密码</span>
+                                            <input type="password" value={connectionDraft.sshPassword || ""} onChange={(event) => updateConnectionField("sshPassword", event.target.value)} placeholder="密码或密钥二选一" />
+                                        </label>
+                                        <label className="field field--full">
+                                            <span>SSH 私钥路径</span>
+                                            <input value={connectionDraft.sshKeyFile || ""} onChange={(event) => updateConnectionField("sshKeyFile", event.target.value)} placeholder="可选，~/.ssh/id_rsa" />
+                                        </label>
+                                    </>
+                                ) : null}
                             </>
                         ) : (
                             <label className="field field--full">

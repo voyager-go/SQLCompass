@@ -26,37 +26,56 @@ type WorkspaceState struct {
 }
 
 type ConnectionInput struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Engine     string `json:"engine"`
-	Host       string `json:"host"`
-	Port       int    `json:"port"`
-	Username   string `json:"username"`
-	Password   string `json:"password"`
-	Database   string `json:"database"`
-	FilePath   string `json:"filePath"`
-	URL        string `json:"url"`
-	Notes      string `json:"notes"`
-	Group      string `json:"group"`
-	GroupColor string `json:"groupColor"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Engine         string `json:"engine"`
+	Host           string `json:"host"`
+	Port           int    `json:"port"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	Database       string `json:"database"`
+	FilePath       string `json:"filePath"`
+	URL            string `json:"url"`
+	Notes          string `json:"notes"`
+	Group          string `json:"group"`
+	GroupColor     string `json:"groupColor"`
+	SSLMode        string `json:"sslMode"`
+	SSLCACert      string `json:"sslCaCert"`
+	SSLClientCert  string `json:"sslClientCert"`
+	SSLClientKey   string `json:"sslClientKey"`
+	SSHHost        string `json:"sshHost"`
+	SSHPort        int    `json:"sshPort"`
+	SSHUser        string `json:"sshUser"`
+	SSHPassword    string `json:"sshPassword"`
+	SSHKeyFile     string `json:"sshKeyFile"`
+	UseSSH         bool   `json:"useSSH"`
 }
 
 type ConnectionProfile struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Engine      string `json:"engine"`
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	Username    string `json:"username"`
-	Database    string `json:"database"`
-	FilePath    string `json:"filePath"`
-	URL         string `json:"url"`
-	Notes       string `json:"notes"`
-	Group       string `json:"group"`
-	GroupColor  string `json:"groupColor"`
-	PasswordSet bool   `json:"passwordSet"`
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Engine         string `json:"engine"`
+	Host           string `json:"host"`
+	Port           int    `json:"port"`
+	Username       string `json:"username"`
+	Database       string `json:"database"`
+	FilePath       string `json:"filePath"`
+	URL            string `json:"url"`
+	Notes          string `json:"notes"`
+	Group          string `json:"group"`
+	GroupColor     string `json:"groupColor"`
+	PasswordSet    bool   `json:"passwordSet"`
+	SSLMode        string `json:"sslMode"`
+	SSLCACert      string `json:"sslCaCert"`
+	SSLClientCert  string `json:"sslClientCert"`
+	SSLClientKey   string `json:"sslClientKey"`
+	SSHHost        string `json:"sshHost"`
+	SSHPort        int    `json:"sshPort"`
+	SSHUser        string `json:"sshUser"`
+	SSHKeyFile     string `json:"sshKeyFile"`
+	UseSSH         bool   `json:"useSSH"`
+	CreatedAt      string `json:"createdAt"`
+	UpdatedAt      string `json:"updatedAt"`
 }
 
 type ConnectionTestResult struct {
@@ -298,20 +317,34 @@ func normalizeConnectionInput(input ConnectionInput) ConnectionInput {
 	if group == "" {
 		group = "默认分组"
 	}
+	sslMode := strings.TrimSpace(input.SSLMode)
+	if sslMode == "" {
+		sslMode = "disable"
+	}
 	return ConnectionInput{
-		ID:         strings.TrimSpace(input.ID),
-		Name:       strings.TrimSpace(input.Name),
-		Engine:     strings.ToLower(strings.TrimSpace(input.Engine)),
-		Host:       strings.TrimSpace(input.Host),
-		Port:       input.Port,
-		Username:   strings.TrimSpace(input.Username),
-		Password:   strings.TrimSpace(input.Password),
-		Database:   strings.TrimSpace(input.Database),
-		FilePath:   strings.TrimSpace(input.FilePath),
-		URL:        strings.TrimSpace(input.URL),
-		Notes:      strings.TrimSpace(input.Notes),
-		Group:      group,
-		GroupColor: strings.TrimSpace(input.GroupColor),
+		ID:            strings.TrimSpace(input.ID),
+		Name:          strings.TrimSpace(input.Name),
+		Engine:        strings.ToLower(strings.TrimSpace(input.Engine)),
+		Host:          strings.TrimSpace(input.Host),
+		Port:          input.Port,
+		Username:      strings.TrimSpace(input.Username),
+		Password:      strings.TrimSpace(input.Password),
+		Database:      strings.TrimSpace(input.Database),
+		FilePath:      strings.TrimSpace(input.FilePath),
+		URL:           strings.TrimSpace(input.URL),
+		Notes:         strings.TrimSpace(input.Notes),
+		Group:         group,
+		GroupColor:    strings.TrimSpace(input.GroupColor),
+		SSLMode:       sslMode,
+		SSLCACert:     strings.TrimSpace(input.SSLCACert),
+		SSLClientCert: strings.TrimSpace(input.SSLClientCert),
+		SSLClientKey:  strings.TrimSpace(input.SSLClientKey),
+		SSHHost:       strings.TrimSpace(input.SSHHost),
+		SSHPort:       input.SSHPort,
+		SSHUser:       strings.TrimSpace(input.SSHUser),
+		SSHPassword:   strings.TrimSpace(input.SSHPassword),
+		SSHKeyFile:    strings.TrimSpace(input.SSHKeyFile),
+		UseSSH:        input.UseSSH,
 	}
 }
 
@@ -373,19 +406,29 @@ func isSupportedEngine(engine string) bool {
 
 func connectionRecordFromInput(input ConnectionInput) store.ConnectionRecord {
 	return store.ConnectionRecord{
-		ID:         input.ID,
-		Name:       input.Name,
-		Engine:     input.Engine,
-		Host:       input.Host,
-		Port:       input.Port,
-		Username:   input.Username,
-		Password:   input.Password,
-		Database:   input.Database,
-		FilePath:   input.FilePath,
-		URL:        input.URL,
-		Notes:      input.Notes,
-		Group:      input.Group,
-		GroupColor: input.GroupColor,
+		ID:             input.ID,
+		Name:           input.Name,
+		Engine:         input.Engine,
+		Host:           input.Host,
+		Port:           input.Port,
+		Username:       input.Username,
+		Password:       input.Password,
+		Database:       input.Database,
+		FilePath:       input.FilePath,
+		URL:            input.URL,
+		Notes:          input.Notes,
+		Group:          input.Group,
+		GroupColor:     input.GroupColor,
+		SSLMode:        input.SSLMode,
+		SSLCACert:      input.SSLCACert,
+		SSLClientCert:  input.SSLClientCert,
+		SSLClientKey:   input.SSLClientKey,
+		SSHHost:        input.SSHHost,
+		SSHPort:        input.SSHPort,
+		SSHUser:        input.SSHUser,
+		SSHPassword:    input.SSHPassword,
+		SSHKeyFile:     input.SSHKeyFile,
+		UseSSH:         input.UseSSH,
 	}
 }
 
@@ -395,21 +438,30 @@ func profileFromRecord(record store.ConnectionRecord) ConnectionProfile {
 		group = "默认分组"
 	}
 	return ConnectionProfile{
-		ID:          record.ID,
-		Name:        record.Name,
-		Engine:      record.Engine,
-		Host:        record.Host,
-		Port:        record.Port,
-		Username:    record.Username,
-		Database:    record.Database,
-		FilePath:    record.FilePath,
-		URL:         record.URL,
-		Notes:       record.Notes,
-		Group:       group,
-		GroupColor:  record.GroupColor,
-		PasswordSet: record.Password != "",
-		CreatedAt:   record.CreatedAt,
-		UpdatedAt:   record.UpdatedAt,
+		ID:            record.ID,
+		Name:          record.Name,
+		Engine:        record.Engine,
+		Host:          record.Host,
+		Port:          record.Port,
+		Username:      record.Username,
+		Database:      record.Database,
+		FilePath:      record.FilePath,
+		URL:           record.URL,
+		Notes:         record.Notes,
+		Group:         group,
+		GroupColor:    record.GroupColor,
+		PasswordSet:   record.Password != "",
+		SSLMode:       record.SSLMode,
+		SSLCACert:     record.SSLCACert,
+		SSLClientCert: record.SSLClientCert,
+		SSLClientKey:  record.SSLClientKey,
+		SSHHost:       record.SSHHost,
+		SSHPort:       record.SSHPort,
+		SSHUser:       record.SSHUser,
+		SSHKeyFile:    record.SSHKeyFile,
+		UseSSH:        record.UseSSH,
+		CreatedAt:     record.CreatedAt,
+		UpdatedAt:     record.UpdatedAt,
 	}
 }
 

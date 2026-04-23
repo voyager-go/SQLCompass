@@ -6,6 +6,8 @@ import {store} from '../models';
 
 export function AnalyzeSQL(arg1:string):Promise<workspace.SQLAnalysis>;
 
+export function BatchExecute(arg1:workspace.BatchExecuteRequest):Promise<workspace.BatchExecuteResult>;
+
 export function BeautifySQL(arg1:workspace.SQLOptimizeRequest):Promise<workspace.SQLOptimizeResult>;
 
 export function BrowseRedisKeys(arg1:workspace.RedisKeyBrowseRequest):Promise<workspace.RedisKeyBrowseResult>;
@@ -17,6 +19,8 @@ export function BuildCreateTableSQL(arg1:workspace.BuildCreateTableSQLRequest):P
 export function BuildPartitionDDL(arg1:workspace.BuildPartitionDDLRequest):Promise<workspace.BuildPartitionDDLResult>;
 
 export function ChatWithDatabase(arg1:workspace.ChatDatabaseRequest):Promise<workspace.ChatDatabaseResponse>;
+
+export function CleanupIdleConnections():Promise<void>;
 
 export function ClearAIAPIKey():Promise<workspace.AISettingsView>;
 
@@ -32,6 +36,8 @@ export function ExecutePartitionAction(arg1:workspace.PartitionActionRequest):Pr
 
 export function ExecuteQuery(arg1:workspace.QueryRequest):Promise<workspace.QueryResult>;
 
+export function ExecuteTransaction(arg1:workspace.TransactionRequest):Promise<workspace.TransactionResult>;
+
 export function ExportTextFile(arg1:workspace.ExportFileRequest):Promise<workspace.ExportFileResult>;
 
 export function FillTableData(arg1:workspace.FillTableRequest):Promise<workspace.FillTableResult>;
@@ -42,11 +48,17 @@ export function GenerateIndexName(arg1:workspace.GenerateIndexNameRequest):Promi
 
 export function GetBootstrapData():Promise<appmeta.ProductOverview>;
 
+export function GetConnectionPoolStatus():Promise<workspace.ConnectionPoolStatus>;
+
 export function GetCrashLogs():Promise<Array<store.CrashLogEntry>>;
+
+export function GetDatabaseUsers(arg1:workspace.DatabaseUsersRequest):Promise<workspace.DatabaseUsersResult>;
 
 export function GetExplorerTree(arg1:workspace.ExplorerRequest):Promise<workspace.ExplorerTree>;
 
 export function GetFieldDictionarySuggestion(arg1:workspace.FieldDictionaryRequest):Promise<workspace.FieldDictionarySuggestion>;
+
+export function GetPerformanceMetrics(arg1:workspace.PerformanceRequest):Promise<workspace.PerformanceResult>;
 
 export function GetQueryHistory(arg1:string):Promise<Array<workspace.HistoryItem>>;
 

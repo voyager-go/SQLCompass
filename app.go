@@ -340,6 +340,54 @@ func (a *App) AnalyzeSQL(statement string) (workspace.SQLAnalysis, error) {
 	return service.AnalyzeSQL(statement), nil
 }
 
+func (a *App) GetPerformanceMetrics(input workspace.PerformanceRequest) (workspace.PerformanceResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.PerformanceResult{}, err
+	}
+	return service.GetPerformanceMetrics(input)
+}
+
+func (a *App) GetDatabaseUsers(input workspace.DatabaseUsersRequest) (workspace.DatabaseUsersResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.DatabaseUsersResult{}, err
+	}
+	return service.GetDatabaseUsers(input)
+}
+
+func (a *App) GetConnectionPoolStatus() workspace.ConnectionPoolStatus {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.ConnectionPoolStatus{}
+	}
+	return service.GetConnectionPoolStatus()
+}
+
+func (a *App) CleanupIdleConnections() {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return
+	}
+	service.CleanupIdleConnections()
+}
+
+func (a *App) ExecuteTransaction(input workspace.TransactionRequest) (workspace.TransactionResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.TransactionResult{}, err
+	}
+	return service.ExecuteTransaction(input)
+}
+
+func (a *App) BatchExecute(input workspace.BatchExecuteRequest) (workspace.BatchExecuteResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.BatchExecuteResult{}, err
+	}
+	return service.BatchExecute(input)
+}
+
 func (a *App) ChatWithDatabase(input workspace.ChatDatabaseRequest) (workspace.ChatDatabaseResponse, error) {
 	service, err := a.requireWorkspace()
 	if err != nil {
