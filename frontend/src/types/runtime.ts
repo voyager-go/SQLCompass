@@ -306,6 +306,35 @@ export type TablePartitionResult = {
     message: string;
 };
 
+export type PartitionActionRequest = {
+    connectionId: string;
+    database: string;
+    table: string;
+    action: "add" | "drop" | "truncate";
+    partitionClause: string;
+    partitionNames: string;
+};
+
+export type PartitionActionResult = {
+    success: boolean;
+    message: string;
+    sql: string;
+};
+
+export type BuildPartitionDDLRequest = {
+    connectionId: string;
+    database: string;
+    table: string;
+    action: "add" | "drop" | "truncate";
+    partitionClause: string;
+    partitionNames: string;
+};
+
+export type BuildPartitionDDLResult = {
+    sql: string;
+    message: string;
+};
+
 export type SQLOptimizeRequest = {
     connectionId: string;
     database: string;

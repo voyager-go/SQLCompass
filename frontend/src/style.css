@@ -4040,3 +4040,98 @@ body[data-theme="dark"] .code-block .sh-fnc, body[data-theme="dark"] .sql-highli
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+.partition-selected-count {
+    font-size: 12px;
+    color: var(--sidebar-accent);
+    font-weight: 500;
+    background: rgba(45, 116, 214, 0.08);
+    padding: 3px 10px;
+    border-radius: 10px;
+}
+
+.partition-row--selected {
+    background: rgba(45, 116, 214, 0.06) !important;
+}
+
+.partition-tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.partition-tag {
+    display: inline-block;
+    font-size: 12px;
+    padding: 3px 10px;
+    background: var(--surface-3);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    color: var(--text-primary);
+}
+
+.partition-dialog .section-title {
+    margin-bottom: 12px;
+}
+
+.partition-textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 10px 12px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.5;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    background: var(--input-bg);
+    color: var(--text-primary);
+    resize: vertical;
+}
+
+.partition-textarea:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(45, 116, 214, 0.12);
+}
+
+.partition-hint {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.partition-hint strong {
+    color: var(--text-primary);
+}
+
+.partition-hint pre {
+    margin: 4px 0 0;
+    padding: 8px 12px;
+    background: var(--code-light-bg);
+    border-radius: 6px;
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-x: auto;
+}
+
+.partition-dialog-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.partition-sql-preview {
+    margin: 0;
+    padding: 12px 14px;
+    background: var(--code-light-bg);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    color: var(--text-primary);
+}

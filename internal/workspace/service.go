@@ -82,10 +82,21 @@ type AISettingsView struct {
 
 type Service struct {
 	store *store.Store
+	pool  *ConnectionPool
 }
 
 func NewService(stateStore *store.Store) *Service {
-	return &Service{store: stateStore}
+	return &Service{
+		store: stateStore,
+		pool:  NewConnectionPool(),
+	}
+}
+
+// Close shuts down the service, including all pooled connections.
+func (s *Service) Close() {
+	if s.pool != nil {
+		s.pool.CloseAll()
+	}
 }
 
 func (s *Service) GetWorkspaceState() (WorkspaceState, error) {

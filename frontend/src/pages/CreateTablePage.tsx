@@ -203,6 +203,8 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
     const engine = (selectedConnection?.engine ?? "mysql").toLowerCase();
     const isPostgreSQL = engine === "postgresql";
     const isClickHouse = engine === "clickhouse";
+    const isMySQL = engine === "mysql" || engine === "mariadb";
+    const supportsPartition = isClickHouse || isMySQL;
 
     // 字段名列表供索引多选用
     const fieldNames = fields.map((f) => f.name).filter(Boolean);
@@ -327,7 +329,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                 database: selectedDatabase,
                 schema: isPostgreSQL ? schemaName.trim() : "",
                 tableName: tableName.trim(),
-                partitionBy: isClickHouse ? partitionBy.trim() : "",
+                partitionBy: supportsPartition ? partitionBy.trim() : "",
                 primaryKey: isClickHouse ? primaryKeyExpr.trim() : "",
                 orderBy: isClickHouse ? orderByExpr.trim() : "",
                 sampleBy: isClickHouse ? sampleByExpr.trim() : "",
@@ -397,12 +399,23 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                 style={{ marginBottom: 16 }}
                             />
                         ) : null}
-                        {isClickHouse ? (
+                        {supportsPartition ? (
                             <div className="field-grid" style={{ marginBottom: 16 }}>
-                                <label className="field field--full"><span>PARTITION BY</span><input value={partitionBy} onChange={(e) => setPartitionBy(e.target.value)} placeholder="如 toYYYYMM(created_at)" /></label>
-                                <label className="field field--half"><span>PRIMARY KEY</span><input value={primaryKeyExpr} onChange={(e) => setPrimaryKeyExpr(e.target.value)} placeholder="如 (id, created_at)" /></label>
-                                <label className="field field--half"><span>ORDER BY</span><input value={orderByExpr} onChange={(e) => setOrderByExpr(e.target.value)} placeholder="如 (id, created_at)" /></label>
-                                <label className="field field--full"><span>SAMPLE BY</span><input value={sampleByExpr} onChange={(e) => setSampleByExpr(e.target.value)} placeholder="可选，如 id" /></label>
+                                {isMySQL ? (
+                                    <>
+                                        <label className="field field--full">
+                                            <span>PARTITION BY</span>
+                                            <input value={partitionBy} onChange={(e) => setPartitionBy(e.target.value)} placeholder="如 PARTITION BY RANGE COLUMNS(created_at) (PARTITION p202504 VALUES LESS THAN ('2025-05-01'), PARTITION p202505 VALUES LESS THAN ('2025-06-01'))" />
+                                        </label>
+                                    </>
+                                ) : (
+                                    <>
+                                        <label className="field field--full"><span>PARTITION BY</span><input value={partitionBy} onChange={(e) => setPartitionBy(e.target.value)} placeholder="如 toYYYYMM(created_at)" /></label>
+                                        <label className="field field--half"><span>PRIMARY KEY</span><input value={primaryKeyExpr} onChange={(e) => setPrimaryKeyExpr(e.target.value)} placeholder="如 (id, created_at)" /></label>
+                                        <label className="field field--half"><span>ORDER BY</span><input value={orderByExpr} onChange={(e) => setOrderByExpr(e.target.value)} placeholder="如 (id, created_at)" /></label>
+                                        <label className="field field--full"><span>SAMPLE BY</span><input value={sampleByExpr} onChange={(e) => setSampleByExpr(e.target.value)} placeholder="可选，如 id" /></label>
+                                    </>
+                                )}
                             </div>
                         ) : null}
 

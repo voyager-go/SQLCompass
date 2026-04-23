@@ -651,8 +651,14 @@ func (s *Service) createMySQLTable(record store.ConnectionRecord, input CreateTa
 		fieldDefs = append(fieldDefs, fmt.Sprintf("%sINDEX `%s`%s (%s)", unique, escapeIdentifier(name), indexType, strings.Join(cols, ", ")))
 	}
 
-	sql := fmt.Sprintf("CREATE TABLE `%s`.`%s` (\n  %s\n);",
+	sql := fmt.Sprintf("CREATE TABLE `%s`.`%s` (\n  %s\n)",
 		escapeIdentifier(database), escapeIdentifier(tableName), strings.Join(fieldDefs, ",\n  "))
+
+	// MySQL/MariaDB: support PARTITION BY
+	if strings.TrimSpace(input.PartitionBy) != "" {
+		sql += fmt.Sprintf("\n%s", strings.TrimSpace(input.PartitionBy))
+	}
+	sql += ";"
 
 	db, err := openMySQLDatabase(record, database)
 	if err != nil {

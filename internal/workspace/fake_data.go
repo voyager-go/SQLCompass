@@ -1,6 +1,8 @@
 package workspace
 
 import (
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"strconv"
@@ -426,16 +428,15 @@ func randomLowerString(n int) string {
 }
 
 func randomUUID() string {
-	const hex = "0123456789abcdef"
-	parts := []int{8, 4, 4, 4, 12}
-	var sb strings.Builder
-	for i, l := range parts {
-		if i > 0 {
-			sb.WriteByte('-')
-		}
-		for j := 0; j < l; j++ {
-			sb.WriteByte(hex[rand.Intn(len(hex))])
-		}
+	uuid := make([]byte, 16)
+	if _, err := cryptorand.Read(uuid); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}
-	return sb.String()
+	uuid[6] = (uuid[6] & 0x0f) | 0x40 // version 4
+	uuid[8] = (uuid[8] & 0x3f) | 0x80 // variant 10
+	return hex.EncodeToString(uuid[0:4]) + "-" +
+		hex.EncodeToString(uuid[4:6]) + "-" +
+		hex.EncodeToString(uuid[6:8]) + "-" +
+		hex.EncodeToString(uuid[8:10]) + "-" +
+		hex.EncodeToString(uuid[10:16])
 }

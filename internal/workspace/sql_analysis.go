@@ -4,8 +4,75 @@ import (
 	"strings"
 )
 
+// stripSQLComments removes SQL comments from a statement while preserving string literals.
+func stripSQLComments(sql string) string {
+	var result strings.Builder
+	i := 0
+	inString := false
+	stringChar := byte(0)
+
+	for i < len(sql) {
+		if inString {
+			result.WriteByte(sql[i])
+			if sql[i] == stringChar && (i == 0 || sql[i-1] != '\\') {
+				inString = false
+			}
+			i++
+			continue
+		}
+
+		if sql[i] == '\'' || sql[i] == '"' {
+			inString = true
+			stringChar = sql[i]
+			result.WriteByte(sql[i])
+			i++
+			continue
+		}
+
+		if i+1 < len(sql) && sql[i] == '-' && sql[i+1] == '-' {
+			for i < len(sql) && sql[i] != '\n' {
+				i++
+			}
+			continue
+		}
+
+		if i+1 < len(sql) && sql[i] == '/' && sql[i+1] == '*' {
+			i += 2
+			for i+1 < len(sql) && !(sql[i] == '*' && sql[i+1] == '/') {
+				i++
+			}
+			if i+1 < len(sql) {
+				i += 2
+			}
+			result.WriteByte(' ')
+			continue
+		}
+
+		result.WriteByte(sql[i])
+		i++
+	}
+
+	return result.String()
+}
+
+// containsMultiStatement checks if there are semicolons outside string literals.
+func containsMultiStatement(normalized string) bool {
+	semicolons := 0
+	inString := false
+	for _, ch := range normalized {
+		if ch == '\'' {
+			inString = !inString
+		}
+		if ch == ';' && !inString {
+			semicolons++
+		}
+	}
+	return semicolons > 0
+}
+
 func analyzeSQL(statement string) SQLAnalysis {
-	trimmed := strings.TrimSpace(statement)
+	cleaned := stripSQLComments(statement)
+	trimmed := strings.TrimSpace(cleaned)
 	upper := strings.ToUpper(trimmed)
 	normalized := strings.Join(strings.Fields(upper), " ")
 
@@ -74,6 +141,14 @@ func analyzeSQL(statement string) SQLAnalysis {
 
 	if analysis.StatementType == "DDL" && strings.HasPrefix(normalized, "DROP") {
 		analysis.Warnings = append(analysis.Warnings, "高风险删除操作，请确认对象名称和目标库。")
+	}
+
+	if containsMultiStatement(normalized) {
+		analysis.Warnings = append(analysis.Warnings, "检测到多语句，可能存在注入风险。")
+		if analysis.RiskLevel != "critical" {
+			analysis.RiskLevel = "critical"
+		}
+		analysis.RequiresConfirm = true
 	}
 
 	return analysis

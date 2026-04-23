@@ -14,6 +14,18 @@ export function BrowseRedisKeys(arg1) {
   return window['go']['main']['App']['BrowseRedisKeys'](arg1);
 }
 
+export function BuildAlterSQL(arg1) {
+  return window['go']['main']['App']['BuildAlterSQL'](arg1);
+}
+
+export function BuildCreateTableSQL(arg1) {
+  return window['go']['main']['App']['BuildCreateTableSQL'](arg1);
+}
+
+export function BuildPartitionDDL(arg1) {
+  return window['go']['main']['App']['BuildPartitionDDL'](arg1);
+}
+
 export function ChatWithDatabase(arg1) {
   return window['go']['main']['App']['ChatWithDatabase'](arg1);
 }
@@ -36,6 +48,10 @@ export function CreateTable(arg1) {
 
 export function DeleteConnection(arg1) {
   return window['go']['main']['App']['DeleteConnection'](arg1);
+}
+
+export function ExecutePartitionAction(arg1) {
+  return window['go']['main']['App']['ExecutePartitionAction'](arg1);
 }
 
 export function ExecuteQuery(arg1) {
@@ -102,8 +118,16 @@ export function GrantStoragePermission() {
   return window['go']['main']['App']['GrantStoragePermission']();
 }
 
+export function ImportFile(arg1) {
+  return window['go']['main']['App']['ImportFile'](arg1);
+}
+
 export function OptimizeSQL(arg1) {
   return window['go']['main']['App']['OptimizeSQL'](arg1);
+}
+
+export function PreviewImport(arg1) {
+  return window['go']['main']['App']['PreviewImport'](arg1);
 }
 
 export function PreviewSmartFillSQL(arg1) {
@@ -128,6 +152,10 @@ export function SaveAISettings(arg1) {
 
 export function SaveConnection(arg1) {
   return window['go']['main']['App']['SaveConnection'](arg1);
+}
+
+export function SelectImportFile() {
+  return window['go']['main']['App']['SelectImportFile']();
 }
 
 export function SelectStorageDirectory() {

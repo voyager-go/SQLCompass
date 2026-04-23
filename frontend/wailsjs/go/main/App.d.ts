@@ -10,6 +10,12 @@ export function BeautifySQL(arg1:workspace.SQLOptimizeRequest):Promise<workspace
 
 export function BrowseRedisKeys(arg1:workspace.RedisKeyBrowseRequest):Promise<workspace.RedisKeyBrowseResult>;
 
+export function BuildAlterSQL(arg1:workspace.BuildAlterSQLRequest):Promise<workspace.BuildAlterSQLResult>;
+
+export function BuildCreateTableSQL(arg1:workspace.BuildCreateTableSQLRequest):Promise<workspace.BuildCreateTableSQLResult>;
+
+export function BuildPartitionDDL(arg1:workspace.BuildPartitionDDLRequest):Promise<workspace.BuildPartitionDDLResult>;
+
 export function ChatWithDatabase(arg1:workspace.ChatDatabaseRequest):Promise<workspace.ChatDatabaseResponse>;
 
 export function ClearAIAPIKey():Promise<workspace.AISettingsView>;
@@ -22,6 +28,8 @@ export function CreateTable(arg1:workspace.CreateTableRequest):Promise<workspace
 
 export function DeleteConnection(arg1:string):Promise<void>;
 
+export function ExecutePartitionAction(arg1:workspace.PartitionActionRequest):Promise<workspace.PartitionActionResult>;
+
 export function ExecuteQuery(arg1:workspace.QueryRequest):Promise<workspace.QueryResult>;
 
 export function ExportTextFile(arg1:workspace.ExportFileRequest):Promise<workspace.ExportFileResult>;
@@ -30,7 +38,7 @@ export function FillTableData(arg1:workspace.FillTableRequest):Promise<workspace
 
 export function GenerateFieldComment(arg1:workspace.AIFieldCommentRequest):Promise<workspace.AIFieldCommentResult>;
 
-export function GenerateIndexName(arg1:any):Promise<any>;
+export function GenerateIndexName(arg1:workspace.GenerateIndexNameRequest):Promise<workspace.GenerateIndexNameResult>;
 
 export function GetBootstrapData():Promise<appmeta.ProductOverview>;
 
@@ -54,9 +62,13 @@ export function GetWorkspaceState():Promise<workspace.WorkspaceState>;
 
 export function GrantStoragePermission():Promise<workspace.SetStoragePathResult>;
 
+export function ImportFile(arg1:workspace.ImportFileRequest):Promise<workspace.ImportResult>;
+
 export function OptimizeSQL(arg1:workspace.SQLOptimizeRequest):Promise<workspace.SQLOptimizeResult>;
 
-export function PreviewSmartFillSQL(arg1:any):Promise<any>;
+export function PreviewImport(arg1:workspace.ImportPreviewRequest):Promise<workspace.ImportPreviewResult>;
+
+export function PreviewSmartFillSQL(arg1:workspace.PreviewSmartFillSQLRequest):Promise<workspace.PreviewSmartFillSQLResult>;
 
 export function PreviewTableData(arg1:workspace.TablePreviewRequest):Promise<workspace.QueryResult>;
 
@@ -67,6 +79,8 @@ export function RepairChatSQL(arg1:workspace.ChatRepairRequest):Promise<workspac
 export function SaveAISettings(arg1:workspace.AISettingsInput):Promise<workspace.AISettingsView>;
 
 export function SaveConnection(arg1:workspace.ConnectionInput):Promise<workspace.ConnectionProfile>;
+
+export function SelectImportFile():Promise<string>;
 
 export function SelectStorageDirectory():Promise<string>;
 

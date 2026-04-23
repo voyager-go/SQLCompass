@@ -400,3 +400,107 @@ type TablePartitionResult struct {
 	Supported    bool            `json:"supported"`
 	Message      string          `json:"message"`
 }
+
+type BuildAlterSQLRequest struct {
+	ConnectionID string             `json:"connectionId"`
+	Database     string             `json:"database"`
+	Table        string             `json:"table"`
+	Fields       []SchemaFieldInput `json:"fields"`
+	Indexes      []SchemaIndexInput `json:"indexes"`
+	Scope        string             `json:"scope"` // "fields" | "indexes" | ""
+}
+
+type BuildAlterSQLResult struct {
+	SQL     string `json:"sql"`
+	Message string `json:"message"`
+}
+
+type BuildCreateTableSQLRequest struct {
+	ConnectionID string             `json:"connectionId"`
+	Database     string             `json:"database"`
+	Schema       string             `json:"schema"`
+	TableName    string             `json:"tableName"`
+	PartitionBy  string             `json:"partitionBy"`
+	PrimaryKey   string             `json:"primaryKey"`
+	OrderBy      string             `json:"orderBy"`
+	SampleBy     string             `json:"sampleBy"`
+	Fields       []SchemaFieldInput `json:"fields"`
+	Indexes      []SchemaIndexInput `json:"indexes"`
+}
+
+type BuildCreateTableSQLResult struct {
+	SQL     string `json:"sql"`
+	Message string `json:"message"`
+}
+
+// --- Partition management types ---
+
+type PartitionActionRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+	Table        string `json:"table"`
+	Action       string `json:"action"` // "add" | "drop" | "truncate"
+	// For "add": the partition clause, e.g. "PARTITION p202504 VALUES LESS THAN ('2025-05-01')"
+	PartitionClause string `json:"partitionClause"`
+	// For "drop"/"truncate": the partition name(s), comma-separated
+	PartitionNames string `json:"partitionNames"`
+}
+
+type PartitionActionResult struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	SQL     string `json:"sql"` // The DDL that was executed
+}
+
+type BuildPartitionDDLRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+	Table        string `json:"table"`
+	Action       string `json:"action"` // "add" | "drop" | "truncate"
+	// For "add":
+	PartitionClause string `json:"partitionClause"`
+	// For "drop"/"truncate":
+	PartitionNames string `json:"partitionNames"`
+}
+
+type BuildPartitionDDLResult struct {
+	SQL     string `json:"sql"`
+	Message string `json:"message"`
+}
+
+type ImportFileRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+	Table        string `json:"table"`
+	FilePath     string `json:"filePath"`
+	Format       string `json:"format"`   // "csv" | "sql"
+	Delimiter    string `json:"delimiter"` // CSV delimiter, default ","
+	HasHeader    bool   `json:"hasHeader"` // CSV has header row
+	Encoding     string `json:"encoding"`  // "utf-8" | "gbk" | "latin1"
+	Mode         string `json:"mode"`      // "insert" | "truncate_insert" | "upsert"
+}
+
+type ImportPreviewRequest struct {
+	FilePath  string `json:"filePath"`
+	Format    string `json:"format"`
+	Delimiter string `json:"delimiter"`
+	HasHeader bool   `json:"hasHeader"`
+	Encoding  string `json:"encoding"`
+	Limit     int    `json:"limit"` // Max rows to preview
+}
+
+type ImportPreviewResult struct {
+	Columns []string            `json:"columns"`
+	Rows    []map[string]string `json:"rows"`
+	Total   int                 `json:"total"`
+	Format  string              `json:"format"`
+	Message string              `json:"message"`
+}
+
+type ImportResult struct {
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	InsertedRows int    `json:"insertedRows"`
+	SkippedRows  int    `json:"skippedRows"`
+	SQL          string `json:"sql"` // The generated INSERT SQL
+}

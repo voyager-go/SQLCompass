@@ -189,11 +189,13 @@ func (s *Service) runRelationalQuery(record store.ConnectionRecord, input QueryR
 		databaseName = firstNonEmpty(record.Database, defaultDatabaseForEngine(record.Engine))
 	}
 
-	db, err := opener(record, databaseName)
+	db, err := s.pool.Get(record.ID, databaseName, func() (*sql.DB, error) {
+		return opener(record, databaseName)
+	})
 	if err != nil {
 		return QueryResult{}, err
 	}
-	defer db.Close()
+	// Pool manages the connection lifecycle — do not close here
 
 	effectiveSQL, autoLimited := applyDefaultPagination(statement, page, pageSize)
 	executedSQL := effectiveSQL

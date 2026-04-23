@@ -144,6 +144,22 @@ func (a *App) GetTablePartitions(input workspace.TablePartitionRequest) (workspa
 	return service.GetTablePartitions(input)
 }
 
+func (a *App) BuildPartitionDDL(input workspace.BuildPartitionDDLRequest) (workspace.BuildPartitionDDLResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.BuildPartitionDDLResult{}, err
+	}
+	return service.BuildPartitionDDL(input)
+}
+
+func (a *App) ExecutePartitionAction(input workspace.PartitionActionRequest) (workspace.PartitionActionResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.PartitionActionResult{}, err
+	}
+	return service.ExecutePartitionAction(input)
+}
+
 func (a *App) GetTableRowCounts(input workspace.TableRowCountRequest) (workspace.TableRowCountResult, error) {
 	service, err := a.requireWorkspace()
 	if err != nil {
@@ -281,6 +297,22 @@ func (a *App) GenerateIndexName(input workspace.GenerateIndexNameRequest) (works
 	return service.GenerateIndexName(input)
 }
 
+func (a *App) BuildAlterSQL(input workspace.BuildAlterSQLRequest) (workspace.BuildAlterSQLResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.BuildAlterSQLResult{}, err
+	}
+	return service.BuildAlterSQL(input)
+}
+
+func (a *App) BuildCreateTableSQL(input workspace.BuildCreateTableSQLRequest) (workspace.BuildCreateTableSQLResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.BuildCreateTableSQLResult{}, err
+	}
+	return service.BuildCreateTableSQL(input)
+}
+
 func (a *App) OptimizeSQL(input workspace.SQLOptimizeRequest) (workspace.SQLOptimizeResult, error) {
 	service, err := a.requireWorkspace()
 	if err != nil {
@@ -333,6 +365,40 @@ func (a *App) SummarizeChatResult(input workspace.ChatResultSummaryRequest) (wor
 	}
 
 	return service.SummarizeChatResult(input)
+}
+
+func (a *App) ImportFile(input workspace.ImportFileRequest) (workspace.ImportResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.ImportResult{}, err
+	}
+	return service.ImportFile(input)
+}
+
+func (a *App) PreviewImport(input workspace.ImportPreviewRequest) (workspace.ImportPreviewResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.ImportPreviewResult{}, err
+	}
+	return service.PreviewImport(input)
+}
+
+func (a *App) SelectImportFile() string {
+	if a.ctx == nil {
+		return ""
+	}
+	selectedPath, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title: "选择导入文件",
+		Filters: []wailsruntime.FileFilter{
+			{DisplayName: "CSV 文件", Pattern: "*.csv"},
+			{DisplayName: "SQL 文件", Pattern: "*.sql"},
+			{DisplayName: "所有文件", Pattern: "*.*"},
+		},
+	})
+	if err != nil || selectedPath == "" {
+		return ""
+	}
+	return selectedPath
 }
 
 func (a *App) GetStorageInfo() workspace.StorageInfoView {

@@ -130,6 +130,8 @@ func NewStore() (*Store, error) {
 		return nil, err
 	}
 
+	SetEncryptionKey(dataDir)
+
 	return &Store{
 		dataDir:         dataDir,
 		connectionsPath: filepath.Join(dataDir, "app-state.json"),
@@ -202,6 +204,7 @@ func (s *Store) SetDataDir(newDir string) error {
 	s.crashLogsPath = files["crash-logs.json"]
 	s.aiSnapshotsPath = files["ai-snapshots.json"]
 	s.dataDir = absDir
+	SetEncryptionKey(absDir)
 	return nil
 }
 
@@ -210,7 +213,12 @@ func (s *Store) SetDataDir(newDir string) error {
 func (s *Store) LoadConnections() (AppState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.loadConnectionsUnlocked()
+	state, err := s.loadConnectionsUnlocked()
+	if err != nil {
+		return state, err
+	}
+	s.decryptConnectionPasswords(&state)
+	return state, nil
 }
 
 func (s *Store) loadConnectionsUnlocked() (AppState, error) {
@@ -220,7 +228,32 @@ func (s *Store) loadConnectionsUnlocked() (AppState, error) {
 func (s *Store) SaveConnections(state AppState) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.encryptConnectionPasswords(&state)
 	return saveJSON(s.connectionsPath, state)
+}
+
+// encryptConnectionPasswords encrypts any plaintext passwords in the connections.
+func (s *Store) encryptConnectionPasswords(state *AppState) {
+	for i := range state.Connections {
+		if state.Connections[i].Password != "" && !isEncrypted(state.Connections[i].Password) {
+			enc, err := encrypt(state.Connections[i].Password)
+			if err == nil {
+				state.Connections[i].Password = enc
+			}
+		}
+	}
+}
+
+// decryptConnectionPasswords decrypts encrypted passwords in the connections.
+func (s *Store) decryptConnectionPasswords(state *AppState) {
+	for i := range state.Connections {
+		if state.Connections[i].Password != "" && isEncrypted(state.Connections[i].Password) {
+			dec, err := decrypt(state.Connections[i].Password)
+			if err == nil {
+				state.Connections[i].Password = dec
+			}
+		}
+	}
 }
 
 // --- Config ---
