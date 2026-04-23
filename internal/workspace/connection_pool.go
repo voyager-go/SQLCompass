@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"sync"
 	"time"
 )
@@ -103,6 +104,29 @@ func (p *ConnectionPool) Remove(connectionID string, database string) {
 	}
 }
 
+// CloseByConnectionID closes all pooled connections for a given connection ID.
+func (p *ConnectionPool) CloseByConnectionID(connectionID string) int {
+	prefix := connectionID + "/"
+
+	p.mu.Lock()
+	var toClose []*poolEntry
+	for key := range p.entries {
+		if strings.HasPrefix(key, prefix) {
+			if entry, ok := p.entries[key]; ok {
+				toClose = append(toClose, entry)
+			}
+			delete(p.entries, key)
+		}
+	}
+	p.mu.Unlock()
+
+	for _, entry := range toClose {
+		entry.db.Close()
+	}
+
+	return len(toClose)
+}
+
 // CloseAll closes all cached connections.
 func (p *ConnectionPool) CloseAll() {
 	p.mu.Lock()
@@ -115,20 +139,37 @@ func (p *ConnectionPool) CloseAll() {
 	}
 }
 
-// Cleanup removes expired connections.
-func (p *ConnectionPool) Cleanup() {
+// CloseAllWithCount closes all cached connections and returns the count.
+func (p *ConnectionPool) CloseAllWithCount() int {
+	p.mu.Lock()
+	entries := p.entries
+	count := len(entries)
+	p.entries = make(map[string]*poolEntry)
+	p.mu.Unlock()
+
+	for _, entry := range entries {
+		entry.db.Close()
+	}
+	return count
+}
+
+// Cleanup removes expired connections and returns how many were closed.
+func (p *ConnectionPool) Cleanup() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	now := time.Now()
+	var closed int
 	for key, entry := range p.entries {
 		idle := now.Sub(entry.lastUsed)
 		age := now.Sub(entry.openedAt)
 		if idle > p.maxIdle || age > p.maxOpen {
 			entry.db.Close()
 			delete(p.entries, key)
+			closed++
 		}
 	}
+	return closed
 }
 
 // Status returns the current status of all pooled connections.
@@ -154,11 +195,6 @@ func (p *ConnectionPool) Status() ConnectionPoolStatus {
 // GetConnectionPoolStatus returns the current connection pool status.
 func (s *Service) GetConnectionPoolStatus() ConnectionPoolStatus {
 	return s.pool.Status()
-}
-
-// CleanupIdleConnections removes expired connections from the pool.
-func (s *Service) CleanupIdleConnections() {
-	s.pool.Cleanup()
 }
 
 // StartCleanup starts a background goroutine that periodically cleans up expired connections.

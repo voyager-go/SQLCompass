@@ -221,6 +221,27 @@ func (s *Service) DeleteConnection(id string) error {
 	return s.store.SaveConnections(state)
 }
 
+// CloseConnection closes all pooled database connections for a given connection ID.
+func (s *Service) CloseConnection(connectionID string) int {
+	trimmedID := strings.TrimSpace(connectionID)
+	if trimmedID == "" {
+		return 0
+	}
+
+	// Close pooled SQL connections matching this connection ID
+	return s.pool.CloseByConnectionID(trimmedID)
+}
+
+// CleanupIdleConnections removes expired connections from the pool and returns how many were closed.
+func (s *Service) CleanupIdleConnections() int {
+	return s.pool.Cleanup()
+}
+
+// CloseAllPooledConnections closes all connections in the pool and returns how many were closed.
+func (s *Service) CloseAllPooledConnections() int {
+	return s.pool.CloseAllWithCount()
+}
+
 func (s *Service) TestConnection(input ConnectionInput) (ConnectionTestResult, error) {
 	normalized := normalizeConnectionInput(input)
 	if err := validateConnectionInput(normalized, false); err != nil {

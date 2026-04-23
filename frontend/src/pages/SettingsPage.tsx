@@ -5,6 +5,7 @@ import {
     GetStorageInfo,
     GetConnectionPoolStatus,
     CleanupIdleConnections,
+    CloseAllPooledConnections,
     GrantStoragePermission,
     SelectStorageDirectory,
     SetStoragePath,
@@ -146,14 +147,30 @@ export function SettingsPage({
     const handleCleanupIdle = useCallback(async () => {
         if (browserPreview) return;
         try {
-            await CleanupIdleConnections();
-            pushToast("success", "清理完成", "已清理空闲连接");
+            const count = (await CleanupIdleConnections()) as number;
+            if (count > 0) {
+                pushToast("success", "清理完成", `已关闭 ${count} 个空闲连接`);
+            } else {
+                pushToast("info", "无需清理", "当前没有空闲超时的连接");
+            }
             const status = (await GetConnectionPoolStatus()) as ConnectionPoolStatus;
             setPoolStatus(status);
         } catch {
             pushToast("error", "清理失败", "无法清理空闲连接");
         }
     }, [browserPreview, pushToast]);
+
+    const handleCloseAllPooled = useCallback(async () => {
+        if (browserPreview || !poolStatus || poolStatus.total === 0) return;
+        if (!window.confirm(`确定要强制关闭全部 ${poolStatus.total} 个活跃连接吗？`)) return;
+        try {
+            const count = (await CloseAllPooledConnections()) as number;
+            pushToast("success", "已关闭", `共关闭 ${count} 个连接`);
+            setPoolStatus(null);
+        } catch {
+            pushToast("error", "操作失败", "无法关闭连接");
+        }
+    }, [browserPreview, poolStatus, pushToast]);
 
     const clearModalLabel = (() => {
         switch (showClearModal) {
@@ -327,8 +344,11 @@ export function SettingsPage({
                         <button type="button" className="ghost-button" onClick={handleFetchPoolStatus} disabled={browserPreview || poolLoading}>
                             {poolLoading ? "加载中..." : "刷新状态"}
                         </button>
-                        <button type="button" className="ghost-button ghost-button--danger" onClick={handleCleanupIdle} disabled={browserPreview || !poolStatus}>
+                        <button type="button" className="ghost-button" onClick={handleCleanupIdle} disabled={browserPreview || !poolStatus}>
                             清理空闲连接
+                        </button>
+                        <button type="button" className="ghost-button ghost-button--danger" onClick={handleCloseAllPooled} disabled={browserPreview || !poolStatus || (poolStatus?.total ?? 0) === 0}>
+                            关闭全部连接
                         </button>
                     </div>
                 </div>

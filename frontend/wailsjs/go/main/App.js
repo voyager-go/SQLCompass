@@ -38,6 +38,14 @@ export function CleanupIdleConnections() {
   return window['go']['main']['App']['CleanupIdleConnections']();
 }
 
+export function CloseAllPooledConnections() {
+  return window['go']['main']['App']['CloseAllPooledConnections']();
+}
+
+export function CloseConnection(arg1) {
+  return window['go']['main']['App']['CloseConnection'](arg1);
+}
+
 export function ClearAIAPIKey() {
   return window['go']['main']['App']['ClearAIAPIKey']();
 }
@@ -184,6 +192,18 @@ export function SelectImportFile() {
 
 export function SelectStorageDirectory() {
   return window['go']['main']['App']['SelectStorageDirectory']();
+}
+
+export function SelectCertificateFile() {
+  return window['go']['main']['App']['SelectCertificateFile']();
+}
+
+export function SelectSSHKeyFile() {
+  return window['go']['main']['App']['SelectSSHKeyFile']();
+}
+
+export function SelectSQLiteFile() {
+  return window['go']['main']['App']['SelectSQLiteFile']();
 }
 
 export function SetStoragePath(arg1) {

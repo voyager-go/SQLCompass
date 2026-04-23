@@ -152,7 +152,6 @@ export function QueryPage({
     const [sortState, setSortState] = useState<{ column: string | null; direction: "asc" | "desc" | null }>({ column: null, direction: null });
 
     // Transaction state
-    const [txStatus, setTxStatus] = useState<string>("");
     const [txLoading, setTxLoading] = useState(false);
     const [batchModalOpen, setBatchModalOpen] = useState(false);
     const [batchSQLText, setBatchSQLText] = useState("");
@@ -302,13 +301,11 @@ export function QueryPage({
                 database: selectedDatabase,
                 action,
             })) as TransactionResult;
-            setTxStatus(res.success ? `${action.toUpperCase()} 成功: ${res.message}` : `${action.toUpperCase()} 失败: ${res.message}`);
             if (pushToast) {
                 pushToast(res.success ? "success" : "error", action.toUpperCase(), res.message);
             }
         } catch (err) {
             const msg = err instanceof Error ? err.message : "操作失败";
-            setTxStatus(`${action.toUpperCase()} 失败: ${msg}`);
             if (pushToast) pushToast("error", action.toUpperCase(), msg);
         } finally {
             setTxLoading(false);
@@ -385,6 +382,20 @@ export function QueryPage({
                     <button type="button" className="primary-button" onClick={() => handleExecuteQuery(1)} disabled={isExecutingQuery}>
                         {isExecutingQuery ? "执行中..." : "执行"}
                     </button>
+                    <div className="toolbar-divider" />
+                    <button type="button" className="ghost-button ghost-button--sm" onClick={() => handleTransaction("begin")} disabled={txLoading || !selectedConnection} title="开启事务">
+                        BEGIN
+                    </button>
+                    <button type="button" className="ghost-button ghost-button--sm" onClick={() => handleTransaction("commit")} disabled={txLoading || !selectedConnection} title="提交事务">
+                        COMMIT
+                    </button>
+                    <button type="button" className="ghost-button ghost-button--sm" onClick={() => handleTransaction("rollback")} disabled={txLoading || !selectedConnection} title="回滚事务">
+                        ROLLBACK
+                    </button>
+                    <button type="button" className="ghost-button ghost-button--sm" onClick={() => setBatchModalOpen(true)} disabled={!selectedConnection} title="批量执行多条 SQL">
+                        批量执行
+                    </button>
+                    <div className="toolbar-divider" />
                     <div ref={fillMenuRef} style={{ position: "relative", display: hideFill ? "none" : undefined }}>
                         <button
                             type="button"
@@ -523,30 +534,6 @@ export function QueryPage({
                     </div>
                 ) : null}
             </div>
-
-            {/* Transaction Controls */}
-            <div className="tx-controls" style={{ marginTop: 12 }}>
-                <button type="button" className="mini-ghost-button" onClick={() => handleTransaction("begin")} disabled={txLoading || !selectedConnection}>
-                    BEGIN
-                </button>
-                <button type="button" className="mini-ghost-button" onClick={() => handleTransaction("commit")} disabled={txLoading || !selectedConnection}>
-                    COMMIT
-                </button>
-                <button type="button" className="mini-ghost-button" onClick={() => handleTransaction("rollback")} disabled={txLoading || !selectedConnection}>
-                    ROLLBACK
-                </button>
-                <button type="button" className="mini-ghost-button" onClick={() => setBatchModalOpen(true)} disabled={!selectedConnection}>
-                    批量执行
-                </button>
-            </div>
-
-            {/* Transaction Status */}
-            {txStatus ? (
-                <div className="notice-banner notice-banner--info" style={{ marginTop: 8 }}>
-                    <span className="notice-banner__icon">i</span>
-                    <span className="notice-banner__text">{txStatus}</span>
-                </div>
-            ) : null}
 
             {/* Redis Shortcuts */}
             {selectedConnection?.engine === "redis" ? (

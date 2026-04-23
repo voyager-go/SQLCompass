@@ -4453,3 +4453,32 @@ body[data-theme="dark"] .code-block .sh-fnc, body[data-theme="dark"] .sql-highli
     border-radius: 6px;
     resize: vertical;
 }
+
+/* Path Browse Row */
+.path-browse-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    width: 100%;
+}
+
+.path-browse-row input {
+    flex: 1;
+    min-width: 0;
+    cursor: default;
+    background-color: #f8f9fb;
+}
+
+.path-browse-row .ghost-button--sm {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+/* Toolbar Divider */
+.toolbar-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--border-soft);
+    margin: 0 4px;
+    flex-shrink: 0;
+}

@@ -2,8 +2,16 @@ import { NoticeBanner } from "../components/NoticeBanner";
 import { CopyableText } from "../components/CopyableText";
 import { engineLabels, EngineIcon } from "../lib/engine";
 import type { ConnectionInput, ConnectionProfile, ConnectionTestResult, WorkspaceState } from "../types/workspace";
+import { SelectCertificateFile, SelectSSHKeyFile, SelectSQLiteFile, CloseConnection } from "../../wailsjs/go/main/App";
+import { useState, useRef, useEffect } from "react";
 
 type NoticeTone = "success" | "error" | "info";
+
+type ContextMenuState = {
+    profile: ConnectionProfile | null;
+    x: number;
+    y: number;
+};
 
 function connectionTargetLabel(profile: ConnectionProfile): string {
     if (profile.engine === "sqlite") {
@@ -60,6 +68,37 @@ export function ConnectionsPage({
 }: ConnectionsPageProps) {
     const isSQLite = connectionDraft.engine === "sqlite";
 
+    // Right-click context menu
+    const [ctxMenu, setCtxMenu] = useState<ContextMenuState>({ profile: null, x: 0, y: 0 });
+    const ctxMenuRef = useRef<HTMLDivElement>(null);
+
+    function handleContextMenu(e: React.MouseEvent, profile: ConnectionProfile) {
+        e.preventDefault();
+        e.stopPropagation();
+        setCtxMenu({ profile, x: e.clientX, y: e.clientY });
+    }
+
+    function closeContextMenu() {
+        setCtxMenu((prev) => ({ ...prev, profile: null }));
+    }
+
+    async function handleCtxCloseConnection(profile: ConnectionProfile) {
+        closeContextMenu();
+        try {
+            const closed = await CloseConnection(profile.id);
+            if (pushToast) pushToast("success", "连接已关闭", `已关闭 ${closed} 个活跃连接`);
+        } catch (err) {
+            if (pushToast) pushToast("error", "关闭失败", err instanceof Error ? err.message : "未知错误");
+        }
+    }
+
+    // Close context menu on outside click
+    useEffect(() => {
+        if (!ctxMenu.profile) return;
+        document.addEventListener("mousedown", closeContextMenu);
+        return () => document.removeEventListener("mousedown", closeContextMenu);
+    }, [ctxMenu.profile]);
+
     return (
         <section className="page-panel">
             <NoticeBanner notice={connectionNotice} />
@@ -91,7 +130,11 @@ export function ConnectionsPage({
                                 </div>
                                 <div className="connection-group-list">
                                     {group.connections.map((profile) => (
-                                        <div key={profile.id} className={`connection-card__item${profile.id === selectedConnectionId ? " connection-card__item--active" : ""}`}>
+                                        <div
+                                            key={profile.id}
+                                            className={`connection-card__item${profile.id === selectedConnectionId ? " connection-card__item--active" : ""}`}
+                                            onContextMenu={(e) => handleContextMenu(e, profile)}
+                                        >
                                             <div
                                                 className="connection-card__main"
                                                 role="button"
@@ -329,15 +372,54 @@ export function ConnectionsPage({
                                 </label>
                                 <label className="field field--half">
                                     <span>CA 证书路径</span>
-                                    <input value={connectionDraft.sslCaCert || ""} onChange={(event) => updateConnectionField("sslCaCert", event.target.value)} placeholder="可选" />
+                                    <div className="path-browse-row">
+                                        <input value={connectionDraft.sslCaCert || ""} onChange={(event) => updateConnectionField("sslCaCert", event.target.value)} placeholder="点击右侧选择" readOnly />
+                                        <button
+                                            type="button"
+                                            className="ghost-button ghost-button--sm"
+                                            onClick={async () => {
+                                                const path = await SelectCertificateFile();
+                                                if (path) updateConnectionField("sslCaCert", path);
+                                            }}
+                                            title="浏览文件"
+                                        >
+                                            浏览
+                                        </button>
+                                    </div>
                                 </label>
                                 <label className="field field--half">
                                     <span>客户端证书路径</span>
-                                    <input value={connectionDraft.sslClientCert || ""} onChange={(event) => updateConnectionField("sslClientCert", event.target.value)} placeholder="可选" />
+                                    <div className="path-browse-row">
+                                        <input value={connectionDraft.sslClientCert || ""} onChange={(event) => updateConnectionField("sslClientCert", event.target.value)} placeholder="点击右侧选择" readOnly />
+                                        <button
+                                            type="button"
+                                            className="ghost-button ghost-button--sm"
+                                            onClick={async () => {
+                                                const path = await SelectCertificateFile();
+                                                if (path) updateConnectionField("sslClientCert", path);
+                                            }}
+                                            title="浏览文件"
+                                        >
+                                            浏览
+                                        </button>
+                                    </div>
                                 </label>
                                 <label className="field field--half">
                                     <span>客户端密钥路径</span>
-                                    <input value={connectionDraft.sslClientKey || ""} onChange={(event) => updateConnectionField("sslClientKey", event.target.value)} placeholder="可选" />
+                                    <div className="path-browse-row">
+                                        <input value={connectionDraft.sslClientKey || ""} onChange={(event) => updateConnectionField("sslClientKey", event.target.value)} placeholder="点击右侧选择" readOnly />
+                                        <button
+                                            type="button"
+                                            className="ghost-button ghost-button--sm"
+                                            onClick={async () => {
+                                                const path = await SelectCertificateFile();
+                                                if (path) updateConnectionField("sslClientKey", path);
+                                            }}
+                                            title="浏览文件"
+                                        >
+                                            浏览
+                                        </button>
+                                    </div>
                                 </label>
 
                                 {/* SSH Tunnel Configuration */}
@@ -367,7 +449,20 @@ export function ConnectionsPage({
                                         </label>
                                         <label className="field field--full">
                                             <span>SSH 私钥路径</span>
-                                            <input value={connectionDraft.sshKeyFile || ""} onChange={(event) => updateConnectionField("sshKeyFile", event.target.value)} placeholder="可选，~/.ssh/id_rsa" />
+                                            <div className="path-browse-row">
+                                                <input value={connectionDraft.sshKeyFile || ""} onChange={(event) => updateConnectionField("sshKeyFile", event.target.value)} placeholder="点击右侧选择" readOnly />
+                                                <button
+                                                    type="button"
+                                                    className="ghost-button ghost-button--sm"
+                                                    onClick={async () => {
+                                                        const path = await SelectSSHKeyFile();
+                                                        if (path) updateConnectionField("sshKeyFile", path);
+                                                    }}
+                                                    title="浏览文件"
+                                                >
+                                                    浏览
+                                                </button>
+                                            </div>
                                         </label>
                                     </>
                                 ) : null}
@@ -375,7 +470,20 @@ export function ConnectionsPage({
                         ) : (
                             <label className="field field--full">
                                 <span>SQLite 文件</span>
-                                <input value={connectionDraft.filePath} onChange={(event) => updateConnectionField("filePath", event.target.value)} />
+                                <div className="path-browse-row">
+                                    <input value={connectionDraft.filePath} onChange={(event) => updateConnectionField("filePath", event.target.value)} placeholder="点击右侧选择" readOnly />
+                                    <button
+                                        type="button"
+                                        className="ghost-button ghost-button--sm"
+                                        onClick={async () => {
+                                            const path = await SelectSQLiteFile();
+                                            if (path) updateConnectionField("filePath", path);
+                                        }}
+                                        title="浏览文件"
+                                    >
+                                        浏览
+                                    </button>
+                                </div>
                             </label>
                         )}
 
@@ -393,6 +501,59 @@ export function ConnectionsPage({
                     ) : null}
                 </div>
             </div>
+
+            {/* Right-click Context Menu */}
+            {ctxMenu.profile ? (
+                <div
+                    ref={ctxMenuRef}
+                    className="context-menu"
+                    style={{ position: "fixed", left: ctxMenu.x, top: ctxMenu.y, zIndex: 1000, minWidth: 150 }}
+                >
+                    <button
+                        type="button"
+                        className="context-menu__item"
+                        onClick={() => {
+                            closeContextMenu();
+                            fillConnectionDraft(ctxMenu.profile!);
+                        }}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                        编辑连接
+                    </button>
+                    <button
+                        type="button"
+                        className="context-menu__item"
+                        onClick={() => handleCtxCloseConnection(ctxMenu.profile!)}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18.36 6.64A9 9 0 0 0 5.64 6.64"></path>
+                            <line x1="12" y1="3" x2="12" y2="7"></line>
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M8 16l1-5h6l1 5"></path>
+                        </svg>
+                        关闭连接
+                    </button>
+                    <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
+                    <button
+                        type="button"
+                        className="context-menu__item context-menu__item--danger"
+                        onClick={() => {
+                            const p = ctxMenu.profile!;
+                            closeContextMenu();
+                            handleDeleteConnection(p);
+                        }}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        删除连接
+                    </button>
+                </div>
+            ) : null}
         </section>
     );
 }

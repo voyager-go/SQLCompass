@@ -20,7 +20,11 @@ export function BuildPartitionDDL(arg1:workspace.BuildPartitionDDLRequest):Promi
 
 export function ChatWithDatabase(arg1:workspace.ChatDatabaseRequest):Promise<workspace.ChatDatabaseResponse>;
 
-export function CleanupIdleConnections():Promise<void>;
+export function CleanupIdleConnections():Promise<number>;
+
+export function CloseAllPooledConnections():Promise<number>;
+
+export function CloseConnection(arg1:string):Promise<number>;
 
 export function ClearAIAPIKey():Promise<workspace.AISettingsView>;
 
@@ -95,6 +99,12 @@ export function SaveConnection(arg1:workspace.ConnectionInput):Promise<workspace
 export function SelectImportFile():Promise<string>;
 
 export function SelectStorageDirectory():Promise<string>;
+
+export function SelectCertificateFile():Promise<string>;
+
+export function SelectSSHKeyFile():Promise<string>;
+
+export function SelectSQLiteFile():Promise<string>;
 
 export function SetStoragePath(arg1:string):Promise<workspace.SetStoragePathResult>;
 

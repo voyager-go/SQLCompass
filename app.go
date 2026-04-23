@@ -99,6 +99,14 @@ func (a *App) DeleteConnection(id string) error {
 	return service.DeleteConnection(id)
 }
 
+func (a *App) CloseConnection(connectionID string) int {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return 0
+	}
+	return service.CloseConnection(connectionID)
+}
+
 func (a *App) TestConnection(input workspace.ConnectionInput) (workspace.ConnectionTestResult, error) {
 	service, err := a.requireWorkspace()
 	if err != nil {
@@ -364,12 +372,20 @@ func (a *App) GetConnectionPoolStatus() workspace.ConnectionPoolStatus {
 	return service.GetConnectionPoolStatus()
 }
 
-func (a *App) CleanupIdleConnections() {
+func (a *App) CleanupIdleConnections() int {
 	service, err := a.requireWorkspace()
 	if err != nil {
-		return
+		return 0
 	}
-	service.CleanupIdleConnections()
+	return service.CleanupIdleConnections()
+}
+
+func (a *App) CloseAllPooledConnections() int {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return 0
+	}
+	return service.CloseAllPooledConnections()
 }
 
 func (a *App) ExecuteTransaction(input workspace.TransactionRequest) (workspace.TransactionResult, error) {
@@ -500,6 +516,57 @@ func (a *App) SelectStorageDirectory() string {
 	selectedPath, err := wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{
 		Title:            "选择存储路径",
 		DefaultDirectory: "",
+	})
+	if err != nil || selectedPath == "" {
+		return ""
+	}
+	return selectedPath
+}
+
+func (a *App) SelectCertificateFile() string {
+	if a.ctx == nil {
+		return ""
+	}
+	selectedPath, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title: "选择证书/密钥文件",
+		Filters: []wailsruntime.FileFilter{
+			{DisplayName: "证书文件", Pattern: "*.pem;*.crt;*.cer;*.key;*.p12;*.pfx"},
+			{DisplayName: "所有文件", Pattern: "*.*"},
+		},
+	})
+	if err != nil || selectedPath == "" {
+		return ""
+	}
+	return selectedPath
+}
+
+func (a *App) SelectSSHKeyFile() string {
+	if a.ctx == nil {
+		return ""
+	}
+	selectedPath, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title: "选择 SSH 私钥文件",
+		Filters: []wailsruntime.FileFilter{
+			{DisplayName: "SSH 密钥", Pattern: "*id_rsa;*id_dsa;*id_ecdsa;*id_ed25519;*.pem"},
+			{DisplayName: "所有文件", Pattern: "*.*"},
+		},
+	})
+	if err != nil || selectedPath == "" {
+		return ""
+	}
+	return selectedPath
+}
+
+func (a *App) SelectSQLiteFile() string {
+	if a.ctx == nil {
+		return ""
+	}
+	selectedPath, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title: "选择 SQLite 数据库文件",
+		Filters: []wailsruntime.FileFilter{
+			{DisplayName: "SQLite 数据库", Pattern: "*.sqlite;*.db;*.sqlite3;*.db3"},
+			{DisplayName: "所有文件", Pattern: "*.*"},
+		},
 	})
 	if err != nil || selectedPath == "" {
 		return ""
