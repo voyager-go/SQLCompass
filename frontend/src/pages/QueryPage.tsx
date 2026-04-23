@@ -647,11 +647,11 @@ export function QueryPage({
                                                     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                                                         {column}
                                                         {sortState.column === column ? (
-                                                            <span style={{ fontSize: 10, opacity: 0.6 }}>
+                                                            <span style={{ fontSize: 13, opacity: 0.85, color: "var(--accent)" }}>
                                                                 {sortState.direction === "asc" ? "▲" : "▼"}
                                                             </span>
                                                         ) : (
-                                                            <span style={{ fontSize: 10, opacity: 0.15 }}>⇅</span>
+                                                            <span style={{ fontSize: 13, opacity: 0.35 }}>⇅</span>
                                                         )}
                                                     </span>
                                                 </th>

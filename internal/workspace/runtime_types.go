@@ -374,3 +374,29 @@ type GenerateIndexNameRequest struct {
 type GenerateIndexNameResult struct {
 	Name string `json:"name"`
 }
+
+type PartitionInfo struct {
+	Name        string `json:"name"`
+	Method      string `json:"method"`
+	Expression  string `json:"expression"`
+	Description string `json:"description"`
+	RowCount    int64  `json:"rowCount"`
+	DataSize    int64  `json:"dataSize"`
+	IndexSize   int64  `json:"indexSize"`
+}
+
+type TablePartitionRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+	Table        string `json:"table"`
+}
+
+type TablePartitionResult struct {
+	ConnectionID string          `json:"connectionId"`
+	Database     string          `json:"database"`
+	Table        string          `json:"table"`
+	PartitionKey string          `json:"partitionKey"`
+	Partitions   []PartitionInfo `json:"partitions"`
+	Supported    bool            `json:"supported"`
+	Message      string          `json:"message"`
+}

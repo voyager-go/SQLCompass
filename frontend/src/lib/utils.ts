@@ -57,7 +57,7 @@ export function editorInputType(type: string): "text" | "date" | "time" | "datet
     if (/^date$/i.test(type)) {
         return "date";
     }
-    if (/^time/i.test(type)) {
+    if (/^time$/i.test(type)) {
         return "time";
     }
     if (/(datetime|timestamp)/i.test(type)) {

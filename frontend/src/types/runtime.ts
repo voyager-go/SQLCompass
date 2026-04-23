@@ -280,6 +280,32 @@ export type GenerateIndexNameResult = {
     name: string;
 };
 
+export type PartitionInfo = {
+    name: string;
+    method: string;
+    expression: string;
+    description: string;
+    rowCount: number;
+    dataSize: number;
+    indexSize: number;
+};
+
+export type TablePartitionRequest = {
+    connectionId: string;
+    database: string;
+    table: string;
+};
+
+export type TablePartitionResult = {
+    connectionId: string;
+    database: string;
+    table: string;
+    partitionKey: string;
+    partitions: PartitionInfo[];
+    supported: boolean;
+    message: string;
+};
+
 export type SQLOptimizeRequest = {
     connectionId: string;
     database: string;

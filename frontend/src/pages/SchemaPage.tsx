@@ -243,7 +243,19 @@ function generateJavaJPA(tableName: string, fields: SchemaDraftField[]): string 
         lines.push(`    private ${javaType} ${toCamelCase(f.name)};`);
         lines.push("");
     }
-    lines.push("    // TODO: generate getters and setters");
+    for (const f of fields) {
+        const javaType = mapSqlTypeToJava(f.type);
+        const fieldName = toCamelCase(f.name);
+        const pascalName = toPascalCase(f.name);
+        lines.push("");
+        lines.push(`    public ${javaType} get${pascalName}() {`);
+        lines.push(`        return this.${fieldName};`);
+        lines.push("    }");
+        lines.push("");
+        lines.push(`    public void set${pascalName}(${javaType} ${fieldName}) {`);
+        lines.push(`        this.${fieldName} = ${fieldName};`);
+        lines.push("    }");
+    }
     lines.push("}");
     return lines.join("\n");
 }
@@ -316,6 +328,8 @@ interface SchemaPageProps {
     isSavingFields: boolean;
     handleSaveIndexes: () => Promise<void>;
     isSavingIndexes: boolean;
+    pushToast: (tone: NoticeTone, title: string, message: string) => void;
+    onOpenPartitionPage?: () => void;
 }
 
 export function SchemaPage({
@@ -350,6 +364,8 @@ export function SchemaPage({
     isSavingFields,
     handleSaveIndexes,
     isSavingIndexes,
+    pushToast,
+    onOpenPartitionPage,
 }: SchemaPageProps) {
     const indexTypeOptions = getIndexTypeOptions(activeEngine);
     const [runningAiDiagnose, setRunningAiDiagnose] = useState(false);
@@ -398,6 +414,11 @@ export function SchemaPage({
                     <button type="button" className="ghost-button" onClick={handleCopyDDL} disabled={!tableDetail}>
                         复制 DDL
                     </button>
+                    {onOpenPartitionPage ? (
+                        <button type="button" className="ghost-button" onClick={onOpenPartitionPage} disabled={!tableDetail}>
+                            分区管理
+                        </button>
+                    ) : null}
                     <div ref={modelMenuRef} style={{ position: "relative" }}>
                         <button
                             type="button"
@@ -739,7 +760,12 @@ export function SchemaPage({
                                 type="button"
                                 className="primary-button"
                                 onClick={async () => {
-                                    await navigator.clipboard.writeText(modelCodeModal.code);
+                                    try {
+                                        await navigator.clipboard.writeText(modelCodeModal.code);
+                                        pushToast("success", "复制成功", "代码已复制到剪贴板");
+                                    } catch {
+                                        pushToast("error", "复制失败", "请稍后重试");
+                                    }
                                 }}
                             >
                                 复制代码

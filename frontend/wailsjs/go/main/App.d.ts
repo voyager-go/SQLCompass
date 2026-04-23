@@ -46,6 +46,8 @@ export function GetStorageInfo():Promise<workspace.StorageInfoView>;
 
 export function GetTableDetail(arg1:workspace.TableDetailRequest):Promise<workspace.TableDetail>;
 
+export function GetTablePartitions(arg1:workspace.TablePartitionRequest):Promise<workspace.TablePartitionResult>;
+
 export function GetTableRowCounts(arg1:workspace.TableRowCountRequest):Promise<workspace.TableRowCountResult>;
 
 export function GetWorkspaceState():Promise<workspace.WorkspaceState>;

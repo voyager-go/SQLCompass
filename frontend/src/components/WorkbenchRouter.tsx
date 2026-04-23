@@ -4,6 +4,7 @@ import { QueryPage } from "../pages/QueryPage";
 import { HistoryPage } from "../pages/HistoryPage";
 import { SchemaPage } from "../pages/SchemaPage";
 import { CreateTablePage } from "../pages/CreateTablePage";
+import { PartitionPage } from "../pages/PartitionPage";
 import { AIPage } from "../pages/AIPage";
 import { ThemePage } from "../pages/ThemePage";
 import { SettingsPage } from "../pages/SettingsPage";
@@ -204,6 +205,7 @@ export interface WorkbenchRouterProps {
     isSavingFields: boolean;
     handleSaveIndexes: () => Promise<void>;
     isSavingIndexes: boolean;
+    onOpenPartitionPage?: () => void;
 
     // AI
     aiNotice: Notice | null;
@@ -409,6 +411,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         isSavingFields,
         handleSaveIndexes,
         isSavingIndexes,
+        onOpenPartitionPage,
         // AI
         aiNotice,
         aiForm,
@@ -616,6 +619,8 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     isSavingFields={isSavingFields}
                     handleSaveIndexes={handleSaveIndexes}
                     isSavingIndexes={isSavingIndexes}
+                    pushToast={pushToast}
+                    onOpenPartitionPage={onOpenPartitionPage}
                 />
             );
         case "ai":
@@ -638,6 +643,15 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     setThemeMode={setThemeMode}
                     customTheme={customTheme}
                     setCustomTheme={setCustomTheme}
+                    pushToast={pushToast}
+                />
+            );
+        case "partition":
+            return (
+                <PartitionPage
+                    selectedConnection={selectedConnection}
+                    selectedDatabase={selectedDatabase}
+                    selectedTable={selectedTable}
                     pushToast={pushToast}
                 />
             );

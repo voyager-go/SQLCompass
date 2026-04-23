@@ -1789,6 +1789,14 @@ function App() {
         setTableContextMenu(null);
     }
 
+    function openPartitionPage() {
+        if (workMode === "chat") {
+            setChatBlockerModalOpen(true);
+            return;
+        }
+        setActivePage("partition");
+    }
+
     function syncSelectedSnippet() {
         const editor = sqlEditorRef.current;
         const model = editor?.getModel();
@@ -1977,36 +1985,6 @@ function App() {
                 endColumn: endPosition.column,
             });
         });
-    }
-
-    async function handleBeautifySQL() {
-        if (!selectedConnection || !sqlText.trim()) {
-            return;
-        }
-
-        try {
-            setIsOptimizingSQL(true);
-            const result = (await BeautifySQL({
-                connectionId: selectedConnection.id,
-                database: selectedDatabase,
-                sql: sqlText,
-                prompt: "",
-            })) as SQLOptimizeResult;
-            setSQLText(result.sql);
-            setSQLAnalysis(result.analysis);
-            setQueryErrorDetail("");
-            setSelectedSnippet(null);
-            setQueryNotice({ tone: "success", message: "SQL 已美化并回填到编辑器。" });
-        } catch (error) {
-            const message = getErrorMessage(error);
-            setQueryNotice({ tone: "error", message });
-        } finally {
-            setIsOptimizingSQL(false);
-        }
-    }
-
-    async function handleOptimizeSQL() {
-        return requestOptimizeSQL("full", sqlText);
     }
 
     async function handleBeautifySelectedSQL() {
@@ -2521,6 +2499,7 @@ function App() {
                         isSavingFields={schema.isSavingFields}
                         handleSaveIndexes={schema.handleSaveIndexes}
                         isSavingIndexes={schema.isSavingIndexes}
+                        onOpenPartitionPage={openPartitionPage}
                         aiNotice={ai.aiNotice}
                         aiForm={ai.aiForm}
                         setAIForm={ai.setAIForm}

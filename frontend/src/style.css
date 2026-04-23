@@ -4006,3 +4006,37 @@ body[data-theme="dark"] .code-block .sh-fnc, body[data-theme="dark"] .sql-highli
         bottom: 12px;
     }
 }
+
+/* ── Partition Page ── */
+
+.partition-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 16px;
+    padding: 16px 0;
+}
+
+.partition-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+}
+
+.partition-stat__label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.partition-stat__value {
+    font-size: 15px;
+    color: var(--text-primary);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

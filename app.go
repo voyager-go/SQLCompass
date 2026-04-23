@@ -135,6 +135,15 @@ func (a *App) GetExplorerTree(input workspace.ExplorerRequest) (workspace.Explor
 	return service.GetExplorerTree(input)
 }
 
+func (a *App) GetTablePartitions(input workspace.TablePartitionRequest) (workspace.TablePartitionResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.TablePartitionResult{}, err
+	}
+
+	return service.GetTablePartitions(input)
+}
+
 func (a *App) GetTableRowCounts(input workspace.TableRowCountRequest) (workspace.TableRowCountResult, error) {
 	service, err := a.requireWorkspace()
 	if err != nil {

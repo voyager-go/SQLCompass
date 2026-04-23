@@ -36,11 +36,6 @@ var (
 	productDesc = []string{"这款产品采用先进技术，具有出色的性能和可靠性。", "经过精心设计，外观时尚，功能强大，深受用户喜爱。", "采用环保材料，节能高效，是您的理想选择。", "品质卓越，经久耐用，为您提供最佳使用体验。", "集多种功能于一体，操作简便，适合各种场景。", "创新设计，突破传统，引领行业新潮流。", "高性价比，售后无忧，让您买得放心，用得舒心。", "专业品质，细节精致，彰显不凡品味。", "智能互联，高效便捷，让生活更美好。", "严格质检，安全可靠，值得信赖的优选品牌。"}
 )
 
-/* ── 种子初始化 ── */
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 /* ── 公开：根据 fakeType 生成值 ── */
 
 func generateFakeValueByType(fakeType string, seed int, fieldType string) any {
@@ -194,6 +189,12 @@ func parseFieldMeta(fieldType string) fieldMeta {
 		meta.kind = "int"
 	case "numeric":
 		meta.kind = "decimal"
+	case "character varying":
+		meta.kind = "varchar"
+	case "character":
+		meta.kind = "char"
+	case "double precision":
+		meta.kind = "double"
 	}
 
 	return meta
@@ -239,6 +240,19 @@ func generateFakeValue(fieldType string, seed int) any {
 		return []byte(fmt.Sprintf("bin_%x", seed+1))
 	case "bit":
 		return seed % 2
+	case "vector":
+		n := meta.length
+		if n <= 0 {
+			n = 10
+		}
+		if n > 1024 {
+			n = 1024
+		}
+		parts := make([]string, n)
+		for i := 0; i < n; i++ {
+			parts[i] = fmt.Sprintf("%.4f", rand.Float64())
+		}
+		return "[" + strings.Join(parts, ",") + "]"
 	default:
 		return fmt.Sprintf("val_%x", seed+1)
 	}
