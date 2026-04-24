@@ -101,21 +101,34 @@ func (s *Service) getMongoDBExplorerTree(record store.ConnectionRecord, preferre
 		tables := []TableNode{}
 		for _, collName := range collections {
 			tables = append(tables, TableNode{
-				Name:   collName,
-				Engine: string(database.MongoDB),
-				Rows:   -1,
+				Name:    collName,
+				Engine:  string(database.MongoDB),
+				Rows:    -1,
+				Comment: "MongoDB Collection",
 			})
 		}
 
 		databases = append(databases, DatabaseNode{
-			Name:   dbName,
-			Tables: tables,
+			Name:       dbName,
+			IsSystem:   false,
+			TableCount: len(tables),
+			Tables:     tables,
 		})
 	}
+	dbNames := make([]string, 0, len(databases))
+	for _, node := range databases {
+		dbNames = append(dbNames, node.Name)
+	}
+	activeDatabase := chooseActiveDatabase(preferredDatabase, record.Database, dbNames)
 
 	return ExplorerTree{
-		Engine:    string(database.MongoDB),
-		Databases: databases,
+		ConnectionID:    record.ID,
+		ConnectionName:  record.Name,
+		Engine:          string(database.MongoDB),
+		Databases:       databases,
+		ActiveDatabase:  activeDatabase,
+		ActiveTable:     "",
+		CanDesignTables: false,
 	}, nil
 }
 
@@ -259,6 +272,14 @@ func bsonTypeName(v interface{}) string {
 var dbCommandPattern = regexp.MustCompile(`^db\.([^.]+)\.(.+)$`)
 
 func (s *Service) runMongoDBQuery(record store.ConnectionRecord, input QueryRequest, persistHistory bool) (QueryResult, error) {
+	statement := strings.TrimSpace(input.SQL)
+	if statement == "" {
+		return QueryResult{}, errors.New("命令不能为空")
+	}
+
+	analysis := analyzeSQL(statement)
+	startedAt := time.Now()
+
 	client, err := openMongoDBClient(record)
 	if err != nil {
 		return QueryResult{}, err
@@ -276,21 +297,51 @@ func (s *Service) runMongoDBQuery(record store.ConnectionRecord, input QueryRequ
 		return QueryResult{}, errors.New("未指定数据库")
 	}
 
-	statement := strings.TrimSpace(input.SQL)
+	page := input.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := input.PageSize
+	if pageSize <= 0 {
+		pageSize = 50
+	}
 
+	var result QueryResult
 	if strings.HasPrefix(statement, "{") {
-		return s.runMongoDBRawCommand(ctx, client, dbName, statement, input.Page, input.PageSize)
+		result, err = s.runMongoDBRawCommand(ctx, client, dbName, statement, page, pageSize)
+	} else {
+		matches := dbCommandPattern.FindStringSubmatch(statement)
+		if len(matches) != 3 {
+			return QueryResult{}, errors.New("MongoDB 查询格式应为 db.collection.find({}) 或原始 JSON 命令")
+		}
+
+		collectionName := matches[1]
+		actionWithArgs := matches[2]
+		result, err = s.runMongoDBCollectionCommand(ctx, client, dbName, collectionName, actionWithArgs, page, pageSize)
 	}
 
-	matches := dbCommandPattern.FindStringSubmatch(statement)
-	if len(matches) != 3 {
-		return QueryResult{}, errors.New("MongoDB 查询格式应为 db.collection.find({}) 或原始 JSON 命令")
+	duration := time.Since(startedAt)
+	if err != nil {
+		if persistHistory {
+			_ = s.appendHistory(record, dbName, statement, statement, analysis, false, 0, duration)
+		}
+		return QueryResult{}, err
 	}
 
-	collectionName := matches[1]
-	actionWithArgs := matches[2]
+	result.DurationMS = duration.Milliseconds()
+	result.EffectiveSQL = statement
+	result.Analysis = analysis
+	if result.Page <= 0 {
+		result.Page = page
+	}
+	if result.PageSize <= 0 {
+		result.PageSize = pageSize
+	}
+	if persistHistory {
+		_ = s.appendHistory(record, dbName, statement, statement, analysis, true, int64(len(result.Rows)), duration)
+	}
 
-	return s.runMongoDBCollectionCommand(ctx, client, dbName, collectionName, actionWithArgs, input.Page, input.PageSize)
+	return result, nil
 }
 
 func (s *Service) runMongoDBRawCommand(ctx context.Context, client *mongo.Client, dbName string, statement string, page int, pageSize int) (QueryResult, error) {
@@ -312,6 +363,7 @@ func (s *Service) runMongoDBRawCommand(ctx context.Context, client *mongo.Client
 		Columns:       columns,
 		Rows:          rows,
 		Page:          page,
+		PageSize:      pageSize,
 		DurationMS:    0,
 		HasNextPage:   false,
 		StatementType: "MONGODB_COMMAND",
@@ -369,9 +421,12 @@ func (s *Service) runMongoDBFind(ctx context.Context, coll *mongo.Collection, ar
 	if pageSize <= 0 {
 		pageSize = 50
 	}
+	if page <= 0 {
+		page = 1
+	}
 	skip := (page - 1) * pageSize
 
-	opts := options.Find().SetLimit(int64(pageSize)).SetSkip(int64(skip))
+	opts := options.Find().SetLimit(int64(pageSize + 1)).SetSkip(int64(skip))
 	cursor, err := coll.Find(ctx, filter, opts)
 	if err != nil {
 		return QueryResult{}, err
@@ -392,10 +447,13 @@ func (s *Service) runMongoDBAggregate(ctx context.Context, coll *mongo.Collectio
 	if pageSize <= 0 {
 		pageSize = 50
 	}
+	if page <= 0 {
+		page = 1
+	}
 	skip := (page - 1) * pageSize
 
 	pipeline = append(pipeline, bson.M{"$skip": skip})
-	pipeline = append(pipeline, bson.M{"$limit": pageSize})
+	pipeline = append(pipeline, bson.M{"$limit": pageSize + 1})
 
 	cursor, err := coll.Aggregate(ctx, pipeline)
 	if err != nil {
@@ -554,13 +612,19 @@ func mongoCursorToQueryResult(cursor *mongo.Cursor, ctx context.Context, page in
 	for k := range columnSet {
 		columns = append(columns, k)
 	}
+	hasNext := false
+	if pageSize > 0 && len(rows) > pageSize {
+		hasNext = true
+		rows = rows[:pageSize]
+	}
 
 	return QueryResult{
 		Columns:       columns,
 		Rows:          rows,
 		Page:          page,
+		PageSize:      pageSize,
 		DurationMS:    0,
-		HasNextPage:   len(rows) == pageSize,
+		HasNextPage:   hasNext,
 		StatementType: stmtType,
 		Message:       fmt.Sprintf("返回 %d 个文档", len(rows)),
 	}, nil
@@ -643,9 +707,12 @@ func (s *Service) previewMongoDBCollection(record store.ConnectionRecord, input 
 	if pageSize <= 0 {
 		pageSize = 50
 	}
+	if input.Page <= 0 {
+		input.Page = 1
+	}
 	skip := (input.Page - 1) * pageSize
 
-	opts := options.Find().SetLimit(int64(pageSize)).SetSkip(int64(skip))
+	opts := options.Find().SetLimit(int64(pageSize + 1)).SetSkip(int64(skip))
 	cursor, err := coll.Find(ctx, bson.M{}, opts)
 	if err != nil {
 		return QueryResult{}, err
@@ -691,7 +758,7 @@ func (s *Service) getMongoDBTableRowCounts(record store.ConnectionRecord, databa
 		}
 	}
 
-	return TableRowCountResult{Counts: counts}, nil
+	return TableRowCountResult{ConnectionID: record.ID, Database: databaseName, Counts: counts}, nil
 }
 
 func (s *Service) fillMongoDBTable(record store.ConnectionRecord, input FillTableRequest) (FillTableResult, error) {

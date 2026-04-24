@@ -1,10 +1,10 @@
 package workspace
 
 import (
-	"errors"
-	"sort"
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +33,11 @@ func (s *Service) getRedisExplorerTree(record store.ConnectionRecord, preferredD
 	counts := parseRedisKeyspaceInfo(info)
 	if len(counts) == 0 {
 		counts[0] = 0
+	}
+	if preferredIndex, ok := redisDatabaseIndex(firstNonEmpty(preferredDatabase, record.Database)); ok {
+		if _, exists := counts[preferredIndex]; !exists {
+			counts[preferredIndex] = 0
+		}
 	}
 
 	indices := make([]int, 0, len(counts))
@@ -187,7 +192,7 @@ func (s *Service) previewRedisKey(record store.ConnectionRecord, input TablePrev
 		columns = []string{"member", "score"}
 		rows = make([]map[string]string, 0, len(values))
 		for _, value := range values {
-			rows = append(rows, map[string]string{"member": value.Member.(string), "score": strconv.FormatFloat(value.Score, 'f', -1, 64)})
+			rows = append(rows, map[string]string{"member": fmt.Sprint(value.Member), "score": strconv.FormatFloat(value.Score, 'f', -1, 64)})
 		}
 	case "stream":
 		values, _ := client.XRangeN(ctx, input.Table, "-", "+", 10).Result()
@@ -224,12 +229,10 @@ func (s *Service) runRedisQuery(record store.ConnectionRecord, input QueryReques
 	defer client.Close()
 
 	databaseName := normalizeRedisDatabaseName(input.Database, record.Database)
-	if databaseName != "db0" {
-		if index, err := strconv.Atoi(strings.TrimPrefix(databaseName, "db")); err == nil {
-			client = client.WithTimeout(30 * time.Second)
-			if err := client.Do(context.Background(), "SELECT", index).Err(); err != nil {
-				return QueryResult{}, err
-			}
+	if index, err := strconv.Atoi(strings.TrimPrefix(databaseName, "db")); err == nil {
+		client = client.WithTimeout(30 * time.Second)
+		if err := client.Do(context.Background(), "SELECT", index).Err(); err != nil {
+			return QueryResult{}, err
 		}
 	}
 
@@ -291,19 +294,19 @@ func openRedisClient(record store.ConnectionRecord) (*redis.Client, error) {
 
 func connectionInputFromRecord(record store.ConnectionRecord) ConnectionInput {
 	return ConnectionInput{
-		Engine:   record.Engine,
-		Host:     record.Host,
-		Port:     record.Port,
-		Username: record.Username,
-		Password: record.Password,
-		Database: record.Database,
-		FilePath: record.FilePath,
-		URL:      record.URL,
-		SSLMode:  record.SSLMode,
-		UseSSH:   record.UseSSH,
-		SSHHost:  record.SSHHost,
-		SSHPort:  record.SSHPort,
-		SSHUser:  record.SSHUser,
+		Engine:      record.Engine,
+		Host:        record.Host,
+		Port:        record.Port,
+		Username:    record.Username,
+		Password:    record.Password,
+		Database:    record.Database,
+		FilePath:    record.FilePath,
+		URL:         record.URL,
+		SSLMode:     record.SSLMode,
+		UseSSH:      record.UseSSH,
+		SSHHost:     record.SSHHost,
+		SSHPort:     record.SSHPort,
+		SSHUser:     record.SSHUser,
 		SSHPassword: record.SSHPassword,
 		SSHKeyFile:  record.SSHKeyFile,
 	}
@@ -353,6 +356,12 @@ func normalizeRedisDatabaseName(requested string, fallback string) string {
 	return trimmed
 }
 
+func redisDatabaseIndex(databaseName string) (int, bool) {
+	normalized := normalizeRedisDatabaseName(databaseName, "")
+	index, err := strconv.Atoi(strings.TrimPrefix(normalized, "db"))
+	return index, err == nil
+}
+
 func stringArgsToAny(items []string) []any {
 	values := make([]any, len(items))
 	for index, item := range items {
@@ -362,10 +371,44 @@ func stringArgsToAny(items []string) []any {
 }
 
 func splitRedisCommand(statement string) []string {
-	parts := strings.Fields(strings.TrimSpace(statement))
-	if len(parts) == 0 {
-		return nil
+	var parts []string
+	var current strings.Builder
+	var quote rune
+	escaped := false
+
+	for _, ch := range strings.TrimSpace(statement) {
+		if escaped {
+			current.WriteRune(ch)
+			escaped = false
+			continue
+		}
+		if ch == '\\' && quote != 0 {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+				continue
+			}
+			current.WriteRune(ch)
+			continue
+		}
+		if ch == '\'' || ch == '"' {
+			quote = ch
+			continue
+		}
+		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+			if current.Len() > 0 {
+				parts = append(parts, current.String())
+				current.Reset()
+			}
+			continue
+		}
+		current.WriteRune(ch)
+	}
+	if current.Len() > 0 {
+		parts = append(parts, current.String())
 	}
 	return parts
 }
-

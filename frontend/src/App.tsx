@@ -137,6 +137,12 @@ const themeStorageKey = "sql-compass-theme";
 const previewPageSize = 30;
 const DEFAULT_QUERY_PAGE_SIZE = 20;
 const QUERY_PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200];
+const completionTriggerCharacters = [
+    " ",
+    ".",
+    "`",
+    ...Array.from("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"),
+];
 const sqlKeywordSpecs: SQLCompletionSpec[] = [
     // DML
     { label: "SELECT", insertText: "SELECT", detail: "查询字段", kind: "keyword" },
@@ -1409,8 +1415,7 @@ function App() {
         completionDisposableRef.current?.dispose();
 
         const disposable = monaco.languages.registerCompletionItemProvider("sql", {
-            // 触发字符：空格、点号、反引号
-            triggerCharacters: [" ", ".", "`"],
+            triggerCharacters: completionTriggerCharacters,
             provideCompletionItems: (model, position) => {
                 try {
                     const word = model.getWordUntilPosition(position);
@@ -1981,6 +1986,11 @@ function App() {
 
         // 强制开启自动建议（Wails 环境下可能需要）
         editor.updateOptions({ quickSuggestionsDelay: 100 });
+        editor.onDidChangeModelContent((event) => {
+            if (event.changes.some((change) => /^[a-zA-Z_`]$/.test(change.text))) {
+                editor.trigger("keyboard", "editor.action.triggerSuggest", {});
+            }
+        });
 
         editor.onDidChangeCursorSelection(() => syncSelectedSnippet());
         editor.onDidScrollChange(() => syncSelectedSnippet());

@@ -314,6 +314,9 @@ export function QueryPage({
 
     const fillDisabled = isFillingTable || isSmartFillingTable || !selectedConnection || !selectedDatabase || !selectedTable;
     const hideFill = selectedConnection && ["redis", "mongodb"].includes(selectedConnection.engine ?? "");
+    const supportsTransaction = Boolean(
+        selectedConnection && ["mysql", "mariadb", "postgresql"].includes(selectedConnection.engine ?? ""),
+    );
 
     // Transaction handlers
     async function handleTransaction(action: "begin" | "commit" | "rollback") {
@@ -325,8 +328,12 @@ export function QueryPage({
                 database: selectedDatabase,
                 action,
             })) as TransactionResult;
+            if (res.success) {
+                setInTransaction(action === "begin");
+            }
             if (pushToast) {
-                pushToast(res.success ? "success" : "error", action.toUpperCase(), res.message);
+                const titleMap = { begin: "开启事务", commit: "提交事务", rollback: "回滚事务" };
+                pushToast(res.success ? "success" : "error", titleMap[action], res.message);
             }
         } catch (err) {
             const msg = err instanceof Error ? err.message : "操作失败";
@@ -406,33 +413,31 @@ export function QueryPage({
                     <button type="button" className="primary-button" onClick={() => handleExecuteQuery(1)} disabled={isExecutingQuery}>
                         {isExecutingQuery ? "执行中..." : "执行"}
                     </button>
-                    <div className="toolbar-divider" />
-                    {inTransaction ? (
+                    {supportsTransaction ? (
                         <>
-                            <span className="tx-status-badge">
-                                <span className="tx-status-dot" />
-                                事务中
-                            </span>
-                            <button type="button" className="ghost-button ghost-button--sm ghost-button--accent" onClick={() => handleTransaction("commit")} disabled={txLoading} title="提交事务">
-                                COMMIT
-                            </button>
-                            <button type="button" className="ghost-button ghost-button--sm ghost-button--danger" onClick={() => handleTransaction("rollback")} disabled={txLoading} title="回滚事务">
-                                ROLLBACK
-                            </button>
+                            <div className="toolbar-divider" />
+                            <div className={`transaction-control${inTransaction ? " transaction-control--active" : ""}`} aria-label="事务控制">
+                                <span className="transaction-control__label">
+                                    <span className="tx-status-dot" />
+                                    {inTransaction ? "事务中" : "自动提交"}
+                                </span>
+                                {inTransaction ? (
+                                    <span className="transaction-control__actions">
+                                        <button type="button" className="tx-action tx-action--commit" onClick={() => handleTransaction("commit")} disabled={txLoading} title="提交当前事务">
+                                            {txLoading ? "处理中" : "提交"}
+                                        </button>
+                                        <button type="button" className="tx-action tx-action--rollback" onClick={() => handleTransaction("rollback")} disabled={txLoading} title="回滚当前事务">
+                                            回滚
+                                        </button>
+                                    </span>
+                                ) : (
+                                    <button type="button" className="tx-action tx-action--begin" onClick={() => handleTransaction("begin")} disabled={txLoading || !selectedConnection || !selectedDatabase} title="开启事务后，后续 SQL 会进入同一事务">
+                                        {txLoading ? "开启中" : "开启事务"}
+                                    </button>
+                                )}
+                            </div>
                         </>
-                    ) : (
-                        <>
-                            <button type="button" className="ghost-button ghost-button--sm" onClick={() => handleTransaction("begin")} disabled={txLoading || !selectedConnection} title="开启事务">
-                                BEGIN
-                            </button>
-                            <button type="button" className="ghost-button ghost-button--sm" onClick={() => handleTransaction("commit")} disabled={true} title="提交事务">
-                                COMMIT
-                            </button>
-                            <button type="button" className="ghost-button ghost-button--sm" onClick={() => handleTransaction("rollback")} disabled={true} title="回滚事务">
-                                ROLLBACK
-                            </button>
-                        </>
-                    )}
+                    ) : null}
                     <button type="button" className="ghost-button ghost-button--sm" onClick={() => setBatchModalOpen(true)} disabled={!selectedConnection} title="批量执行多条 SQL">
                         批量执行
                     </button>

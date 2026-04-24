@@ -137,6 +137,14 @@ func TestBuildPaginatedSQL_FirstPage(t *testing.T) {
 	}
 }
 
+func TestBuildLookaheadPaginatedSQL_OffsetUsesRealPageSize(t *testing.T) {
+	result := buildLookaheadPaginatedSQL("SELECT * FROM users", 2, 50)
+	expected := "SELECT * FROM users LIMIT 51 OFFSET 50"
+	if result != expected {
+		t.Errorf("buildLookaheadPaginatedSQL() = %q, want %q", result, expected)
+	}
+}
+
 func TestApplyDefaultPagination_SelectNoLimit(t *testing.T) {
 	sql, autoLimited := applyDefaultPagination("SELECT * FROM users", 1, 50)
 	if !autoLimited {

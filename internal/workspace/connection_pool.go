@@ -16,10 +16,10 @@ type poolEntry struct {
 
 // ConnectionPool caches open database connections for reuse.
 type ConnectionPool struct {
-	mu       sync.Mutex
-	entries  map[string]*poolEntry // key: connectionID + "/" + database
-	maxIdle  time.Duration
-	maxOpen  time.Duration
+	mu      sync.Mutex
+	entries map[string]*poolEntry // key: connectionID + "/" + database
+	maxIdle time.Duration
+	maxOpen time.Duration
 }
 
 // NewConnectionPool creates a new connection pool.
@@ -50,7 +50,9 @@ func (p *ConnectionPool) Get(connectionID string, database string, opener func()
 		cancel()
 
 		if err == nil {
+			p.mu.Lock()
 			entry.lastUsed = time.Now()
+			p.mu.Unlock()
 			return entry.db, nil
 		}
 		// Connection is dead, remove it

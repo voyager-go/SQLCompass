@@ -1,12 +1,12 @@
 package workspace
 
 import (
-	"net"
-	"net/url"
 	"context"
 	dbsql "database/sql"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -264,7 +264,7 @@ func (s *Service) runMySQLQuery(record store.ConnectionRecord, input QueryReques
 	effectiveSQL, autoLimited := applyDefaultPagination(statement, page, pageSize)
 	executedSQL := effectiveSQL
 	if queryLikePattern.MatchString(statement) && autoLimited {
-		executedSQL = buildPaginatedSQL(statement, page, pageSize+1)
+		executedSQL = buildLookaheadPaginatedSQL(statement, page, pageSize)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -801,4 +801,3 @@ func (s *Service) renameMySQLTable(record store.ConnectionRecord, input RenameTa
 	}
 	return RenameTableResult{Database: input.Database, OldName: input.OldName, NewName: input.NewName, Message: "表已重命名"}, nil
 }
-

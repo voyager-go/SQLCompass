@@ -12,7 +12,6 @@ import (
 	"sqltool/internal/store"
 )
 
-
 func (s *Service) getTablePartitionsByRecord(record store.ConnectionRecord, input TablePartitionRequest) (TablePartitionResult, error) {
 	switch record.Engine {
 	case string(database.MySQL), string(database.MariaDB):
@@ -220,7 +219,7 @@ func (s *Service) runRelationalQuery(record store.ConnectionRecord, input QueryR
 	effectiveSQL, autoLimited := applyDefaultPagination(statement, page, pageSize)
 	executedSQL := effectiveSQL
 	if queryLikePattern.MatchString(statement) && autoLimited {
-		executedSQL = buildPaginatedSQL(statement, page, pageSize+1)
+		executedSQL = buildLookaheadPaginatedSQL(statement, page, pageSize)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

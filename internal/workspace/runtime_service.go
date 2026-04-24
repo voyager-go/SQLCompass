@@ -104,7 +104,6 @@ func (s *Service) RenameTable(input RenameTableInput) (RenameTableResult, error)
 	return s.renameTableByRecord(record, input)
 }
 
-
 // GetTableRowCounts 异步获取表行数
 func (s *Service) GetTableRowCounts(input TableRowCountRequest) (TableRowCountResult, error) {
 	record, err := s.getConnectionRecord(input.ConnectionID)
@@ -113,9 +112,6 @@ func (s *Service) GetTableRowCounts(input TableRowCountRequest) (TableRowCountRe
 	}
 	return s.getTableRowCountsByRecord(record, input.Database, input.Tables)
 }
-
-
-
 
 func scanRows(rows *dbsql.Rows, columns []string) ([]map[string]string, error) {
 	result := []map[string]string{}
@@ -154,8 +150,10 @@ func buildPaginatedSQL(statement string, page int, pageSize int) string {
 	return fmt.Sprintf("%s LIMIT %d OFFSET %d", strings.TrimRight(statement, "; \n\t"), pageSize, offset)
 }
 
-
-
+func buildLookaheadPaginatedSQL(statement string, page int, pageSize int) string {
+	offset := (page - 1) * pageSize
+	return fmt.Sprintf("%s LIMIT %d OFFSET %d", strings.TrimRight(statement, "; \n\t"), pageSize+1, offset)
+}
 
 func diagnoseIndexes(fields []TableField, indexes []TableIndex) []IndexDiagnostic {
 	diagnostics := []IndexDiagnostic{}
@@ -276,8 +274,6 @@ func escapeIdentifier(name string) string {
 	return strings.ReplaceAll(strings.TrimSpace(name), "`", "``")
 }
 
-
-
 func choosePort(port string, engine string) string {
 	if strings.TrimSpace(port) != "" {
 		return port
@@ -361,9 +357,6 @@ func (s *Service) CreateDatabase(input CreateDatabaseRequest) (CreateDatabaseRes
 	}
 }
 
-
-
-
 func (s *Service) CreateTable(input CreateTableRequest) (CreateTableResult, error) {
 	record, err := s.getConnectionRecord(input.ConnectionID)
 	if err != nil {
@@ -385,7 +378,6 @@ func (s *Service) CreateTable(input CreateTableRequest) (CreateTableResult, erro
 		return CreateTableResult{}, fmt.Errorf("%s 暂未接入可视化建表", record.Engine)
 	}
 }
-
 
 func (s *Service) FillTableData(input FillTableRequest) (FillTableResult, error) {
 	record, err := s.getConnectionRecord(input.ConnectionID)
@@ -417,10 +409,6 @@ func (s *Service) FillTableData(input FillTableRequest) (FillTableResult, error)
 	}
 }
 
-
-
-
-
 func executeFill(stmt *dbsql.Stmt, ctx context.Context, fields []TableField, count int, fieldMappings map[string]string) (FillTableResult, error) {
 	inserted := 0
 	for i := 0; i < count; i++ {
@@ -447,5 +435,3 @@ func executeFill(stmt *dbsql.Stmt, ctx context.Context, fields []TableField, cou
 		InsertedRows: inserted,
 	}, nil
 }
-
-

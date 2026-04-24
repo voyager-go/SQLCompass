@@ -348,7 +348,7 @@ export function Sidebar({
                         </div>
                     ) : (
                         <div className="sidebar-section sidebar-section--fill">
-                            <div className="page-button-list page-button-list--scrollable page-button-list--workbench">
+                            <div className="page-button-list page-button-list--workbench">
                                 {WORKBENCH_PAGES.map((page) => (
                                     <button
                                         key={page.id}
