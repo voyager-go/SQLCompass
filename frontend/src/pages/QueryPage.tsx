@@ -7,7 +7,7 @@ import { FillTableModal } from "../components/FillTableModal";
 import type { QueryResult, TableDetail, TransactionResult, BatchExecuteResult } from "../types/runtime";
 import type { WorkbenchPage } from "../lib/constants";
 import { formatCellPreview, isTextLikeType } from "../lib/utils";
-import { PreviewSmartFillSQL, ExecuteTransaction, BatchExecute } from "../../wailsjs/go/main/App";
+import { PreviewSmartFillSQL, ExecuteTransaction, BatchExecute, GetTransactionStatus } from "../../wailsjs/go/main/App";
 
 type NoticeTone = "success" | "error" | "info";
 
@@ -153,6 +153,7 @@ export function QueryPage({
 
     // Transaction state
     const [txLoading, setTxLoading] = useState(false);
+    const [inTransaction, setInTransaction] = useState(false);
     const [batchModalOpen, setBatchModalOpen] = useState(false);
     const [batchSQLText, setBatchSQLText] = useState("");
     const [batchStopOnError, setBatchStopOnError] = useState(true);
@@ -195,6 +196,29 @@ export function QueryPage({
         }
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [fillMenuOpen]);
+
+    // Poll transaction status
+    useEffect(() => {
+        if (!selectedConnection || !selectedDatabase) {
+            setInTransaction(false);
+            return;
+        }
+        let cancelled = false;
+        async function check() {
+            try {
+                const status = await GetTransactionStatus(selectedConnection!.id, selectedDatabase);
+                if (!cancelled) setInTransaction(status);
+            } catch {
+                if (!cancelled) setInTransaction(false);
+            }
+        }
+        check();
+        const interval = setInterval(check, 2000);
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, [selectedConnection, selectedDatabase]);
 
     function handleSort(column: string) {
         setSortState((prev) => {
@@ -383,15 +407,32 @@ export function QueryPage({
                         {isExecutingQuery ? "执行中..." : "执行"}
                     </button>
                     <div className="toolbar-divider" />
-                    <button type="button" className="ghost-button ghost-button--sm" onClick={() => handleTransaction("begin")} disabled={txLoading || !selectedConnection} title="开启事务">
-                        BEGIN
-                    </button>
-                    <button type="button" className="ghost-button ghost-button--sm" onClick={() => handleTransaction("commit")} disabled={txLoading || !selectedConnection} title="提交事务">
-                        COMMIT
-                    </button>
-                    <button type="button" className="ghost-button ghost-button--sm" onClick={() => handleTransaction("rollback")} disabled={txLoading || !selectedConnection} title="回滚事务">
-                        ROLLBACK
-                    </button>
+                    {inTransaction ? (
+                        <>
+                            <span className="tx-status-badge">
+                                <span className="tx-status-dot" />
+                                事务中
+                            </span>
+                            <button type="button" className="ghost-button ghost-button--sm ghost-button--accent" onClick={() => handleTransaction("commit")} disabled={txLoading} title="提交事务">
+                                COMMIT
+                            </button>
+                            <button type="button" className="ghost-button ghost-button--sm ghost-button--danger" onClick={() => handleTransaction("rollback")} disabled={txLoading} title="回滚事务">
+                                ROLLBACK
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <button type="button" className="ghost-button ghost-button--sm" onClick={() => handleTransaction("begin")} disabled={txLoading || !selectedConnection} title="开启事务">
+                                BEGIN
+                            </button>
+                            <button type="button" className="ghost-button ghost-button--sm" onClick={() => handleTransaction("commit")} disabled={true} title="提交事务">
+                                COMMIT
+                            </button>
+                            <button type="button" className="ghost-button ghost-button--sm" onClick={() => handleTransaction("rollback")} disabled={true} title="回滚事务">
+                                ROLLBACK
+                            </button>
+                        </>
+                    )}
                     <button type="button" className="ghost-button ghost-button--sm" onClick={() => setBatchModalOpen(true)} disabled={!selectedConnection} title="批量执行多条 SQL">
                         批量执行
                     </button>

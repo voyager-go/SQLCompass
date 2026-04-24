@@ -168,6 +168,27 @@ func (s *Service) runClickHouseQuery(record store.ConnectionRecord, input QueryR
 	return s.runRelationalQuery(record, input, persistHistory, openClickHouseDatabase)
 }
 
+type queryExecutor interface {
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+}
+
+func (s *Service) getQueryExecutor(key string, record store.ConnectionRecord, databaseName string, opener func(store.ConnectionRecord, string) (*sql.DB, error)) (queryExecutor, error) {
+	s.txMu.Lock()
+	tx, inTx := s.txs[key]
+	s.txMu.Unlock()
+	if inTx {
+		return tx, nil
+	}
+	db, err := s.pool.Get(record.ID, databaseName, func() (*sql.DB, error) {
+		return opener(record, databaseName)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
 func (s *Service) runRelationalQuery(record store.ConnectionRecord, input QueryRequest, persistHistory bool, opener func(store.ConnectionRecord, string) (*sql.DB, error)) (QueryResult, error) {
 	statement := strings.TrimSpace(input.SQL)
 	if statement == "" {
@@ -189,9 +210,8 @@ func (s *Service) runRelationalQuery(record store.ConnectionRecord, input QueryR
 		databaseName = firstNonEmpty(record.Database, defaultDatabaseForEngine(record.Engine))
 	}
 
-	db, err := s.pool.Get(record.ID, databaseName, func() (*sql.DB, error) {
-		return opener(record, databaseName)
-	})
+	key := poolKey(record.ID, databaseName)
+	executor, err := s.getQueryExecutor(key, record, databaseName, opener)
 	if err != nil {
 		return QueryResult{}, err
 	}
@@ -208,7 +228,7 @@ func (s *Service) runRelationalQuery(record store.ConnectionRecord, input QueryR
 
 	startedAt := time.Now()
 	if queryLikePattern.MatchString(statement) {
-		rows, err := db.QueryContext(ctx, executedSQL)
+		rows, err := executor.QueryContext(ctx, executedSQL)
 		if err != nil {
 			if persistHistory {
 				_ = s.appendHistory(record, databaseName, statement, effectiveSQL, analysis, false, 0, time.Since(startedAt))
@@ -239,7 +259,7 @@ func (s *Service) runRelationalQuery(record store.ConnectionRecord, input QueryR
 		return QueryResult{Columns: columns, Rows: resultRows, AffectedRows: int64(len(resultRows)), DurationMS: duration.Milliseconds(), EffectiveSQL: effectiveSQL, StatementType: analysis.StatementType, Message: fmt.Sprintf("查询完成，返回 %d 行", len(resultRows)), Page: page, PageSize: pageSize, AutoLimited: autoLimited, HasNextPage: hasNextPage, Analysis: analysis}, nil
 	}
 
-	execResult, err := db.ExecContext(ctx, statement)
+	execResult, err := executor.ExecContext(ctx, statement)
 	if err != nil {
 		if persistHistory {
 			_ = s.appendHistory(record, databaseName, statement, statement, analysis, false, 0, time.Since(startedAt))

@@ -1737,27 +1737,110 @@ function App() {
             return;
         }
 
+        const statements = splitSQLStatements(statement);
+        if (statements.length === 0) {
+            setQueryNotice({ tone: "error", message: "没有可执行的 SQL 语句。" });
+            return;
+        }
+
         try {
             setIsExecutingQuery(true);
-            const result = (await ExecuteQuery({
-                connectionId: selectedConnection.id,
-                database: selectedDatabase,
-                sql: statement,
-                page: nextPage,
-                pageSize: pageSize,
-            })) as QueryResult;
+
+            // 单条语句走原有逻辑
+            if (statements.length === 1) {
+                const result = (await ExecuteQuery({
+                    connectionId: selectedConnection.id,
+                    database: selectedDatabase,
+                    sql: statements[0],
+                    page: nextPage,
+                    pageSize: pageSize,
+                })) as QueryResult;
+                setPreviewContext(null);
+                setQueryPage(nextPage);
+                setQueryResult(result);
+                setLastExecutedSQL(statements[0]);
+                setQueryErrorDetail("");
+                setSQLAnalysis(result.analysis);
+                setQueryNotice({ tone: "success", message: result.message });
+                await loadHistory(selectedConnection.id);
+                const nonMutatingTypes = ["SELECT", "META", "PREVIEW", "REDIS", "REDIS_KEY"];
+                if (!nonMutatingTypes.includes(result.statementType)) {
+                    await loadExplorer(selectedConnection.id, selectedDatabase);
+                }
+                return;
+            }
+
+            // 多条语句：逐条执行
+            let successCount = 0;
+            let failedCount = 0;
+            let lastError = "";
+            let lastQueryResult: QueryResult | null = null;
+            let lastSelectSQL = "";
+
+            for (let i = 0; i < statements.length; i++) {
+                const stmt = statements[i];
+                const isLast = i === statements.length - 1;
+                const isQuery = /^\s*(SELECT|SHOW|DESCRIBE|EXPLAIN)\s/i.test(stmt);
+
+                try {
+                    if (isQuery && isLast) {
+                        const result = (await ExecuteQuery({
+                            connectionId: selectedConnection.id,
+                            database: selectedDatabase,
+                            sql: stmt,
+                            page: nextPage,
+                            pageSize: pageSize,
+                        })) as QueryResult;
+                        lastQueryResult = result;
+                        lastSelectSQL = stmt;
+                        successCount++;
+                    } else {
+                        await ExecuteQuery({
+                            connectionId: selectedConnection.id,
+                            database: selectedDatabase,
+                            sql: stmt,
+                            page: 1,
+                            pageSize: 1,
+                        });
+                        successCount++;
+                    }
+                } catch (error) {
+                    failedCount++;
+                    lastError = getErrorMessage(error);
+                    break;
+                }
+            }
+
             setPreviewContext(null);
             setQueryPage(nextPage);
-            setQueryResult(result);
-            setLastExecutedSQL(statement);
             setQueryErrorDetail("");
-            setSQLAnalysis(result.analysis);
-            setQueryNotice({ tone: "success", message: result.message });
-            await loadHistory(selectedConnection.id);
-            const nonMutatingTypes = ["SELECT", "META", "PREVIEW", "REDIS", "REDIS_KEY"];
-            if (!nonMutatingTypes.includes(result.statementType)) {
+
+            if (lastQueryResult) {
+                setQueryResult(lastQueryResult);
+                setLastExecutedSQL(lastSelectSQL);
+                setSQLAnalysis(lastQueryResult.analysis);
+                setQueryNotice({
+                    tone: "success",
+                    message: `执行完成：成功 ${successCount} 条。${lastQueryResult.message}`,
+                });
+            } else if (failedCount > 0) {
+                setQueryResult(null);
+                setLastExecutedSQL("");
+                setQueryErrorDetail(lastError);
+                setQueryNotice({
+                    tone: "error",
+                    message: `第 ${successCount + 1} 条执行失败：${lastError}`,
+                });
+            } else {
+                setQueryResult(null);
+                setLastExecutedSQL("");
+                setQueryNotice({
+                    tone: "success",
+                    message: `执行完成，共 ${successCount} 条语句`,
+                });
                 await loadExplorer(selectedConnection.id, selectedDatabase);
             }
+            await loadHistory(selectedConnection.id);
         } catch (error) {
             const message = getErrorMessage(error);
             setQueryResult(null);

@@ -42,6 +42,8 @@ export function ExecuteQuery(arg1:workspace.QueryRequest):Promise<workspace.Quer
 
 export function ExecuteTransaction(arg1:workspace.TransactionRequest):Promise<workspace.TransactionResult>;
 
+export function GetTransactionStatus(arg1:string, arg2:string):Promise<boolean>;
+
 export function ExportTextFile(arg1:workspace.ExportFileRequest):Promise<workspace.ExportFileResult>;
 
 export function FillTableData(arg1:workspace.FillTableRequest):Promise<workspace.FillTableResult>;

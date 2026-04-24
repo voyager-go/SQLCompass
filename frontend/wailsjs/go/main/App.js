@@ -78,6 +78,10 @@ export function ExecuteTransaction(arg1) {
   return window['go']['main']['App']['ExecuteTransaction'](arg1);
 }
 
+export function GetTransactionStatus(arg1, arg2) {
+  return window['go']['main']['App']['GetTransactionStatus'](arg1, arg2);
+}
+
 export function ExportTextFile(arg1) {
   return window['go']['main']['App']['ExportTextFile'](arg1);
 }

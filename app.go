@@ -396,6 +396,14 @@ func (a *App) ExecuteTransaction(input workspace.TransactionRequest) (workspace.
 	return service.ExecuteTransaction(input)
 }
 
+func (a *App) GetTransactionStatus(connectionID string, database string) bool {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return false
+	}
+	return service.GetTransactionStatus(connectionID, database)
+}
+
 func (a *App) BatchExecute(input workspace.BatchExecuteRequest) (workspace.BatchExecuteResult, error) {
 	service, err := a.requireWorkspace()
 	if err != nil {

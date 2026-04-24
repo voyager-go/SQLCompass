@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"sqltool/internal/config"
@@ -102,17 +104,28 @@ type AISettingsView struct {
 type Service struct {
 	store *store.Store
 	pool  *ConnectionPool
+	txMu  sync.Mutex
+	txs   map[string]*sql.Tx
 }
 
 func NewService(stateStore *store.Store) *Service {
 	return &Service{
 		store: stateStore,
 		pool:  NewConnectionPool(),
+		txs:   make(map[string]*sql.Tx),
 	}
 }
 
 // Close shuts down the service, including all pooled connections.
 func (s *Service) Close() {
+	// Rollback any active transactions before closing connections
+	s.txMu.Lock()
+	for key, tx := range s.txs {
+		_ = tx.Rollback()
+		delete(s.txs, key)
+	}
+	s.txMu.Unlock()
+
 	if s.pool != nil {
 		s.pool.CloseAll()
 	}

@@ -18,9 +18,7 @@ func (s *Service) ExecuteTransaction(input TransactionRequest) (TransactionResul
 	}
 
 	switch record.Engine {
-	case string(database.MySQL), string(database.MariaDB):
-		return s.executeRelationalTransaction(record, input)
-	case string(database.PostgreSQL):
+	case string(database.MySQL), string(database.MariaDB), string(database.PostgreSQL):
 		return s.executeRelationalTransaction(record, input)
 	default:
 		return TransactionResult{
@@ -31,19 +29,29 @@ func (s *Service) ExecuteTransaction(input TransactionRequest) (TransactionResul
 }
 
 func (s *Service) executeRelationalTransaction(record store.ConnectionRecord, input TransactionRequest) (TransactionResult, error) {
-	var sqlStmt string
+	key := poolKey(input.ConnectionID, input.Database)
+
 	switch strings.ToLower(input.Action) {
 	case "begin":
-		sqlStmt = "BEGIN"
+		return s.beginTransaction(record, input.Database, key)
 	case "commit":
-		sqlStmt = "COMMIT"
+		return s.commitTransaction(key)
 	case "rollback":
-		sqlStmt = "ROLLBACK"
+		return s.rollbackTransaction(key)
 	default:
 		return TransactionResult{
 			Success: false,
 			Message: fmt.Sprintf("不支持的事务操作: %s", input.Action),
 		}, nil
+	}
+}
+
+func (s *Service) beginTransaction(record store.ConnectionRecord, dbName, key string) (TransactionResult, error) {
+	s.txMu.Lock()
+	_, exists := s.txs[key]
+	s.txMu.Unlock()
+	if exists {
+		return TransactionResult{Success: false, Message: "已有活跃事务，请先提交或回滚"}, nil
 	}
 
 	var opener func(store.ConnectionRecord, string) (*sql.DB, error)
@@ -53,32 +61,66 @@ func (s *Service) executeRelationalTransaction(record store.ConnectionRecord, in
 	case string(database.PostgreSQL):
 		opener = openPostgreSQLDatabase
 	default:
-		return TransactionResult{
-			Success: false,
-			Message: fmt.Sprintf("%s 暂不支持事务控制", record.Engine),
-		}, nil
+		return TransactionResult{Success: false, Message: fmt.Sprintf("%s 暂不支持事务控制", record.Engine)}, nil
 	}
 
-	db, err := s.getDB(record, input.Database, opener)
+	db, err := s.getDB(record, dbName, opener)
 	if err != nil {
 		return TransactionResult{}, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	_, err = db.ExecContext(ctx, sqlStmt)
+	tx, err := db.Begin()
 	if err != nil {
-		return TransactionResult{
-			Success: false,
-			Message: fmt.Sprintf("%s 执行失败: %v", sqlStmt, err),
-		}, nil
+		return TransactionResult{Success: false, Message: fmt.Sprintf("开启事务失败: %v", err)}, nil
 	}
 
-	return TransactionResult{
-		Success: true,
-		Message: fmt.Sprintf("%s 执行成功", sqlStmt),
-	}, nil
+	s.txMu.Lock()
+	s.txs[key] = tx
+	s.txMu.Unlock()
+
+	return TransactionResult{Success: true, Message: "事务已开启"}, nil
+}
+
+func (s *Service) commitTransaction(key string) (TransactionResult, error) {
+	s.txMu.Lock()
+	tx, exists := s.txs[key]
+	delete(s.txs, key)
+	s.txMu.Unlock()
+
+	if !exists {
+		return TransactionResult{Success: false, Message: "没有活跃的事务"}, nil
+	}
+
+	if err := tx.Commit(); err != nil {
+		return TransactionResult{Success: false, Message: fmt.Sprintf("提交失败: %v", err)}, nil
+	}
+
+	return TransactionResult{Success: true, Message: "事务已提交"}, nil
+}
+
+func (s *Service) rollbackTransaction(key string) (TransactionResult, error) {
+	s.txMu.Lock()
+	tx, exists := s.txs[key]
+	delete(s.txs, key)
+	s.txMu.Unlock()
+
+	if !exists {
+		return TransactionResult{Success: false, Message: "没有活跃的事务"}, nil
+	}
+
+	if err := tx.Rollback(); err != nil {
+		return TransactionResult{Success: false, Message: fmt.Sprintf("回滚失败: %v", err)}, nil
+	}
+
+	return TransactionResult{Success: true, Message: "事务已回滚"}, nil
+}
+
+func (s *Service) GetTransactionStatus(connectionID, database string) bool {
+	key := poolKey(connectionID, database)
+	s.txMu.Lock()
+	_, exists := s.txs[key]
+	s.txMu.Unlock()
+	return exists
 }
 
 func (s *Service) BatchExecute(input BatchExecuteRequest) (BatchExecuteResult, error) {
@@ -115,7 +157,8 @@ func (s *Service) BatchExecute(input BatchExecuteRequest) (BatchExecuteResult, e
 		}, nil
 	}
 
-	db, err := s.getDB(record, input.Database, opener)
+	key := poolKey(input.ConnectionID, input.Database)
+	executor, err := s.getQueryExecutor(key, record, input.Database, opener)
 	if err != nil {
 		return BatchExecuteResult{}, err
 	}
@@ -137,7 +180,7 @@ func (s *Service) BatchExecute(input BatchExecuteRequest) (BatchExecuteResult, e
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		_, execErr := db.ExecContext(ctx, trimmed)
+		_, execErr := executor.ExecContext(ctx, trimmed)
 		cancel()
 
 		if execErr != nil {

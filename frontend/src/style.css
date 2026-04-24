@@ -4482,3 +4482,41 @@ body[data-theme="dark"] .code-block .sh-fnc, body[data-theme="dark"] .sql-highli
     margin: 0 4px;
     flex-shrink: 0;
 }
+
+.tx-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--success, #059669);
+    background: rgba(5, 150, 105, 0.08);
+    border-radius: 6px;
+    margin-right: 4px;
+    white-space: nowrap;
+}
+
+.tx-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--success, #059669);
+    animation: tx-pulse 1.5s infinite;
+}
+
+@keyframes tx-pulse {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.2); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+.ghost-button--accent {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.ghost-button--accent:hover:not(:disabled) {
+    background: var(--accent);
+    color: #fff;
+}
