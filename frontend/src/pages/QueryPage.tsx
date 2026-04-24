@@ -4,10 +4,10 @@ import type { Monaco } from "@monaco-editor/react";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { NoticeBanner } from "../components/NoticeBanner";
 import { FillTableModal } from "../components/FillTableModal";
-import type { QueryResult, TableDetail, TransactionResult, BatchExecuteResult } from "../types/runtime";
+import type { QueryResult, TableDetail, TransactionResult } from "../types/runtime";
 import type { WorkbenchPage } from "../lib/constants";
 import { formatCellPreview, isTextLikeType } from "../lib/utils";
-import { PreviewSmartFillSQL, ExecuteTransaction, BatchExecute, GetTransactionStatus } from "../../wailsjs/go/main/App";
+import { PreviewSmartFillSQL, ExecuteTransaction, GetTransactionStatus } from "../../wailsjs/go/main/App";
 
 type NoticeTone = "success" | "error" | "info";
 
@@ -154,11 +154,6 @@ export function QueryPage({
     // Transaction state
     const [txLoading, setTxLoading] = useState(false);
     const [inTransaction, setInTransaction] = useState(false);
-    const [batchModalOpen, setBatchModalOpen] = useState(false);
-    const [batchSQLText, setBatchSQLText] = useState("");
-    const [batchStopOnError, setBatchStopOnError] = useState(true);
-    const [batchLoading, setBatchLoading] = useState(false);
-    const [batchResult, setBatchResult] = useState<BatchExecuteResult | null>(null);
 
     // MongoDB pipeline state
     const [mongoPipelineOpen, setMongoPipelineOpen] = useState(false);
@@ -343,31 +338,6 @@ export function QueryPage({
         }
     }
 
-    async function handleBatchExecute() {
-        if (!selectedConnection || !selectedDatabase || !batchSQLText.trim()) return;
-        const sqls = batchSQLText.split(";").map((s) => s.trim()).filter(Boolean);
-        if (sqls.length === 0) return;
-        setBatchLoading(true);
-        setBatchResult(null);
-        try {
-            const res = (await BatchExecute({
-                connectionId: selectedConnection.id,
-                database: selectedDatabase,
-                sqls,
-                stopOnError: batchStopOnError,
-            })) as BatchExecuteResult;
-            setBatchResult(res);
-            if (pushToast) {
-                pushToast(res.failed === 0 ? "success" : "error", "批量执行", res.message);
-            }
-        } catch (err) {
-            const msg = err instanceof Error ? err.message : "批量执行失败";
-            if (pushToast) pushToast("error", "批量执行", msg);
-        } finally {
-            setBatchLoading(false);
-        }
-    }
-
     // Redis shortcut handler
     function handleRedisShortcut(cmd: string) {
         if (cmd === "FLUSHDB") {
@@ -416,31 +386,35 @@ export function QueryPage({
                     {supportsTransaction ? (
                         <>
                             <div className="toolbar-divider" />
-                            <div className={`transaction-control${inTransaction ? " transaction-control--active" : ""}`} aria-label="事务控制">
-                                <span className="transaction-control__label">
-                                    <span className="tx-status-dot" />
+                            <div className="tx-control-group" aria-label="事务控制">
+                                <span
+                                    className="tx-badge"
+                                    title={
+                                        inTransaction
+                                            ? "事务进行中：编辑器执行的所有 SQL 都会暂存在此事务内"
+                                            : "自动提交模式：每条 SQL 会立即提交到数据库"
+                                    }
+                                >
+                                    <span className={`tx-dot${inTransaction ? " tx-dot--active" : ""}`} />
                                     {inTransaction ? "事务中" : "自动提交"}
                                 </span>
                                 {inTransaction ? (
-                                    <span className="transaction-control__actions">
-                                        <button type="button" className="tx-action tx-action--commit" onClick={() => handleTransaction("commit")} disabled={txLoading} title="提交当前事务">
+                                    <>
+                                        <button type="button" className="tx-btn tx-btn--commit" onClick={() => handleTransaction("commit")} disabled={txLoading} title="提交事务">
                                             {txLoading ? "处理中" : "提交"}
                                         </button>
-                                        <button type="button" className="tx-action tx-action--rollback" onClick={() => handleTransaction("rollback")} disabled={txLoading} title="回滚当前事务">
+                                        <button type="button" className="tx-btn tx-btn--rollback" onClick={() => handleTransaction("rollback")} disabled={txLoading} title="回滚事务">
                                             回滚
                                         </button>
-                                    </span>
+                                    </>
                                 ) : (
-                                    <button type="button" className="tx-action tx-action--begin" onClick={() => handleTransaction("begin")} disabled={txLoading || !selectedConnection || !selectedDatabase} title="开启事务后，后续 SQL 会进入同一事务">
+                                    <button type="button" className="tx-btn tx-btn--begin" onClick={() => handleTransaction("begin")} disabled={txLoading || !selectedConnection || !selectedDatabase} title="开启事务：之后编辑器执行的所有 SQL 会进入同一事务">
                                         {txLoading ? "开启中" : "开启事务"}
                                     </button>
                                 )}
                             </div>
                         </>
                     ) : null}
-                    <button type="button" className="ghost-button ghost-button--sm" onClick={() => setBatchModalOpen(true)} disabled={!selectedConnection} title="批量执行多条 SQL">
-                        批量执行
-                    </button>
                     <div className="toolbar-divider" />
                     <div ref={fillMenuRef} style={{ position: "relative", display: hideFill ? "none" : undefined }}>
                         <button
@@ -1021,64 +995,6 @@ export function QueryPage({
                                     {smartFillModal.executing ? "执行中..." : "确认执行"}
                                 </button>
                             ) : null}
-                        </div>
-                    </div>
-                </div>
-            ) : null}
-
-            {/* Batch Execute Modal */}
-            {batchModalOpen ? (
-                <div className="modal-backdrop" onClick={() => setBatchModalOpen(false)}>
-                    <div className="modal-card modal-card--wide" onClick={(e) => e.stopPropagation()}>
-                        <div className="section-title">
-                            <div>
-                                <h3>批量执行</h3>
-                                <p>输入多条 SQL 语句，用分号分隔</p>
-                            </div>
-                        </div>
-                        <textarea
-                            value={batchSQLText}
-                            onChange={(e) => setBatchSQLText(e.target.value)}
-                            rows={8}
-                            placeholder="SELECT * FROM table1;&#10;SELECT * FROM table2;"
-                            style={{
-                                width: "100%",
-                                padding: 12,
-                                border: "1px solid var(--border-soft)",
-                                borderRadius: 8,
-                                background: "var(--input-bg)",
-                                color: "var(--text-primary)",
-                                fontFamily: "var(--font-mono)",
-                                fontSize: 13,
-                                lineHeight: 1.6,
-                                resize: "vertical",
-                            }}
-                        />
-                        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13, color: "var(--text-primary)" }}>
-                            <input type="checkbox" checked={batchStopOnError} onChange={(e) => setBatchStopOnError(e.target.checked)} />
-                            遇到错误时停止
-                        </label>
-                        {batchResult ? (
-                            <div style={{ marginTop: 12, padding: 12, background: "var(--surface-2)", borderRadius: 8, border: "1px solid var(--panel-border)" }}>
-                                <div style={{ fontSize: 13, color: "var(--text-primary)", marginBottom: 6 }}>
-                                    <strong>总执行:</strong> {batchResult.total} | <strong>成功:</strong> <span style={{ color: "#059669" }}>{batchResult.success}</span> | <strong>失败:</strong> <span style={{ color: "#dc2626" }}>{batchResult.failed}</span>
-                                </div>
-                                {batchResult.errors.length > 0 ? (
-                                    <div style={{ fontSize: 12, color: "#dc2626", fontFamily: "var(--font-mono)" }}>
-                                        {batchResult.errors.map((e, i) => (
-                                            <div key={i}>{e}</div>
-                                        ))}
-                                    </div>
-                                ) : null}
-                            </div>
-                        ) : null}
-                        <div className="toolbar-actions toolbar-actions--end" style={{ marginTop: 16 }}>
-                            <button type="button" className="ghost-button" onClick={() => setBatchModalOpen(false)} disabled={batchLoading}>
-                                取消
-                            </button>
-                            <button type="button" className="primary-button" onClick={handleBatchExecute} disabled={batchLoading || !batchSQLText.trim()}>
-                                {batchLoading ? "执行中..." : "执行"}
-                            </button>
                         </div>
                     </div>
                 </div>

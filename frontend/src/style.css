@@ -1181,7 +1181,7 @@ body[data-theme="dark"] .connection-card__item--active {
     background: var(--surface-1);
     border: 1px solid var(--panel-border);
     border-radius: 14px;
-    overflow: hidden;
+    overflow: visible;
     box-shadow: var(--shadow-card);
     margin-top: 16px;
     transition: all 0.2s ease;
@@ -1189,6 +1189,7 @@ body[data-theme="dark"] .connection-card__item--active {
 
 .editor-shell--collapsed {
     max-height: 44px;
+    overflow: hidden;
 }
 
 .editor-shell__top {
@@ -1250,7 +1251,7 @@ body[data-theme="dark"] .connection-card__item--active {
 
 .selection-actions--floating {
     position: absolute;
-    z-index: 4;
+    z-index: 999;
     transform: translate(0, 0);
     max-width: calc(100% - 24px);
 }
@@ -4553,108 +4554,101 @@ body[data-theme="dark"] .code-block .sh-fnc, body[data-theme="dark"] .sql-highli
     flex-shrink: 0;
 }
 
-.transaction-control {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 34px;
-    padding: 4px 5px 4px 10px;
-    border: 1px solid var(--border-soft);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--surface) 86%, var(--accent) 4%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
-    color: var(--muted);
-    flex-shrink: 0;
-}
-
-.transaction-control--active {
-    border-color: color-mix(in srgb, var(--success, #059669) 38%, var(--border-soft));
-    background: color-mix(in srgb, var(--success, #059669) 10%, var(--surface));
-    color: var(--success, #059669);
-}
-
-.transaction-control__label,
-.transaction-control__actions {
+.tx-control-group {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    flex-shrink: 0;
 }
 
-.transaction-control__label {
-    font-size: 12px;
-    font-weight: 650;
-    letter-spacing: 0.01em;
+.tx-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
     white-space: nowrap;
+    user-select: none;
 }
 
-.tx-status-dot {
-    width: 7px;
-    height: 7px;
+.tx-dot {
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     background: #94a3b8;
 }
 
-.transaction-control--active .tx-status-dot {
+.tx-dot--active {
     background: var(--success, #059669);
     animation: tx-pulse 1.5s infinite;
 }
 
-.tx-action {
+.tx-btn {
     appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px 10px;
     border: 1px solid transparent;
-    border-radius: 999px;
-    min-height: 26px;
-    padding: 0 11px;
-    font-size: 12px;
-    font-weight: 750;
-    letter-spacing: 0.01em;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 650;
     cursor: pointer;
-    transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, color 0.16s ease;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    background: var(--surface);
+    color: var(--text-primary);
 }
 
-.tx-action:hover:not(:disabled) {
+.tx-btn:hover {
     transform: translateY(-1px);
 }
 
-.tx-action:disabled {
+.tx-btn:disabled {
+    opacity: 0.45;
     cursor: not-allowed;
-    opacity: 0.55;
+    transform: none;
 }
 
-.tx-action--begin {
-    color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-    border-color: color-mix(in srgb, var(--accent) 22%, var(--border-soft));
+.tx-btn--begin {
+    color: #2563eb;
+    background: rgba(37, 99, 235, 0.09);
+    border-color: rgba(37, 99, 235, 0.25);
 }
 
-.tx-action--begin:hover:not(:disabled) {
+.tx-btn--begin:hover {
+    background: #2563eb;
     color: #fff;
-    background: var(--accent);
-    box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 24%, transparent);
+    border-color: #2563eb;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
 }
 
-.tx-action--commit {
+.tx-btn--commit {
     color: #047857;
-    background: rgba(16, 185, 129, 0.13);
-    border-color: rgba(16, 185, 129, 0.24);
+    background: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.25);
 }
 
-.tx-action--commit:hover:not(:disabled) {
-    color: #fff;
+.tx-btn--commit:hover {
     background: #059669;
-    box-shadow: 0 8px 18px rgba(5, 150, 105, 0.2);
-}
-
-.tx-action--rollback {
-    color: #b45309;
-    background: rgba(245, 158, 11, 0.12);
-    border-color: rgba(245, 158, 11, 0.24);
-}
-
-.tx-action--rollback:hover:not(:disabled) {
     color: #fff;
+    border-color: #059669;
+    box-shadow: 0 2px 8px rgba(5, 150, 105, 0.35);
+}
+
+.tx-btn--rollback {
+    color: #b45309;
+    background: rgba(245, 158, 11, 0.1);
+    border-color: rgba(245, 158, 11, 0.25);
+}
+
+.tx-btn--rollback:hover {
     background: #d97706;
-    box-shadow: 0 8px 18px rgba(217, 119, 6, 0.2);
+    color: #fff;
+    border-color: #d97706;
+    box-shadow: 0 2px 8px rgba(217, 119, 6, 0.35);
 }
 
 @keyframes tx-pulse {

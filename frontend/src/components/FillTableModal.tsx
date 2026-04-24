@@ -104,8 +104,40 @@ const fakeTypeGroups: FakeTypeGroup[] = [
     },
 ];
 
-function getDefaultFakeType(fieldType: string): string {
+function getDefaultFakeType(fieldType: string, fieldName?: string, defaultValue?: string): string {
     const t = fieldType.toLowerCase();
+    const n = (fieldName ?? "").toLowerCase();
+    const d = (defaultValue ?? "").toLowerCase();
+
+    /* 根据字段名语义推断 */
+    if (n.includes("uuid") || n.includes("guid")) return "uuid";
+    if (n.includes("email") || n.includes("mail")) return "email";
+    if (n.includes("phone") || n.includes("mobile") || n.includes("tel")) return "mobile";
+    if (n.includes("url") || n.includes("link") || n.includes("href")) return "url";
+    if (n.includes("ip") || n.includes("addr")) return "ip_address";
+    if (n.includes("status")) return "status";
+    if (n.includes("gender") || n.includes("sex")) return "gender";
+    if (n.includes("order_sn") || n.includes("order_no")) return "order_sn";
+    if (n.includes("trade_no") || n.includes("trade_id")) return "trade_no";
+    if (n.includes("price") || n.includes("amount") || n.includes("fee")) return "price";
+    if (n.includes("age")) return "age";
+    if (n.includes("date") && !t.includes("datetime") && !t.includes("timestamp")) return "date";
+    if (n.includes("datetime") || n.includes("created_at") || n.includes("updated_at")) return "datetime";
+    if (n.includes("year")) return "year";
+    if (n.includes("name")) return "chinese_name";
+    if (n.includes("company") || n.includes("org")) return "company";
+    if (n.includes("address") || n.includes("addr")) return "address";
+    if (n.includes("color")) return "color";
+    if (n.includes("desc") || n.includes("content") || n.includes("detail")) return "description";
+    if (n.includes("index") || n.includes("idx") || n.includes("sn") || n.includes("serial") || n.includes("no_") || n.endsWith("_no")) return "serial_no";
+    if (n.includes("code") || n.includes("key")) return "serial_no";
+
+    /* 根据默认值格式推断 */
+    if (d.includes("-") || /^\d+$/.test(defaultValue ?? "")) {
+        if (t.includes("char") || t.includes("varchar")) return "serial_no";
+    }
+
+    /* 根据字段类型推断 */
     if (t.includes("tinyint")) return "boolean";
     if (t.includes("int")) return "integer";
     if (t.includes("float") || t.includes("double") || t.includes("decimal") || t.includes("real") || t.includes("numeric")) return "decimal";
@@ -293,7 +325,7 @@ export function FillTableModal({ open, fields, onClose, onConfirm, isFilling }: 
             const init: Record<string, string> = {};
             fields.forEach((f) => {
                 if (!f.autoIncrement) {
-                    init[f.name] = getDefaultFakeType(f.type);
+                    init[f.name] = getDefaultFakeType(f.type, f.name, f.defaultValue);
                 }
             });
             setMappings(init);

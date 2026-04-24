@@ -16,6 +16,7 @@ import {
     GetStorageInfo,
     GetTableDetail,
     GetTableRowCounts,
+    GetTransactionStatus,
     GetWorkspaceState,
     OptimizeSQL,
     PreviewTableData,
@@ -1571,6 +1572,7 @@ function App() {
         setLastExecutedSQL("");
         setQueryPage(1);
         setPreviewContext(null);
+        setSQLText("");
         chat.setChatMessages([]);
         chat.setChatPendingAction(null);
         chat.setChatContextDatabase("");
@@ -1659,6 +1661,7 @@ function App() {
 
     function handleSelectDatabase(databaseName: string) {
         setSelectedDatabase(databaseName);
+        setSQLText("");
         chat.setChatContextDatabase(databaseName);
         chat.setChatContextTables([]);
         setTableSearch("");
@@ -1820,13 +1823,21 @@ function App() {
             setQueryPage(nextPage);
             setQueryErrorDetail("");
 
+            let txHint = "";
+            try {
+                const inTx = await GetTransactionStatus(selectedConnection.id, selectedDatabase);
+                txHint = inTx ? "（同一事务内）" : "（各自独立执行）";
+            } catch {
+                txHint = "";
+            }
+
             if (lastQueryResult) {
                 setQueryResult(lastQueryResult);
                 setLastExecutedSQL(lastSelectSQL);
                 setSQLAnalysis(lastQueryResult.analysis);
                 setQueryNotice({
                     tone: "success",
-                    message: `执行完成：成功 ${successCount} 条。${lastQueryResult.message}`,
+                    message: `执行完成：成功 ${successCount} 条。${lastQueryResult.message} ${txHint}`,
                 });
             } else if (failedCount > 0) {
                 setQueryResult(null);
@@ -1841,7 +1852,7 @@ function App() {
                 setLastExecutedSQL("");
                 setQueryNotice({
                     tone: "success",
-                    message: `执行完成，共 ${successCount} 条语句`,
+                    message: `执行完成，共 ${successCount} 条语句 ${txHint}`,
                 });
                 await loadExplorer(selectedConnection.id, selectedDatabase);
             }
@@ -1902,10 +1913,38 @@ function App() {
 
         const start = model.getOffsetAt(selection.getStartPosition());
         const end = model.getOffsetAt(selection.getEndPosition());
-        const visiblePosition = editor.getScrolledVisiblePosition(selection.getEndPosition());
         const layoutInfo = editor.getLayoutInfo();
-        const anchorLeft = visiblePosition ? Math.min(visiblePosition.left + 24, layoutInfo.contentWidth - 12) : 24;
-        const anchorTop = visiblePosition ? visiblePosition.top + visiblePosition.height + 8 : 24;
+
+        let visiblePosition = editor.getScrolledVisiblePosition(selection.getEndPosition());
+        // 若选区末尾不在可视区域，尝试取选区开头位置
+        if (!visiblePosition) {
+            visiblePosition = editor.getScrolledVisiblePosition(selection.getStartPosition());
+        }
+
+        let anchorLeft: number;
+        let anchorTop: number;
+        if (visiblePosition) {
+            anchorLeft = Math.min(visiblePosition.left + 24, layoutInfo.contentWidth - 12);
+            anchorTop = visiblePosition.top + visiblePosition.height + 8;
+        } else {
+            // 选区完全不在可视区域（如全选大量 SQL），取当前可视区域第一行来定位
+            const visibleRanges = editor.getVisibleRanges();
+            if (visibleRanges.length > 0) {
+                const firstVisibleLine = visibleRanges[0].startLineNumber;
+                const pos = { lineNumber: firstVisibleLine, column: 1 };
+                const vp = editor.getScrolledVisiblePosition(pos);
+                if (vp) {
+                    anchorLeft = Math.min(vp.left + 24, layoutInfo.contentWidth - 12);
+                    anchorTop = vp.top + vp.height + 8;
+                } else {
+                    anchorLeft = Math.max(12, layoutInfo.contentWidth / 2 - 60);
+                    anchorTop = 12;
+                }
+            } else {
+                anchorLeft = Math.max(12, layoutInfo.contentWidth / 2 - 60);
+                anchorTop = 12;
+            }
+        }
 
         setSelectedSnippet({
             text,

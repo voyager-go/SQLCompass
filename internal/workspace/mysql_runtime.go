@@ -520,6 +520,8 @@ func mysqlConfigFromRecord(record store.ConnectionRecord) (*mysql.Config, error)
 	cfg.Timeout = pingTimeout
 	cfg.ReadTimeout = pingTimeout
 	cfg.WriteTimeout = pingTimeout
+	cfg.Params = map[string]string{"charset": "utf8mb4"}
+	cfg.Collation = "utf8mb4_unicode_ci"
 
 	if strings.TrimSpace(input.URL) != "" {
 		trimmedURL := strings.TrimSpace(input.URL)
