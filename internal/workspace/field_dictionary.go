@@ -157,6 +157,142 @@ func (s *Service) GenerateIndexName(input GenerateIndexNameRequest) (GenerateInd
 	return GenerateIndexNameResult{Name: name}, nil
 }
 
+func (s *Service) SuggestPartition(input SuggestPartitionRequest) (SuggestPartitionResult, error) {
+	if len(input.Fields) == 0 {
+		return SuggestPartitionResult{}, errors.New("表结构为空，无法建议分区")
+	}
+
+	state, err := s.store.LoadConfig()
+	if err != nil {
+		return SuggestPartitionResult{}, err
+	}
+
+	baseURL, modelName, apiKey := resolveAIConfig(state.AI)
+	if strings.TrimSpace(apiKey) == "" {
+		return SuggestPartitionResult{}, errors.New("尚未配置 AI API Key")
+	}
+
+	// 构建表结构上下文
+	var fieldLines []string
+	for _, f := range input.Fields {
+		pk := ""
+		if f.Primary {
+			pk = " [主键]"
+		}
+		ai := ""
+		if f.AutoIncrement {
+			ai = " [自增]"
+		}
+		nullStr := "NULL"
+		if !f.Nullable {
+			nullStr = "NOT NULL"
+		}
+		fieldLines = append(fieldLines, fmt.Sprintf("  %s %s %s%s%s", f.Name, f.Type, nullStr, pk, ai))
+	}
+
+	var indexLines []string
+	for _, idx := range input.Indexes {
+		idxType := ""
+		if idx.IndexType != "" {
+			idxType = fmt.Sprintf(" %s", idx.IndexType)
+		}
+		unique := ""
+		if idx.Unique {
+			unique = " UNIQUE"
+		}
+		indexLines = append(indexLines, fmt.Sprintf("  %s (%s)%s%s", idx.Name, strings.Join(idx.Columns, ", "), unique, idxType))
+	}
+
+	engineHint := ""
+	switch strings.ToLower(input.Engine) {
+	case "mysql", "mariadb":
+		engineHint = `MySQL/MariaDB 分区规则：
+- 分区键必须包含在所有唯一索引（含主键）中（即分区列必须是 PK 或 UK 的前缀）
+- 自增主键不能直接作为 RANGE/LIST 分区键，除非使用显式范围
+- 支持：RANGE、LIST、HASH、KEY 分区`
+	case "clickhouse":
+		engineHint = `ClickHouse 分区规则：
+- 主键和排序键可以与分区键不同，但通常按时间字段分区效果最佳
+- 推荐：toYYYYMM(created_at)、toMonday(date)
+- 支持：按表达式任意分区`
+	default:
+		engineHint = fmt.Sprintf("数据库引擎：%s", input.Engine)
+	}
+
+	prompt := fmt.Sprintf(`你是资深 DBA 和数据库架构师。请根据以下新建表的表结构，给出最佳的分区方案。
+
+## 表名
+%s
+
+## 数据库引擎
+%s
+
+## 字段结构
+%s
+
+## 索引结构
+%s
+
+## 要求
+1. 分析该表最适合的分区类型（RANGE / LIST / HASH / KEY）和分区键选择
+2. 输出完整的 PARTITION BY 子句（MySQL 格式），包含初始分区定义示例（如 p202505, p202506 等）
+3. 如果检测到以下问题，必须在 warnings 中明确指出：
+   - 主键是否包含分区键？（如果不包含，MySQL 会报错）
+   - 是否存在自增主键与分区的兼容性问题？
+   - 唯一索引是否包含分区键？
+4. partitionddl 只输出 PARTITION BY 开始的完整子句
+5. suggestion 用一句话说明推荐理由
+
+请严格按 JSON 格式输出（不要输出其他内容）：
+{"partitionddl":"...","suggestion":"...","warnings":["警告1","警告2"]}`,
+		input.TableName, engineHint,
+		strings.Join(fieldLines, "\n"),
+		strings.Join(indexLines, "\n"))
+
+	content, err := callChatCompletion(baseURL, modelName, apiKey, prompt)
+	if err != nil {
+		return SuggestPartitionResult{}, err
+	}
+
+	// 解析 AI 返回的 JSON
+	result := SuggestPartitionResult{}
+	jsonStr := strings.TrimSpace(content)
+	// 尝试提取 JSON 块
+	if strings.HasPrefix(jsonStr, "```") {
+		lines := strings.Split(jsonStr, "\n")
+		var jsonLines []string
+		inBlock := false
+		for _, l := range lines {
+			if strings.HasPrefix(l, "```") {
+				if inBlock {
+					break
+				}
+				inBlock = true
+				continue
+			}
+			if inBlock {
+				jsonLines = append(jsonLines, l)
+			}
+		}
+		jsonStr = strings.TrimSpace(strings.Join(jsonLines, "\n"))
+	}
+
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		// 如果解析失败，将原始内容作为 DDL 返回
+		return SuggestPartitionResult{
+			PartitionDDL: content,
+			Suggestion:   "AI 已返回分区建议，请检查下方内容",
+			Warnings:     []string{"AI 返回格式可能不标准，请人工确认"},
+		}, nil
+	}
+
+	if result.PartitionDDL == "" {
+		return SuggestPartitionResult{}, errors.New("AI 未返回有效的分区定义")
+	}
+
+	return result, nil
+}
+
 func (s *Service) SmartFillTableData(input SmartFillTableRequest) (SmartFillTableResult, error) {
 	record, err := s.getConnectionRecord(input.ConnectionID)
 	if err != nil {

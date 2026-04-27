@@ -445,6 +445,12 @@ function App() {
         refreshWorkspaceState,
         setWorkspaceNotice,
         setActivePage: setActivePage as (page: string) => void,
+        onConnectionClosed: () => {
+            setExplorerTree(null);
+            setSelectedDatabase("");
+            setSelectedTable("");
+            setExpandedDatabases({});
+        },
     });
 
     const activeEngine = selectedConnection?.engine ?? conn.connectionDraft.engine;

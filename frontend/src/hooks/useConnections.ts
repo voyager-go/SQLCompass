@@ -26,6 +26,7 @@ export interface UseConnectionsOptions {
     refreshWorkspaceState: () => Promise<void>;
     setWorkspaceNotice: React.Dispatch<React.SetStateAction<Notice | null>>;
     setActivePage: (page: string) => void;
+    onConnectionClosed?: () => void;
 }
 
 export interface UseConnectionsReturn {
@@ -61,6 +62,7 @@ export function useConnections(options: UseConnectionsOptions): UseConnectionsRe
         refreshWorkspaceState,
         setWorkspaceNotice,
         setActivePage,
+        onConnectionClosed,
     } = options;
 
     const [connectionDraft, setConnectionDraft] = useState<ConnectionInput>(createConnectionDraft("mysql"));
@@ -138,6 +140,7 @@ export function useConnections(options: UseConnectionsOptions): UseConnectionsRe
             const closed = await CloseConnection(profile.id);
             if (selectedConnectionId === profile.id) {
                 setSelectedConnectionId("");
+                onConnectionClosed?.();
             }
             pushToast("success", "连接已关闭", `已关闭 ${closed} 个活跃连接`);
         } catch (err) {
@@ -182,6 +185,7 @@ export function useConnections(options: UseConnectionsOptions): UseConnectionsRe
             if (selectedConnectionId === profile.id) {
                 try { await CloseConnection(profile.id); } catch {}
                 setSelectedConnectionId("");
+                onConnectionClosed?.();
             }
 
             if (browserPreview) {

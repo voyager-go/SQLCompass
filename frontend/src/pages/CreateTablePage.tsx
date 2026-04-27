@@ -1,11 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CreateTable } from "../../wailsjs/go/main/App";
-import { GenerateFieldComment, GenerateIndexName } from "../../wailsjs/go/main/App";
+import { CreateTable, GenerateFieldComment, GenerateIndexName, SuggestPartition } from "../../wailsjs/go/main/App";
 import { createPortal } from "react-dom";
 import type { SchemaFieldInput, SchemaIndexInput } from "../types/runtime";
 import type { WorkbenchPage } from "../lib/constants";
 import { TypeCombobox } from "../components/TypeCombobox";
 import { browserGeneratedID, getFieldTypeOptions, getIndexTypeOptions } from "../lib/utils";
+
+type PartitionSuggestion = {
+    partitionddl: string;
+    suggestion: string;
+    warnings: string[];
+};
 
 interface CreateTablePageProps {
     selectedConnection: { id: string; engine?: string } | null;
@@ -198,6 +203,10 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
     const [indexes, setIndexes] = useState<IndexWithAI[]>([]);
     const [isCreating, setIsCreating] = useState(false);
     const [notice, setNotice] = useState<{ tone: "success" | "error" | "info"; message: string } | null>(null);
+
+    // AI 分区建议相关状态
+    const [partitionSuggestion, setPartitionSuggestion] = useState<PartitionSuggestion | null>(null);
+    const [isSuggestingPartition, setIsSuggestingPartition] = useState(false);
     const fieldTypeOptions = getFieldTypeOptions(selectedConnection?.engine ?? "mysql", fields.map((f) => f.type));
     const supportsCreateTable = ["mysql", "mariadb", "postgresql", "sqlite", "clickhouse"].includes((selectedConnection?.engine ?? "mysql").toLowerCase());
     const engine = (selectedConnection?.engine ?? "mysql").toLowerCase();
@@ -281,6 +290,40 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                     itemIndex === index ? { ...item, aiLoading: false } : item,
                 ),
             );
+        }
+    }
+
+    async function handleAISuggestPartition() {
+        if (!aiConfigured || isSuggestingPartition) return;
+        const validFields = fields.filter((f) => f.name.trim() && f.type.trim());
+        if (validFields.length === 0) {
+            setNotice({ tone: "error", message: "请先添加字段再使用 AI 分区建议" });
+            return;
+        }
+
+        setIsSuggestingPartition(true);
+        try {
+            const result = (await SuggestPartition({
+                engine: engine,
+                tableName: tableName.trim() || "new_table",
+                fields: validFields.map(({ id, aiLoading, ...rest }) => rest),
+                indexes: indexes
+                    .filter((idx) => idx.name.trim() && idx.columns.length > 0)
+                    .map(({ id, aiLoading, ...rest }) => rest),
+            })) as PartitionSuggestion;
+            setPartitionSuggestion(result);
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "AI 分区建议失败";
+            setNotice({ tone: "error", message: msg });
+        } finally {
+            setIsSuggestingPartition(false);
+        }
+    }
+
+    function confirmPartitionSuggestion() {
+        if (partitionSuggestion) {
+            setPartitionBy(partitionSuggestion.partitionddl);
+            setPartitionSuggestion(null);
         }
     }
 
@@ -398,25 +441,6 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                 placeholder="Schema，默认 public"
                                 style={{ marginBottom: 16 }}
                             />
-                        ) : null}
-                        {supportsPartition ? (
-                            <div className="field-grid" style={{ marginBottom: 16 }}>
-                                {isMySQL ? (
-                                    <>
-                                        <label className="field field--full">
-                                            <span>PARTITION BY</span>
-                                            <input value={partitionBy} onChange={(e) => setPartitionBy(e.target.value)} placeholder="如 PARTITION BY RANGE COLUMNS(created_at) (PARTITION p202504 VALUES LESS THAN ('2025-05-01'), PARTITION p202505 VALUES LESS THAN ('2025-06-01'))" />
-                                        </label>
-                                    </>
-                                ) : (
-                                    <>
-                                        <label className="field field--full"><span>PARTITION BY</span><input value={partitionBy} onChange={(e) => setPartitionBy(e.target.value)} placeholder="如 toYYYYMM(created_at)" /></label>
-                                        <label className="field field--half"><span>PRIMARY KEY</span><input value={primaryKeyExpr} onChange={(e) => setPrimaryKeyExpr(e.target.value)} placeholder="如 (id, created_at)" /></label>
-                                        <label className="field field--half"><span>ORDER BY</span><input value={orderByExpr} onChange={(e) => setOrderByExpr(e.target.value)} placeholder="如 (id, created_at)" /></label>
-                                        <label className="field field--full"><span>SAMPLE BY</span><input value={sampleByExpr} onChange={(e) => setSampleByExpr(e.target.value)} placeholder="可选，如 id" /></label>
-                                    </>
-                                )}
-                            </div>
                         ) : null}
 
                         {/* 字段结构 */}
@@ -566,7 +590,100 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                 </tbody>
                             </table>
                         </div>
+
+                        {/* 分区（可选，移到底部） */}
+                        {supportsPartition ? (
+                            <div style={{ marginTop: 24 }}>
+                                <div className="section-title">
+                                    <div>
+                                        <h3>分区设置 <span style={{ fontWeight: 400, fontSize: 12.5, color: "var(--text-secondary)" }}>（可选）</span></h3>
+                                    </div>
+                                    {aiConfigured ? (
+                                        <button
+                                            type="button"
+                                            className="ghost-button ghost-button--sm"
+                                            onClick={handleAISuggestPartition}
+                                            disabled={isSuggestingPartition || fields.filter((f) => f.name.trim() && f.type.trim()).length === 0}
+                                        >
+                                            {isSuggestingPartition ? "AI 分析中..." : "AI 快捷分区"}
+                                        </button>
+                                    ) : null}
+                                </div>
+                                {isMySQL ? (
+                                    <label className="field field--full">
+                                        <span>PARTITION BY</span>
+                                        <input value={partitionBy} onChange={(e) => setPartitionBy(e.target.value)} />
+                                    </label>
+                                ) : (
+                                    <>
+                                        <label className="field field--full"><span>PARTITION BY</span><input value={partitionBy} onChange={(e) => setPartitionBy(e.target.value)} /></label>
+                                        <label className="field field--half"><span>PRIMARY KEY</span><input value={primaryKeyExpr} onChange={(e) => setPrimaryKeyExpr(e.target.value)} /></label>
+                                        <label className="field field--half"><span>ORDER BY</span><input value={orderByExpr} onChange={(e) => setOrderByExpr(e.target.value)} /></label>
+                                        <label className="field field--full"><span>SAMPLE BY</span><input value={sampleByExpr} onChange={(e) => setSampleByExpr(e.target.value)} /></label>
+                                    </>
+                                )}
+                            </div>
+                        ) : null}
                     </div>
+
+                    {/* AI 分区建议确认弹窗 */}
+                    {partitionSuggestion ? createPortal(
+                        <div className="modal-overlay" onClick={() => setPartitionSuggestion(null)}>
+                            <div className="confirm-dialog" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+                                <div className="confirm-dialog__header">
+                                    <h4>AI 分区建议</h4>
+                                </div>
+                                <div className="confirm-dialog__body">
+                                    {partitionSuggestion.suggestion && (
+                                        <p style={{ color: "var(--text-primary)", marginBottom: 12, lineHeight: 1.6 }}>{partitionSuggestion.suggestion}</p>
+                                    )}
+
+                                    <div style={{
+                                        background: "var(--surface-2)",
+                                        borderRadius: 8,
+                                        padding: 12,
+                                        fontFamily: "monospace",
+                                        fontSize: 12,
+                                        overflowX: "auto",
+                                        whiteSpace: "pre-wrap",
+                                        wordBreak: "break-all",
+                                        marginBottom: 16,
+                                    }}>
+                                        {partitionSuggestion.partitionddl}
+                                    </div>
+
+                                    {partitionSuggestion.warnings && partitionSuggestion.warnings.length > 0 && (
+                                        <div style={{
+                                            background: "#fef3c7",
+                                            border: "1px solid #f59e0b",
+                                            borderRadius: 8,
+                                            padding: 14,
+                                            marginBottom: 0,
+                                        }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, fontWeight: 600, color: "#92400e" }}>
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"></path>
+                                                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                                                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                                </svg>
+                                                分区注意事项
+                                            </div>
+                                            <ul style={{ margin: 0, paddingLeft: 18, color: "#92400e", fontSize: 13 }}>
+                                                {partitionSuggestion.warnings.map((w, i) => (
+                                                    <li key={i} style={{ marginBottom: 4 }}>{w}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="confirm-dialog__footer">
+                                    <button type="button" className="ghost-button" onClick={() => setPartitionSuggestion(null)}>取消</button>
+                                    <button type="button" className="primary-button" onClick={confirmPartitionSuggestion}>确认应用</button>
+                                </div>
+                            </div>
+                        </div>,
+                        document.body,
+                    ) : null}
                 </div>
             )}
         </section>

@@ -385,6 +385,19 @@ type PartitionInfo struct {
 	IndexSize   int64  `json:"indexSize"`
 }
 
+type SuggestPartitionRequest struct {
+	Engine     string             `json:"engine"`
+	TableName  string             `json:"tableName"`
+	Fields     []SchemaFieldInput `json:"fields"`
+	Indexes    []SchemaIndexInput `json:"indexes"`
+}
+
+type SuggestPartitionResult struct {
+	PartitionDDL  string   `json:"partitionddl"` // 完整的 PARTITION BY 子句
+	Suggestion    string   `json:"suggestion"`   // AI 的分区策略说明
+	Warnings      []string `json:"warnings"`     // 注意事项（主键、自增、索引等）
+}
+
 type TablePartitionRequest struct {
 	ConnectionID string `json:"connectionId"`
 	Database     string `json:"database"`

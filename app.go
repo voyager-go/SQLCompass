@@ -305,6 +305,15 @@ func (a *App) GenerateIndexName(input workspace.GenerateIndexNameRequest) (works
 	return service.GenerateIndexName(input)
 }
 
+func (a *App) SuggestPartition(input workspace.SuggestPartitionRequest) (workspace.SuggestPartitionResult, error) {
+	service, err := a.requireWorkspace()
+	if err != nil {
+		return workspace.SuggestPartitionResult{}, err
+	}
+
+	return service.SuggestPartition(input)
+}
+
 func (a *App) BuildAlterSQL(input workspace.BuildAlterSQLRequest) (workspace.BuildAlterSQLResult, error) {
 	service, err := a.requireWorkspace()
 	if err != nil {
