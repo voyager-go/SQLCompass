@@ -22,13 +22,13 @@ export function ChatWithDatabase(arg1:workspace.ChatDatabaseRequest):Promise<wor
 
 export function CleanupIdleConnections():Promise<number>;
 
-export function CloseAllPooledConnections():Promise<number>;
-
-export function CloseConnection(arg1:string):Promise<number>;
-
 export function ClearAIAPIKey():Promise<workspace.AISettingsView>;
 
 export function ClearStorageData(arg1:string):Promise<workspace.SetStoragePathResult>;
+
+export function CloseAllPooledConnections():Promise<number>;
+
+export function CloseConnection(arg1:string):Promise<number>;
 
 export function CreateDatabase(arg1:workspace.CreateDatabaseRequest):Promise<workspace.CreateDatabaseResult>;
 
@@ -41,8 +41,6 @@ export function ExecutePartitionAction(arg1:workspace.PartitionActionRequest):Pr
 export function ExecuteQuery(arg1:workspace.QueryRequest):Promise<workspace.QueryResult>;
 
 export function ExecuteTransaction(arg1:workspace.TransactionRequest):Promise<workspace.TransactionResult>;
-
-export function GetTransactionStatus(arg1:string, arg2:string):Promise<boolean>;
 
 export function ExportTextFile(arg1:workspace.ExportFileRequest):Promise<workspace.ExportFileResult>;
 
@@ -76,6 +74,8 @@ export function GetTablePartitions(arg1:workspace.TablePartitionRequest):Promise
 
 export function GetTableRowCounts(arg1:workspace.TableRowCountRequest):Promise<workspace.TableRowCountResult>;
 
+export function GetTransactionStatus(arg1:string,arg2:string):Promise<boolean>;
+
 export function GetWorkspaceState():Promise<workspace.WorkspaceState>;
 
 export function GrantStoragePermission():Promise<workspace.SetStoragePathResult>;
@@ -98,19 +98,21 @@ export function SaveAISettings(arg1:workspace.AISettingsInput):Promise<workspace
 
 export function SaveConnection(arg1:workspace.ConnectionInput):Promise<workspace.ConnectionProfile>;
 
+export function SelectCertificateFile():Promise<string>;
+
 export function SelectImportFile():Promise<string>;
 
-export function SelectStorageDirectory():Promise<string>;
-
-export function SelectCertificateFile():Promise<string>;
+export function SelectSQLiteFile():Promise<string>;
 
 export function SelectSSHKeyFile():Promise<string>;
 
-export function SelectSQLiteFile():Promise<string>;
+export function SelectStorageDirectory():Promise<string>;
 
 export function SetStoragePath(arg1:string):Promise<workspace.SetStoragePathResult>;
 
 export function SmartFillTableData(arg1:workspace.SmartFillTableRequest):Promise<workspace.SmartFillTableResult>;
+
+export function SuggestPartition(arg1:workspace.SuggestPartitionRequest):Promise<workspace.SuggestPartitionResult>;
 
 export function SummarizeChatResult(arg1:workspace.ChatResultSummaryRequest):Promise<workspace.ChatResultSummary>;
 

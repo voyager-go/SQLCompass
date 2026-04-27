@@ -38,20 +38,20 @@ export function CleanupIdleConnections() {
   return window['go']['main']['App']['CleanupIdleConnections']();
 }
 
-export function CloseAllPooledConnections() {
-  return window['go']['main']['App']['CloseAllPooledConnections']();
-}
-
-export function CloseConnection(arg1) {
-  return window['go']['main']['App']['CloseConnection'](arg1);
-}
-
 export function ClearAIAPIKey() {
   return window['go']['main']['App']['ClearAIAPIKey']();
 }
 
 export function ClearStorageData(arg1) {
   return window['go']['main']['App']['ClearStorageData'](arg1);
+}
+
+export function CloseAllPooledConnections() {
+  return window['go']['main']['App']['CloseAllPooledConnections']();
+}
+
+export function CloseConnection(arg1) {
+  return window['go']['main']['App']['CloseConnection'](arg1);
 }
 
 export function CreateDatabase(arg1) {
@@ -76,10 +76,6 @@ export function ExecuteQuery(arg1) {
 
 export function ExecuteTransaction(arg1) {
   return window['go']['main']['App']['ExecuteTransaction'](arg1);
-}
-
-export function GetTransactionStatus(arg1, arg2) {
-  return window['go']['main']['App']['GetTransactionStatus'](arg1, arg2);
 }
 
 export function ExportTextFile(arg1) {
@@ -146,6 +142,10 @@ export function GetTableRowCounts(arg1) {
   return window['go']['main']['App']['GetTableRowCounts'](arg1);
 }
 
+export function GetTransactionStatus(arg1, arg2) {
+  return window['go']['main']['App']['GetTransactionStatus'](arg1, arg2);
+}
+
 export function GetWorkspaceState() {
   return window['go']['main']['App']['GetWorkspaceState']();
 }
@@ -190,24 +190,24 @@ export function SaveConnection(arg1) {
   return window['go']['main']['App']['SaveConnection'](arg1);
 }
 
+export function SelectCertificateFile() {
+  return window['go']['main']['App']['SelectCertificateFile']();
+}
+
 export function SelectImportFile() {
   return window['go']['main']['App']['SelectImportFile']();
 }
 
-export function SelectStorageDirectory() {
-  return window['go']['main']['App']['SelectStorageDirectory']();
-}
-
-export function SelectCertificateFile() {
-  return window['go']['main']['App']['SelectCertificateFile']();
+export function SelectSQLiteFile() {
+  return window['go']['main']['App']['SelectSQLiteFile']();
 }
 
 export function SelectSSHKeyFile() {
   return window['go']['main']['App']['SelectSSHKeyFile']();
 }
 
-export function SelectSQLiteFile() {
-  return window['go']['main']['App']['SelectSQLiteFile']();
+export function SelectStorageDirectory() {
+  return window['go']['main']['App']['SelectStorageDirectory']();
 }
 
 export function SetStoragePath(arg1) {
@@ -216,6 +216,10 @@ export function SetStoragePath(arg1) {
 
 export function SmartFillTableData(arg1) {
   return window['go']['main']['App']['SmartFillTableData'](arg1);
+}
+
+export function SuggestPartition(arg1) {
+  return window['go']['main']['App']['SuggestPartition'](arg1);
 }
 
 export function SummarizeChatResult(arg1) {
