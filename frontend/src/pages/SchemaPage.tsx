@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { NoticeBanner } from "../components/NoticeBanner";
 import { TypeCombobox } from "../components/TypeCombobox";
+import { FieldSettingsPanel } from "../components/FieldSettingsPanel";
+import { MultiSelectCombobox } from "../components/MultiSelectCombobox";
 import type { TableDetail, SchemaDraftField } from "../types/runtime";
 import type { SchemaDraftIndex } from "../lib/utils";
-import { getIndexTypeOptions } from "../lib/utils";
+import { getIndexTypeOptions, isIntegerType, isTimestampType } from "../lib/utils";
 import { highlightSQL } from "../lib/sqlHighlight";
 
 type NoticeTone = "success" | "error" | "info";
@@ -307,7 +310,7 @@ interface SchemaPageProps {
     applyFieldSuggestion: (index: number, fieldName: string) => Promise<void>;
     handleGenerateFieldComment: (index: number) => Promise<void>;
     handleDeleteDraftField: (index: number) => void;
-    handleAddField: () => void;
+    handleAddField: (afterIndex?: number) => void;
     setRenameModalOpen: (v: boolean) => void;
     handleExportDDL: () => Promise<void>;
     isExporting: boolean;
@@ -368,11 +371,17 @@ export function SchemaPage({
     onOpenPartitionPage,
 }: SchemaPageProps) {
     const indexTypeOptions = getIndexTypeOptions(activeEngine);
+    const isMySQL = activeEngine === "mysql" || activeEngine === "mariadb";
+    const fieldNames = schemaDraftFields.map((f) => f.name).filter(Boolean);
     const [runningAiDiagnose, setRunningAiDiagnose] = useState(false);
     const [aiDiagnostics, setAiDiagnostics] = useState<{ title: string; detail: string }[] | null>(null);
     const [modelMenuOpen, setModelMenuOpen] = useState(false);
     const modelMenuRef = useRef<HTMLDivElement>(null);
     const [modelCodeModal, setModelCodeModal] = useState<{ open: boolean; title: string; code: string }>({ open: false, title: "", code: "" });
+    // 字段设置面板状态
+    const [settingsFieldIndex, setSettingsFieldIndex] = useState<number | null>(null);
+    // 主键勾选后自增提示框状态
+    const [pkAutoIncrPrompt, setPkAutoIncrPrompt] = useState<{ index: number; target: HTMLElement } | null>(null);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -405,7 +414,7 @@ export function SchemaPage({
                     <p>{selectedTable ? `当前表：${selectedTable}` : "请先从左侧点击某张表，再进入这里查看结构。"}</p>
                 </div>
                 <div className="toolbar-actions">
-                    <button type="button" className="ghost-button" onClick={handleAddField} disabled={!tableDetail}>
+                    <button type="button" className="ghost-button" onClick={() => handleAddField()} disabled={!tableDetail}>
                         新增字段
                     </button>
                     <button type="button" className="ghost-button" onClick={() => setRenameModalOpen(true)} disabled={!tableDetail}>
@@ -473,24 +482,18 @@ export function SchemaPage({
                             <table className="schema-table">
                                 <thead>
                                     <tr>
-                                        <th>字段名</th>
-                                        <th>类型</th>
-                                        <th>可空</th>
-                                        <th>默认值</th>
-                                        <th>主键</th>
-                                        <th>自增</th>
-                                        <th>注释</th>
-                                        <th>操作</th>
+                                        <th>字段名</th><th>类型</th><th>可空</th><th>主键</th><th>注释</th><th style={{ width: 80 }}>操作</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {schemaDraftFields.map((field, index) => (
-                                        <tr key={field.id}>
+                                        <tr key={field.id} style={{ position: "relative" }}>
                                             <td>
                                                 <input
                                                     value={field.name}
                                                     onChange={(event) => updateDraftField(index, "name", event.target.value)}
                                                     onBlur={(event) => applyFieldSuggestion(index, event.target.value)}
+                                                    autoCapitalize="none"
                                                 />
                                             </td>
                                             <td>
@@ -505,35 +508,91 @@ export function SchemaPage({
                                                     <input type="checkbox" checked={field.nullable} onChange={(event) => updateDraftField(index, "nullable", event.target.checked)} />
                                                 </label>
                                             </td>
-                                            <td>
-                                                <input value={field.defaultValue} onChange={(event) => updateDraftField(index, "defaultValue", event.target.value)} />
-                                            </td>
-                                            <td>
+                                            <td style={{ position: "relative" }}>
                                                 <label className="checkbox-cell">
-                                                    <input type="checkbox" checked={field.primary} onChange={(event) => updateDraftField(index, "primary", event.target.checked)} />
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={field.primary}
+                                                        onChange={(event) => {
+                                                            const checked = event.target.checked;
+                                                            updateDraftField(index, "primary", checked);
+                                                            if (checked && !field.autoIncrement && !isIntegerType(field.type)) {
+                                                                const target = (event.currentTarget as HTMLElement).closest("td") as HTMLElement;
+                                                                setPkAutoIncrPrompt({ index, target });
+                                                            }
+                                                            if (!checked) {
+                                                                updateDraftField(index, "autoIncrement", false);
+                                                            }
+                                                        }}
+                                                    />
                                                 </label>
-                                            </td>
-                                            <td>
-                                                <label className="checkbox-cell">
-                                                    <input type="checkbox" checked={field.autoIncrement} onChange={(event) => updateDraftField(index, "autoIncrement", event.target.checked)} />
-                                                </label>
+                                                {pkAutoIncrPrompt?.index === index ? createPortal(
+                                                    <div
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        style={{
+                                                            position: "absolute",
+                                                            top: "100%",
+                                                            left: 0,
+                                                            zIndex: 60,
+                                                            background: "var(--surface-1)",
+                                                            border: "1px solid var(--border-soft)",
+                                                            borderRadius: 8,
+                                                            boxShadow: "0 4px 16px rgba(0,0,0,.12)",
+                                                            padding: "8px 10px",
+                                                            fontSize: 11.5,
+                                                            whiteSpace: "nowrap",
+                                                            marginTop: 2,
+                                                        }}
+                                                    >
+                                                        <div style={{ marginBottom: 4, color: "var(--text-primary)" }}>是否同时设为自增？</div>
+                                                        <div style={{ display: "flex", gap: 4 }}>
+                                                            <button type="button" className="ghost-button" style={{ fontSize: 11, padding: "2px 8px", height: "auto" }} onClick={() => { updateDraftField(index, "autoIncrement", true); setPkAutoIncrPrompt(null); }}>是，自增</button>
+                                                            <button type="button" className="ghost-button" style={{ fontSize: 11, padding: "2px 8px", height: "auto" }} onClick={() => setPkAutoIncrPrompt(null)}>不需要</button>
+                                                        </div>
+                                                    </div>,
+                                                    pkAutoIncrPrompt.target,
+                                                ) : null}
                                             </td>
                                             <td>
                                                 <div className="comment-editor">
-                                                    <input value={field.comment} onChange={(event) => updateDraftField(index, "comment", event.target.value)} />
-                                                    {field.needsAiComment ? (
+                                                    <input value={field.comment} onChange={(event) => updateDraftField(index, "comment", event.target.value)} autoComplete="off" />
+                                                    {aiConfigured ? (
                                                         <button type="button" className="mini-ai-button" onClick={() => handleGenerateFieldComment(index)} disabled={field.aiLoading}>
-                                                            {field.aiLoading ? "生成中" : "AI"}
+                                                            {field.aiLoading ? "..." : "AI"}
                                                         </button>
                                                     ) : null}
                                                 </div>
                                             </td>
-                                            <td>
-                                                <button type="button" className="icon-btn icon-btn--delete" title="删除字段" onClick={() => handleDeleteDraftField(index)}>
+                                            <td style={{ display: "flex", gap: 4, alignItems: "center", position: "relative" }}>
+                                                <button type="button" className="icon-btn icon-btn--settings" title="字段设置" onClick={() => setSettingsFieldIndex(settingsFieldIndex === index ? null : index)}>
                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                        <polyline points="3 6 5 6 21 6"></polyline>
-                                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                                        <circle cx="12" cy="12" r="3"></circle>
+                                                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"></path>
                                                     </svg>
+                                                </button>
+                                                <FieldSettingsPanel
+                                                    visible={settingsFieldIndex === index}
+                                                    fieldType={field.type}
+                                                    isMySQL={isMySQL}
+                                                    unsigned={field.unsigned || false}
+                                                    autoIncrement={field.autoIncrement || false}
+                                                    defaultValue={field.defaultValue}
+                                                    onUpdate={field.onUpdate || ""}
+                                                    charset={field.charset || "utf8mb4"}
+                                                    collation={field.collation || "utf8mb4_general_ci"}
+                                                    onToggleUnsigned={() => updateDraftField(index, "unsigned", !(field.unsigned || false))}
+                                                    onToggleAutoIncrement={() => updateDraftField(index, "autoIncrement", !(field.autoIncrement || false))}
+                                                    onChangeDefaultValue={(val) => updateDraftField(index, "defaultValue", val)}
+                                                    onToggleOnUpdate={(checked) => updateDraftField(index, "onUpdate", checked ? "CURRENT_TIMESTAMP" : "")}
+                                                    onChangeCharset={(val) => updateDraftField(index, "charset", val)}
+                                                    onChangeCollation={(val) => updateDraftField(index, "collation", val)}
+                                                    onClose={() => setSettingsFieldIndex(null)}
+                                                />
+                                                <button type="button" className="icon-btn icon-btn--add" title="在下方插入字段" onClick={() => handleAddField(index)}>
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                                </button>
+                                                <button type="button" className="icon-btn icon-btn--delete" title="删除字段" onClick={() => handleDeleteDraftField(index)}>
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                                                 </button>
                                             </td>
                                         </tr>
@@ -581,6 +640,7 @@ export function SchemaPage({
                                                             onChange={(event) => updateDraftIndex(index, "name", event.target.value)}
                                                             placeholder="索引名"
                                                             style={{ flex: 1, minWidth: 60 }}
+                                                            autoCapitalize="none"
                                                         />
                                                         <button
                                                             type="button"
@@ -595,17 +655,18 @@ export function SchemaPage({
                                                                 }
                                                                 handleGenerateIndexName(index, selectedTable);
                                                             }}
-                                                            disabled={!aiConfigured || !idx.columns.length}
+                                                            disabled={!aiConfigured || !idx.columns.length || idx.aiLoading}
                                                         >
-                                                            AI
+                                                            {idx.aiLoading ? "..." : "AI"}
                                                         </button>
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    <input
-                                                        value={idx.columns.join(",")}
-                                                        onChange={(event) => updateDraftIndex(index, "columns", event.target.value.split(",").map((c) => c.trim()).filter(Boolean))}
-                                                        placeholder="字段1,字段2"
+                                                    <MultiSelectCombobox
+                                                        options={fieldNames}
+                                                        value={idx.columns}
+                                                        onChange={(val) => updateDraftIndex(index, "columns", val)}
+                                                        placeholder="选择字段"
                                                     />
                                                 </td>
                                                 <td>
@@ -722,9 +783,9 @@ export function SchemaPage({
                         </div>
                         <label className="field">
                             <span>新表名</span>
-                            <input value={renameTableName} onChange={(event) => setRenameTableName(event.target.value)} />
+                            <input value={renameTableName} onChange={(event) => setRenameTableName(event.target.value)} autoCapitalize="none" />
                         </label>
-                        <div className="toolbar-actions toolbar-actions--end">
+                        <div className="toolbar-actions" style={{ justifyContent: "flex-end", width: "100%" }}>
                             <button type="button" className="ghost-button" onClick={() => setRenameModalOpen(false)}>
                                 取消
                             </button>
@@ -748,7 +809,7 @@ export function SchemaPage({
                         <div className="code-block code-block--wide code-block--tall" style={{ maxHeight: 480 }}>
                             <pre style={{ margin: 0, fontSize: 13, lineHeight: 1.6 }}><code>{modelCodeModal.code}</code></pre>
                         </div>
-                        <div className="toolbar-actions toolbar-actions--end" style={{ marginTop: 16 }}>
+                        <div className="toolbar-actions" style={{ marginTop: 16, justifyContent: "flex-end", width: "100%" }}>
                             <button
                                 type="button"
                                 className="ghost-button"

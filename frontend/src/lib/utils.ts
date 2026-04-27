@@ -334,6 +334,7 @@ export function getFieldTypeOptions(engine: string, dynamicTypes: string[] = [])
 
 const integerTypePattern = /^(tinyint|smallint|mediumint|int|bigint|Int8|Int16|Int32|Int64|UInt8|UInt16|UInt32|UInt64|integer|INTEGER|smallint|serial|bigserial)/i;
 const timestampTypePattern = /^(datetime|timestamp|date|time|DateTime|DateTime64|timestamptz|timestamp|DATETIME|DATE|TIME)/i;
+const stringTypePattern = /^(varchar|char|text|longtext|mediumtext|tinytext|String|FixedString|enum|set|json|blob|longblob|mediumblob|tinyblob|binary|varbinary|UUID|ipv4|ipv6)/i;
 
 export function isIntegerType(type: string): boolean {
     return integerTypePattern.test(type);
@@ -341,6 +342,10 @@ export function isIntegerType(type: string): boolean {
 
 export function isTimestampType(type: string): boolean {
     return timestampTypePattern.test(type);
+}
+
+export function isStringType(type: string): boolean {
+    return stringTypePattern.test(type);
 }
 
 const indexTypeOptionsByEngine: Record<string, string[]> = {
@@ -474,6 +479,7 @@ export type SchemaDraftIndex = {
     columns: string[];
     unique: boolean;
     indexType: string;
+    aiLoading: boolean;
 };
 
 export function buildAlterSQL(

@@ -100,6 +100,10 @@ type TableField struct {
 	Comment       string `json:"comment"`
 	Primary       bool   `json:"primary"`
 	AutoIncrement bool   `json:"autoIncrement"`
+	Unsigned      bool   `json:"unsigned"`
+	OnUpdate      string `json:"onUpdate"`
+	Charset       string `json:"charset"`
+	Collation     string `json:"collation"`
 }
 
 type TableIndex struct {
@@ -353,6 +357,8 @@ type SchemaFieldInput struct {
 	AutoIncrement bool   `json:"autoIncrement"`
 	Unsigned      bool   `json:"unsigned"`
 	OnUpdate      string `json:"onUpdate"`
+	Charset       string `json:"charset"`
+	Collation     string `json:"collation"`
 }
 
 type SchemaIndexInput struct {

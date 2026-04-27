@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { SchemaDraftField, TableDetail, AIFieldCommentResult, FieldDictionarySuggestion } from "../types/runtime";
 import { RenameTable, GenerateFieldComment, GetFieldDictionarySuggestion, GenerateIndexName, ExecuteQuery } from "../../wailsjs/go/main/App";
-import { browserGeneratedID, buildAlterSQL, copyText, getFieldTypeOptions, getIndexTypeOptions, getDefaultFieldType } from "../lib/utils";
+import { browserGeneratedID, buildAlterSQL, copyText, getFieldTypeOptions, getIndexTypeOptions, getDefaultFieldType, isIntegerType, isTimestampType } from "../lib/utils";
 import type { NoticeTone } from "../lib/constants";
 import type { SchemaDraftIndex } from "../lib/utils";
 
@@ -42,7 +42,7 @@ export interface UseSchemaReturn {
     applyFieldSuggestion: (index: number, fieldName: string) => Promise<void>;
     handleGenerateFieldComment: (index: number) => Promise<void>;
     updateDraftField: <K extends keyof SchemaDraftField>(index: number, key: K, value: SchemaDraftField[K]) => void;
-    handleAddField: () => void;
+    handleAddField: (afterIndex?: number) => void;
     handleDeleteDraftField: (index: number) => void;
     handleRenameTable: () => Promise<void>;
     handleExportDDL: () => Promise<void>;
@@ -202,23 +202,32 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
         );
     }
 
-    function handleAddField() {
-        setSchemaDraftFields((current) => [
-            ...current,
-            {
-                id: browserGeneratedID(),
-                originName: "",
-                name: "",
-                type: getDefaultFieldType(activeEngine),
-                nullable: true,
-                defaultValue: "",
-                comment: "",
-                primary: false,
-                autoIncrement: false,
-                needsAiComment: true,
-                aiLoading: false,
-            },
-        ]);
+    function handleAddField(afterIndex?: number) {
+        const newField = {
+            id: browserGeneratedID(),
+            originName: "",
+            name: "",
+            type: getDefaultFieldType(activeEngine),
+            nullable: false,
+            defaultValue: "",
+            comment: "",
+            primary: false,
+            autoIncrement: false,
+            unsigned: false,
+            onUpdate: "",
+            charset: "utf8mb4",
+            collation: "utf8mb4_general_ci",
+            needsAiComment: true,
+            aiLoading: false,
+        };
+        setSchemaDraftFields((current) => {
+            if (afterIndex !== undefined && afterIndex >= 0) {
+                const next = [...current];
+                next.splice(afterIndex + 1, 0, newField);
+                return next;
+            }
+            return [...current, newField];
+        });
     }
 
     function handleDeleteDraftField(index: number) {
@@ -236,6 +245,7 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
                 columns: [],
                 unique: false,
                 indexType: options.length > 0 ? options[0] : "",
+                aiLoading: false,
             },
         ]);
     }
@@ -264,6 +274,11 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
             return;
         }
         try {
+            setSchemaDraftIndexes((current) =>
+                current.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, aiLoading: true } : item,
+                ),
+            );
             const result = (await GenerateIndexName({
                 tableName,
                 columns: idx.columns,
@@ -271,12 +286,17 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
             })) as { name: string };
             setSchemaDraftIndexes((current) =>
                 current.map((item, itemIndex) =>
-                    itemIndex === index ? { ...item, name: result.name } : item,
+                    itemIndex === index ? { ...item, name: result.name, aiLoading: false } : item,
                 ),
             );
         } catch (error) {
             const message = error instanceof Error ? error.message : "生成索引名称失败";
             setSchemaNotice({ tone: "error", message });
+            setSchemaDraftIndexes((current) =>
+                current.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, aiLoading: false } : item,
+                ),
+            );
         }
     }
 

@@ -80,6 +80,10 @@ export type TableField = {
     comment: string;
     primary: boolean;
     autoIncrement: boolean;
+    unsigned: boolean;
+    onUpdate: string;
+    charset: string;
+    collation: string;
 };
 
 export type TableIndex = {
@@ -223,6 +227,8 @@ export type SchemaFieldInput = {
     autoIncrement: boolean;
     unsigned: boolean;
     onUpdate: string;
+    charset: string;
+    collation: string;
 };
 
 export type SchemaIndexInput = {

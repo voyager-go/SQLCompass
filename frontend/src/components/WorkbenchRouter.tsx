@@ -199,10 +199,10 @@ export interface WorkbenchRouterProps {
     setRenameTableName: (v: string) => void;
     handleRenameTable: () => Promise<void>;
     isRenamingTable: boolean;
-    schemaDraftIndexes: { id: string; originName: string; name: string; columns: string[]; unique: boolean; indexType: string }[];
+    schemaDraftIndexes: { id: string; originName: string; name: string; columns: string[]; unique: boolean; indexType: string; aiLoading: boolean }[];
     handleAddIndex: () => void;
     handleDeleteDraftIndex: (index: number) => void;
-    updateDraftIndex: <K extends keyof { id: string; originName: string; name: string; columns: string[]; unique: boolean; indexType: string }>(index: number, key: K, value: { id: string; originName: string; name: string; columns: string[]; unique: boolean; indexType: string }[K]) => void;
+    updateDraftIndex: <K extends keyof { id: string; originName: string; name: string; columns: string[]; unique: boolean; indexType: string; aiLoading: boolean }>(index: number, key: K, value: { id: string; originName: string; name: string; columns: string[]; unique: boolean; indexType: string; aiLoading: boolean }[K]) => void;
     handleGenerateIndexName: (index: number, tableName: string) => Promise<void>;
     aiConfigured: boolean;
     handleSaveFields: () => Promise<void>;

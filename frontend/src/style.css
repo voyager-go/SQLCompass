@@ -1,5 +1,5 @@
-/* 全局禁用浏览器自动补全 */
-input { autocomplete: off; -webkit-autocomplete: off; }
+/* 全局禁用浏览器自动补全和首字母大写 */
+input { autocomplete: off; -webkit-autocomplete: off; autocapitalize: none; text-transform: none; }
 
 :root {
     color-scheme: light;
@@ -701,6 +701,17 @@ body[data-theme="custom"] .history-item-meta {
 .icon-btn--add:hover {
     background: rgba(37, 99, 235, 0.08);
     border-color: rgba(37, 99, 235, 0.3);
+}
+
+.icon-btn--settings {
+    color: var(--text-secondary);
+}
+
+.icon-btn--settings:hover,
+.icon-btn--settings[aria-expanded="true"] {
+    color: var(--text-primary);
+    background: rgba(100, 100, 100, 0.08);
+    border-color: rgba(100, 100, 100, 0.25);
 }
 
 .icon-btn--close {

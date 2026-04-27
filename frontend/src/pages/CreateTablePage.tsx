@@ -4,7 +4,9 @@ import { createPortal } from "react-dom";
 import type { SchemaFieldInput, SchemaIndexInput } from "../types/runtime";
 import type { WorkbenchPage } from "../lib/constants";
 import { TypeCombobox } from "../components/TypeCombobox";
-import { browserGeneratedID, getFieldTypeOptions, getIndexTypeOptions, isIntegerType, isTimestampType } from "../lib/utils";
+import { MultiSelectCombobox } from "../components/MultiSelectCombobox";
+import { FieldSettingsPanel } from "../components/FieldSettingsPanel";
+import { browserGeneratedID, getFieldTypeOptions, getIndexTypeOptions, isIntegerType, isTimestampType, isStringType } from "../lib/utils";
 
 type PartitionSuggestion = {
     partitionddl: string;
@@ -36,6 +38,8 @@ function emptyField(): FieldWithAI {
         autoIncrement: false,
         unsigned: false,
         onUpdate: "",
+        charset: "utf8mb4",
+        collation: "utf8mb4_general_ci",
         aiLoading: false,
     };
 }
@@ -50,148 +54,6 @@ function emptyIndex(engine: string): IndexWithAI {
         indexType: options.length > 0 ? options[0] : "",
         aiLoading: false,
     };
-}
-
-/* ── MultiSelectCombobox ── */
-interface MultiSelectProps {
-    options: string[];
-    value: string[];
-    onChange: (value: string[]) => void;
-    placeholder?: string;
-}
-
-function MultiSelectCombobox({ options, value, onChange, placeholder }: MultiSelectProps) {
-    const [open, setOpen] = useState(false);
-    const [inputValue, setInputValue] = useState("");
-    const [activeIndex, setActiveIndex] = useState(0);
-    const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
-    const wrapRef = useRef<HTMLDivElement>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
-
-    const filtered = options.filter(
-        (opt) => opt.toLowerCase().includes(inputValue.toLowerCase()) && !value.includes(opt),
-    );
-
-    useEffect(() => {
-        function handleClickOutside(event: MouseEvent) {
-            if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
-                setOpen(false);
-            }
-        }
-        if (open) document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [open]);
-
-    /* Sync dropdown position when opening */
-    useEffect(() => {
-        if (open && wrapRef.current) {
-            const rect = wrapRef.current.getBoundingClientRect();
-            setDropdownPos({
-                top: rect.bottom + window.scrollY + 2,
-                left: rect.left + window.scrollX,
-                width: rect.width,
-            });
-        } else {
-            setDropdownPos(null);
-        }
-    }, [open]);
-
-    useEffect(() => {
-        if (!open) return;
-        function update() {
-            if (wrapRef.current) {
-                const rect = wrapRef.current.getBoundingClientRect();
-                setDropdownPos({
-                    top: rect.bottom + window.scrollY + 2,
-                    left: rect.left + window.scrollX,
-                    width: rect.width,
-                });
-            }
-        }
-        window.addEventListener("scroll", update, true);
-        window.addEventListener("resize", update);
-        return () => {
-            window.removeEventListener("scroll", update, true);
-            window.removeEventListener("resize", update);
-        };
-    }, [open]);
-
-    const handleKeyDown = useCallback(
-        (e: React.KeyboardEvent<HTMLInputElement>) => {
-            if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setActiveIndex((i) => Math.min(i + 1, filtered.length - 1));
-            } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setActiveIndex((i) => Math.max(i - 1, 0));
-            } else if (e.key === "Enter") {
-                e.preventDefault();
-                if (open && filtered[activeIndex]) {
-                    onChange([...value, filtered[activeIndex]]);
-                    setInputValue("");
-                    setActiveIndex(0);
-                    setOpen(true);
-                }
-            } else if (e.key === "Escape") {
-                setOpen(false);
-            }
-        },
-        [open, filtered, activeIndex, value, onChange],
-    );
-
-    function removeItem(item: string) {
-        onChange(value.filter((v) => v !== item));
-    }
-
-    const dropdownEl =
-        open && filtered.length > 0 && dropdownPos ? (
-            <div
-                className="combobox-dropdown combobox-dropdown--portal"
-                style={{ position: "absolute", top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
-            >
-                {filtered.map((opt, idx) => (
-                    <div
-                        key={opt}
-                        className={`combobox-option${idx === activeIndex ? " combobox-option--active" : ""}`}
-                        onMouseEnter={() => setActiveIndex(idx)}
-                        onMouseDown={(e) => {
-                            e.preventDefault();
-                            onChange([...value, opt]);
-                            setInputValue("");
-                            setActiveIndex(0);
-                        }}
-                    >
-                        {opt}
-                    </div>
-                ))}
-            </div>
-        ) : null;
-
-    return (
-        <>
-            <div className="combobox-wrap combobox-wrap--multi" ref={wrapRef}>
-                <div className="multiselect-input" onClick={() => inputRef.current?.focus()}>
-                    {value.length > 0 ? (
-                        value.map((item) => (
-                            <span key={item} className="multiselect-tag">
-                                {item}
-                                <button type="button" onClick={(e) => { e.stopPropagation(); removeItem(item); }}>&times;</button>
-                            </span>
-                        ))
-                    ) : null}
-                    <input
-                        ref={inputRef}
-                        value={inputValue}
-                        placeholder={value.length > 0 ? "" : (placeholder ?? "选择字段")}
-                        onFocus={() => { setOpen(true); setActiveIndex(0); }}
-                        onChange={(e) => { setInputValue(e.target.value); setOpen(true); setActiveIndex(0); }}
-                        onKeyDown={handleKeyDown}
-                    />
-                </div>
-            </div>
-            {dropdownEl ? createPortal(dropdownEl, document.body) : null}
-        </>
-    );
 }
 
 export function CreateTablePage({ selectedConnection, selectedDatabase, pushToast, loadExplorer, setActivePage, aiConfigured }: CreateTablePageProps) {
@@ -209,6 +71,10 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
     // AI 分区建议相关状态
     const [partitionSuggestion, setPartitionSuggestion] = useState<PartitionSuggestion | null>(null);
     const [isSuggestingPartition, setIsSuggestingPartition] = useState(false);
+    // 字段设置面板状态
+    const [settingsFieldIndex, setSettingsFieldIndex] = useState<number | null>(null);
+    // 主键勾选后自增提示框状态
+    const [pkAutoIncrPrompt, setPkAutoIncrPrompt] = useState<{ index: number; target: HTMLElement } | null>(null);
     const fieldTypeOptions = getFieldTypeOptions(selectedConnection?.engine ?? "mysql", fields.map((f) => f.type));
     const supportsCreateTable = ["mysql", "mariadb", "postgresql", "sqlite", "clickhouse"].includes((selectedConnection?.engine ?? "mysql").toLowerCase());
     const engine = (selectedConnection?.engine ?? "mysql").toLowerCase();
@@ -443,6 +309,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                             placeholder="输入新表名"
                             style={{ marginBottom: 16 }}
                             autoComplete="off"
+                            autoCapitalize="none"
                         />
                         {isPostgreSQL ? (
                             <input
@@ -463,18 +330,19 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                             <table className="schema-table">
                                 <thead>
                                     <tr>
-                                        <th>字段名</th><th>类型</th><th>可空</th>{isMySQL ? <th>无符号</th> : null}<th>默认值</th>{isMySQL ? <th>自动更新</th> : null}<th>主键</th><th>自增</th><th>注释</th><th>操作</th>
+                                        <th>字段名</th><th>类型</th><th>可空</th><th>主键</th><th>注释</th><th style={{ width: 80 }}>操作</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {fields.map((field, index) => (
-                                        <tr key={field.id}>
+                                        <tr key={field.id} style={{ position: "relative" }}>
                                             <td>
                                                 <input
                                                     value={field.name}
                                                     onChange={(e) => updateField(index, "name", e.target.value)}
                                                     placeholder="字段名"
                                                     autoComplete="off"
+                                                    autoCapitalize="none"
                                                 />
                                             </td>
                                             <td>
@@ -485,60 +353,50 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                                     <input type="checkbox" checked={field.nullable} onChange={(e) => updateField(index, "nullable", e.target.checked)} />
                                                 </label>
                                             </td>
-                                            {isMySQL ? (
-                                                <td>
-                                                    {isIntegerType(field.type) ? (
-                                                        <label className="checkbox-cell">
-                                                            <input type="checkbox" checked={field.unsigned || false} onChange={(e) => updateField(index, "unsigned", e.target.checked)} />
-                                                        </label>
-                                                    ) : null}
-                                                </td>
-                                            ) : null}
                                             <td style={{ position: "relative" }}>
-                                                <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                                                <label className="checkbox-cell">
                                                     <input
-                                                        value={field.defaultValue}
-                                                        onChange={(e) => updateField(index, "defaultValue", e.target.value)}
-                                                        placeholder="默认值"
-                                                        style={{ flex: 1 }}
-                                                        autoComplete="off"
+                                                        type="checkbox"
+                                                        checked={field.primary}
+                                                        onChange={(e) => {
+                                                            const checked = e.target.checked;
+                                                            updateField(index, "primary", checked);
+                                                            if (checked && !field.autoIncrement && !isIntegerType(field.type)) {
+                                                                const target = (e.currentTarget as HTMLElement).closest("td") as HTMLElement;
+                                                                setPkAutoIncrPrompt({ index, target });
+                                                            }
+                                                            if (!checked) {
+                                                                updateField(index, "autoIncrement", false);
+                                                            }
+                                                        }}
                                                     />
-                                                    {(isTimestampType(field.type)) ? (
-                                                        <button
-                                                            type="button"
-                                                            className="mini-ai-button"
-                                                            title="填充 CURRENT_TIMESTAMP"
-                                                            onClick={() => updateField(index, "defaultValue", "CURRENT_TIMESTAMP")}
-                                                            style={{ fontSize: 11 }}
-                                                        >
-                                                            NOW
-                                                        </button>
-                                                    ) : null}
-                                                </div>
-                                            </td>
-                                            {isMySQL ? (
-                                                <td>
-                                                    {isTimestampType(field.type) && (field.type.toLowerCase() === "timestamp" || field.type.toLowerCase() === "datetime") ? (
-                                                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={field.onUpdate === "CURRENT_TIMESTAMP"}
-                                                                onChange={(e) => updateField(index, "onUpdate", e.target.checked ? "CURRENT_TIMESTAMP" : "")}
-                                                            />
-                                                            自动更新
-                                                        </label>
-                                                    ) : null}
-                                                </td>
-                                            ) : null}
-                                            <td>
-                                                <label className="checkbox-cell">
-                                                    <input type="checkbox" checked={field.primary} onChange={(e) => updateField(index, "primary", e.target.checked)} />
                                                 </label>
-                                            </td>
-                                            <td>
-                                                <label className="checkbox-cell">
-                                                    <input type="checkbox" checked={field.autoIncrement} onChange={(e) => updateField(index, "autoIncrement", e.target.checked)} />
-                                                </label>
+                                                {pkAutoIncrPrompt?.index === index ? createPortal(
+                                                    <div
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        style={{
+                                                            position: "absolute",
+                                                            top: "100%",
+                                                            left: 0,
+                                                            zIndex: 60,
+                                                            background: "var(--surface-1)",
+                                                            border: "1px solid var(--border-soft)",
+                                                            borderRadius: 8,
+                                                            boxShadow: "0 4px 16px rgba(0,0,0,.12)",
+                                                            padding: "8px 10px",
+                                                            fontSize: 11.5,
+                                                            whiteSpace: "nowrap",
+                                                            marginTop: 2,
+                                                        }}
+                                                    >
+                                                        <div style={{ marginBottom: 4, color: "var(--text-primary)" }}>是否同时设为自增？</div>
+                                                        <div style={{ display: "flex", gap: 4 }}>
+                                                            <button type="button" className="ghost-button" style={{ fontSize: 11, padding: "2px 8px", height: "auto" }} onClick={() => { updateField(index, "autoIncrement", true); setPkAutoIncrPrompt(null); }}>是，自增</button>
+                                                            <button type="button" className="ghost-button" style={{ fontSize: 11, padding: "2px 8px", height: "auto" }} onClick={() => setPkAutoIncrPrompt(null)}>不需要</button>
+                                                        </div>
+                                                    </div>,
+                                                    pkAutoIncrPrompt.target,
+                                                ) : null}
                                             </td>
                                             <td>
                                                 <div className="comment-editor">
@@ -550,18 +408,36 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                                     ) : null}
                                                 </div>
                                             </td>
-                                            <td style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                                                <button type="button" className="icon-btn icon-btn--add" title="在下方插入字段" onClick={() => addField(index)}>
+                                            <td style={{ display: "flex", gap: 4, alignItems: "center", position: "relative" }}>
+                                                <button type="button" className="icon-btn icon-btn--settings" title="字段设置" onClick={() => setSettingsFieldIndex(settingsFieldIndex === index ? null : index)}>
                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                        <line x1="12" y1="5" x2="12" y2="19"></line>
-                                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                                        <circle cx="12" cy="12" r="3"></circle>
+                                                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"></path>
                                                     </svg>
                                                 </button>
+                                                <FieldSettingsPanel
+                                                    visible={settingsFieldIndex === index}
+                                                    fieldType={field.type}
+                                                    isMySQL={isMySQL}
+                                                    unsigned={field.unsigned || false}
+                                                    autoIncrement={field.autoIncrement || false}
+                                                    defaultValue={field.defaultValue}
+                                                    onUpdate={field.onUpdate}
+                                                    charset={field.charset || "utf8mb4"}
+                                                    collation={field.collation || "utf8mb4_general_ci"}
+                                                    onToggleUnsigned={() => updateField(index, "unsigned", !(field.unsigned || false))}
+                                                    onToggleAutoIncrement={() => updateField(index, "autoIncrement", !(field.autoIncrement || false))}
+                                                    onChangeDefaultValue={(val) => updateField(index, "defaultValue", val)}
+                                                    onToggleOnUpdate={(checked) => updateField(index, "onUpdate", checked ? "CURRENT_TIMESTAMP" : "")}
+                                                    onChangeCharset={(val) => updateField(index, "charset", val)}
+                                                    onChangeCollation={(val) => updateField(index, "collation", val)}
+                                                    onClose={() => setSettingsFieldIndex(null)}
+                                                />
+                                                <button type="button" className="icon-btn icon-btn--add" title="在下方插入字段" onClick={() => addField(index)}>
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                                </button>
                                                 <button type="button" className="icon-btn icon-btn--delete" title="删除字段" onClick={() => deleteField(index)}>
-                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                        <polyline points="3 6 5 6 21 6"></polyline>
-                                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                                    </svg>
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                                                 </button>
                                             </td>
                                         </tr>
@@ -597,6 +473,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                                             onChange={(e) => updateIndex(index, "name", e.target.value)}
                                                             placeholder="索引名"
                                                             style={{ flex: 1, minWidth: 60 }}
+                                                            autoCapitalize="none"
                                                         />
                                                         {aiConfigured ? (
                                                             <button

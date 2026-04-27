@@ -796,14 +796,8 @@ function App() {
                 originName: field.name,
                 needsAiComment: field.comment.trim() === "",
                 aiLoading: false,
-            })),
-        );
-        schema.setSchemaDraftIndexes(
-            detail.indexes.map((idx) => ({
-                ...idx,
-                id: browserGeneratedID(),
-                originName: idx.name,
-                indexType: idx.indexType || "",
+                charset: (field as any).charset || "utf8mb4",
+                collation: (field as any).collation || "utf8mb4_general_ci",
             })),
         );
         schema.setSchemaNotice(null);
