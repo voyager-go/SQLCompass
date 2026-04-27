@@ -6,7 +6,7 @@ import {
     removeBrowserConnection,
     saveBrowserWorkspaceState,
 } from "../lib/utils";
-import { DeleteConnection, SaveConnection, TestConnection } from "../../wailsjs/go/main/App";
+import { CloseConnection, DeleteConnection, SaveConnection, TestConnection } from "../../wailsjs/go/main/App";
 import type { NoticeTone } from "../lib/constants";
 
 type Notice = {
@@ -46,6 +46,7 @@ export interface UseConnectionsReturn {
     handleSaveConnection: () => Promise<void>;
     handleDeleteConnection: (profile: ConnectionProfile) => Promise<void>;
     handleTestConnection: () => Promise<void>;
+    handleCloseConnection: (profile: ConnectionProfile) => Promise<void>;
 }
 
 export function useConnections(options: UseConnectionsOptions): UseConnectionsReturn {
@@ -122,10 +123,26 @@ export function useConnections(options: UseConnectionsOptions): UseConnectionsRe
         setActivePage("connections");
     }
 
-    function handleSelectConnection(profile: ConnectionProfile) {
+    async function handleSelectConnection(profile: ConnectionProfile) {
+        // 关闭旧连接
+        if (selectedConnectionId && selectedConnectionId !== profile.id) {
+            try { await CloseConnection(selectedConnectionId); } catch {}
+        }
         setSelectedConnectionId(profile.id);
         setWorkspaceNotice(null);
         pushToast("success", "已定位连接", `当前连接：${profile.name}`);
+    }
+
+    async function handleCloseConnection(profile: ConnectionProfile) {
+        try {
+            const closed = await CloseConnection(profile.id);
+            if (selectedConnectionId === profile.id) {
+                setSelectedConnectionId("");
+            }
+            pushToast("success", "连接已关闭", `已关闭 ${closed} 个活跃连接`);
+        } catch (err) {
+            pushToast("error", "关闭失败", err instanceof Error ? err.message : "未知错误");
+        }
     }
 
     async function handleSaveConnection() {
@@ -156,11 +173,17 @@ export function useConnections(options: UseConnectionsOptions): UseConnectionsRe
     }
 
     async function handleDeleteConnection(profile: ConnectionProfile) {
-        if (!window.confirm(`确认删除连接“${profile.name}”吗？`)) {
+        if (!window.confirm(`确认删除连接"${profile.name}"吗？`)) {
             return;
         }
 
         try {
+            // 删除前先关闭活跃连接
+            if (selectedConnectionId === profile.id) {
+                try { await CloseConnection(profile.id); } catch {}
+                setSelectedConnectionId("");
+            }
+
             if (browserPreview) {
                 const nextState = removeBrowserConnection(workspaceState, profile.id);
                 saveBrowserWorkspaceState(nextState);
@@ -215,5 +238,6 @@ export function useConnections(options: UseConnectionsOptions): UseConnectionsRe
         handleSaveConnection,
         handleDeleteConnection,
         handleTestConnection,
+        handleCloseConnection,
     };
 }

@@ -114,6 +114,7 @@ export interface WorkbenchRouterProps {
     resetConnectionForm: (engine?: string) => void;
     updateConnectionField: UpdateConnectionField;
     pushToast: (tone: NoticeTone, title: string, message: string) => void;
+    handleCloseConnection: (profile: ConnectionProfile) => Promise<void>;
 
     // Query
     isOptimizingSQL: boolean;
@@ -323,6 +324,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         resetConnectionForm,
         updateConnectionField,
         pushToast,
+        handleCloseConnection,
         // Query
         isOptimizingSQL,
         sqlText,
@@ -509,6 +511,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     resetConnectionForm={resetConnectionForm}
                     updateConnectionField={updateConnectionField}
                     pushToast={pushToast}
+                    handleCloseConnection={handleCloseConnection}
                 />
             );
         case "query":

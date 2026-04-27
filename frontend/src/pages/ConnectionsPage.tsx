@@ -2,7 +2,7 @@ import { NoticeBanner } from "../components/NoticeBanner";
 import { CopyableText } from "../components/CopyableText";
 import { engineLabels, EngineIcon } from "../lib/engine";
 import type { ConnectionInput, ConnectionProfile, ConnectionTestResult, WorkspaceState } from "../types/workspace";
-import { SelectCertificateFile, SelectSSHKeyFile, SelectSQLiteFile, CloseConnection } from "../../wailsjs/go/main/App";
+import { SelectCertificateFile, SelectSSHKeyFile, SelectSQLiteFile } from "../../wailsjs/go/main/App";
 import { useState, useRef, useEffect } from "react";
 
 type NoticeTone = "success" | "error" | "info";
@@ -40,10 +40,11 @@ interface ConnectionsPageProps {
     fillConnectionDraft: (profile: ConnectionProfile) => void;
     handleDeleteConnection: (profile: ConnectionProfile) => Promise<void>;
     handleTestConnection: () => Promise<void>;
-    handleSaveConnection: () => Promise<void>;
+    handleSaveConnection: () => Promise<void>
     resetConnectionForm: (engine?: string) => void;
     updateConnectionField: UpdateConnectionField;
     pushToast: (tone: NoticeTone, title: string, message: string) => void;
+    handleCloseConnection: (profile: ConnectionProfile) => Promise<void>;
 }
 
 export function ConnectionsPage({
@@ -65,17 +66,33 @@ export function ConnectionsPage({
     resetConnectionForm,
     updateConnectionField,
     pushToast,
+    handleCloseConnection,
 }: ConnectionsPageProps) {
     const isSQLite = connectionDraft.engine === "sqlite";
+    const [connTab, setConnTab] = useState<"general" | "ssl" | "ssh">("general");
 
     // Right-click context menu
     const [ctxMenu, setCtxMenu] = useState<ContextMenuState>({ profile: null, x: 0, y: 0 });
+    const [ctxMenuPos, setCtxMenuPos] = useState({ x: 0, y: 0 });
     const ctxMenuRef = useRef<HTMLDivElement>(null);
 
     function handleContextMenu(e: React.MouseEvent, profile: ConnectionProfile) {
         e.preventDefault();
         e.stopPropagation();
         setCtxMenu({ profile, x: e.clientX, y: e.clientY });
+        requestAnimationFrame(() => {
+            if (ctxMenuRef.current) {
+                const rect = ctxMenuRef.current.getBoundingClientRect();
+                const vx = window.innerWidth;
+                const vy = window.innerHeight;
+                setCtxMenuPos({
+                    x: e.clientX + rect.width > vx ? vx - rect.width - 4 : e.clientX,
+                    y: e.clientY + rect.height > vy ? vy - rect.height - 4 : e.clientY,
+                });
+            } else {
+                setCtxMenuPos({ x: e.clientX, y: e.clientY });
+            }
+        });
     }
 
     function closeContextMenu() {
@@ -84,12 +101,7 @@ export function ConnectionsPage({
 
     async function handleCtxCloseConnection(profile: ConnectionProfile) {
         closeContextMenu();
-        try {
-            const closed = await CloseConnection(profile.id);
-            if (pushToast) pushToast("success", "连接已关闭", `已关闭 ${closed} 个活跃连接`);
-        } catch (err) {
-            if (pushToast) pushToast("error", "关闭失败", err instanceof Error ? err.message : "未知错误");
-        }
+        await handleCloseConnection(profile);
     }
 
     // Close context menu on outside click
@@ -160,7 +172,21 @@ export function ConnectionsPage({
                                                 </div>
                                                 <span className="connection-card__target">{connectionTargetLabel(profile)}</span>
                                             </div>
-                                            <div className="row-actions row-actions--icon">
+                                            <div className="row-actions">
+                                                {profile.id === selectedConnectionId && (
+                                                    <button
+                                                        type="button"
+                                                        className="icon-btn icon-btn--close"
+                                                        onClick={() => handleCtxCloseConnection(profile)}
+                                                        title="关闭连接"
+                                                    >
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                                            <polyline points="16 17 21 12 16 7"></polyline>
+                                                            <line x1="21" y1="12" x2="9" y2="12"></line>
+                                                        </svg>
+                                                    </button>
+                                                )}
                                                 <button
                                                     type="button"
                                                     className="icon-btn icon-btn--edit"
@@ -249,118 +275,155 @@ export function ConnectionsPage({
                         </div>
                     </div>
 
-                    <div className="form-grid">
-                        <label className="field">
-                            <span>连接名称</span>
-                            <input value={connectionDraft.name} onChange={(event) => updateConnectionField("name", event.target.value)} placeholder="例如：Docker-ms" />
-                        </label>
-                        <label className="field field--engine">
-                            <span>数据库类型</span>
-                            <select value={connectionDraft.engine} onChange={(event) => updateConnectionField("engine", event.target.value)}>
-                                {Object.entries(engineLabels).map(([value, label]) => (
-                                    <option key={value} value={value}>
-                                        {label}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
+                    <div className="conn-form-tabs">
+                        <div className="conn-form-tabbar">
+                            <button type="button" className={`conn-form-tab${connTab === "general" ? " conn-form-tab--active" : ""}`} onClick={() => setConnTab("general")}>常规</button>
+                            {!isSQLite && (
+                                <>
+                                    <button type="button" className={`conn-form-tab${connTab === "ssl" ? " conn-form-tab--active" : ""}`} onClick={() => setConnTab("ssl")}>SSL / TLS</button>
+                                    <button type="button" className={`conn-form-tab${connTab === "ssh" ? " conn-form-tab--active" : ""}`} onClick={() => setConnTab("ssh")}>SSH 隧道</button>
+                                </>
+                            )}
+                        </div>
 
-                        <label className="field">
-                            <span>分组</span>
-                            <div className="group-input-row">
-                                <input
-                                    list="group-suggestions"
-                                    value={connectionDraft.group}
-                                    onChange={(event) => updateConnectionField("group", event.target.value)}
-                                    placeholder="例如：开发环境"
-                                />
-                                <datalist id="group-suggestions">
-                                    {Array.from(new Set(workspaceState.connections.map((c) => c.group).filter(Boolean))).map((group) => (
-                                        <option key={group} value={group} />
-                                    ))}
-                                </datalist>
-                                <div className="color-picker-compact">
-                                    {["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#6366f1"].slice(0, 6).map((color) => (
-                                        <button
-                                            key={color}
-                                            type="button"
-                                            className={`color-dot${connectionDraft.groupColor === color ? " color-dot--active" : ""}`}
-                                            style={{ backgroundColor: color }}
-                                            onClick={() => updateConnectionField("groupColor", color)}
-                                            title={color}
-                                        />
-                                    ))}
-                                    <div className="color-custom-wrapper">
+                        {connTab === "general" && (
+                            <div className="form-grid">
+                                <label className="field">
+                                    <span>连接名称</span>
+                                    <input value={connectionDraft.name} onChange={(event) => updateConnectionField("name", event.target.value)} placeholder="例如：Docker-ms" />
+                                </label>
+                                <label className="field field--engine">
+                                    <span>数据库类型</span>
+                                    <select value={connectionDraft.engine} onChange={(event) => updateConnectionField("engine", event.target.value)}>
+                                        {Object.entries(engineLabels).map(([value, label]) => (
+                                            <option key={value} value={value}>
+                                                {label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+
+                                <label className="field">
+                                    <span>分组</span>
+                                    <div className="group-input-row">
                                         <input
-                                            type="color"
-                                            value={connectionDraft.groupColor || "#3b82f6"}
-                                            onChange={(event) => updateConnectionField("groupColor", event.target.value)}
-                                            className="color-input-native"
-                                            title="自定义颜色"
+                                            list="group-suggestions"
+                                            value={connectionDraft.group}
+                                            onChange={(event) => updateConnectionField("group", event.target.value)}
+                                            placeholder="例如：开发环境"
                                         />
-                                        <span
-                                            className="color-custom-icon"
-                                            style={connectionDraft.groupColor ? { backgroundColor: connectionDraft.groupColor, color: "#fff", border: "none" } : undefined}
-                                        >
-                                            +
-                                        </span>
+                                        <datalist id="group-suggestions">
+                                            {Array.from(new Set(workspaceState.connections.map((c) => c.group).filter(Boolean))).map((group) => (
+                                                <option key={group} value={group} />
+                                            ))}
+                                        </datalist>
+                                        <div className="color-picker-compact">
+                                            {["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#6366f1"].slice(0, 6).map((color) => (
+                                                <button
+                                                    key={color}
+                                                    type="button"
+                                                    className={`color-dot${connectionDraft.groupColor === color ? " color-dot--active" : ""}`}
+                                                    style={{ backgroundColor: color }}
+                                                    onClick={() => updateConnectionField("groupColor", color)}
+                                                    title={color}
+                                                />
+                                            ))}
+                                            <div className="color-custom-wrapper">
+                                                <input
+                                                    type="color"
+                                                    value={connectionDraft.groupColor || "#3b82f6"}
+                                                    onChange={(event) => updateConnectionField("groupColor", event.target.value)}
+                                                    className="color-input-native"
+                                                    title="自定义颜色"
+                                                />
+                                                <span
+                                                    className="color-custom-icon"
+                                                    style={connectionDraft.groupColor ? { backgroundColor: connectionDraft.groupColor, color: "#fff", border: "none" } : undefined}
+                                                >
+                                                    +
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
+                                </label>
+
+                                {!isSQLite ? (
+                                    <>
+                                        <label className="field">
+                                            <span>主机地址</span>
+                                            <input value={connectionDraft.host} onChange={(event) => updateConnectionField("host", event.target.value)} />
+                                        </label>
+                                        <label className="field">
+                                            <span>端口</span>
+                                            <input type="number" value={connectionDraft.port} onChange={(event) => updateConnectionField("port", Number(event.target.value))} />
+                                        </label>
+                                        <label className="field">
+                                            <span>用户名</span>
+                                            <input value={connectionDraft.username} onChange={(event) => updateConnectionField("username", event.target.value)} />
+                                        </label>
+                                        <label className="field field--password">
+                                            <span>密码</span>
+                                            <div className="password-input-wrap">
+                                                <input type={showPassword ? "text" : "password"} value={connectionDraft.password} onChange={(event) => updateConnectionField("password", event.target.value)} />
+                                                <button
+                                                    type="button"
+                                                    className="password-toggle-btn"
+                                                    onClick={() => setShowPassword((prev) => !prev)}
+                                                    title={showPassword ? "隐藏密码" : "显示密码"}
+                                                >
+                                                    {showPassword ? (
+                                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                                            <circle cx="12" cy="12" r="3"></circle>
+                                                            <path d="M3 3l18 18"></path>
+                                                        </svg>
+                                                    ) : (
+                                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                                            <circle cx="12" cy="12" r="3"></circle>
+                                                        </svg>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </label>
+                                        <label className="field">
+                                            <span>默认数据库</span>
+                                            <input value={connectionDraft.database} onChange={(event) => updateConnectionField("database", event.target.value)} placeholder="可选，连接后默认进入" />
+                                        </label>
+                                        <label className="field field--full">
+                                            <span>连接 URL（高级）</span>
+                                            <input value={connectionDraft.url} onChange={(event) => updateConnectionField("url", event.target.value)} placeholder="填写后将优先使用 URL 而非主机/端口配置" />
+                                        </label>
+                                    </>
+                                ) : (
+                                    <label className="field field--full">
+                                        <span>SQLite 文件</span>
+                                        <div className="path-browse-row">
+                                            <input value={connectionDraft.filePath} onChange={(event) => updateConnectionField("filePath", event.target.value)} placeholder="点击右侧选择" readOnly />
+                                            <button
+                                                type="button"
+                                                className="ghost-button ghost-button--sm"
+                                                onClick={async () => {
+                                                    const path = await SelectSQLiteFile();
+                                                    if (path) updateConnectionField("filePath", path);
+                                                }}
+                                                title="浏览文件"
+                                            >
+                                                浏览
+                                            </button>
+                                        </div>
+                                    </label>
+                                )}
+
+                                <label className="field field--full">
+                                    <span>备注</span>
+                                    <textarea value={connectionDraft.notes} onChange={(event) => updateConnectionField("notes", event.target.value)} rows={3} />
+                                </label>
                             </div>
-                        </label>
+                        )}
 
-                        {!isSQLite ? (
-                            <>
-                                <label className="field">
-                                    <span>主机地址</span>
-                                    <input value={connectionDraft.host} onChange={(event) => updateConnectionField("host", event.target.value)} />
-                                </label>
-                                <label className="field">
-                                    <span>端口</span>
-                                    <input type="number" value={connectionDraft.port} onChange={(event) => updateConnectionField("port", Number(event.target.value))} />
-                                </label>
-                                <label className="field">
-                                    <span>用户名</span>
-                                    <input value={connectionDraft.username} onChange={(event) => updateConnectionField("username", event.target.value)} />
-                                </label>
-                                <label className="field field--password">
-                                    <span>密码</span>
-                                    <div className="password-input-wrap">
-                                        <input type={showPassword ? "text" : "password"} value={connectionDraft.password} onChange={(event) => updateConnectionField("password", event.target.value)} />
-                                        <button
-                                            type="button"
-                                            className="password-toggle-btn"
-                                            onClick={() => setShowPassword((prev) => !prev)}
-                                            title={showPassword ? "隐藏密码" : "显示密码"}
-                                        >
-                                            {showPassword ? (
-                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                                    <circle cx="12" cy="12" r="3"></circle>
-                                                    <path d="M3 3l18 18"></path>
-                                                </svg>
-                                            ) : (
-                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                                    <circle cx="12" cy="12" r="3"></circle>
-                                                </svg>
-                                            )}
-                                        </button>
-                                    </div>
-                                </label>
-                                <label className="field">
-                                    <span>默认数据库</span>
-                                    <input value={connectionDraft.database} onChange={(event) => updateConnectionField("database", event.target.value)} placeholder="可选，连接后默认进入" />
-                                </label>
-                                <label className="field">
-                                    <span>连接 URL</span>
-                                    <input value={connectionDraft.url} onChange={(event) => updateConnectionField("url", event.target.value)} placeholder="可选" />
-                                </label>
-
-                                {/* SSL/TLS Configuration */}
-                                <div className="field field--full section-divider">
-                                    <span className="section-divider__label">SSL/TLS</span>
-                                </div>
+                        {connTab === "ssl" && !isSQLite && (
+                            <div className="form-grid">
                                 <label className="field field--half">
                                     <span>SSL 模式</span>
                                     <select value={connectionDraft.sslMode || "disable"} onChange={(event) => updateConnectionField("sslMode", event.target.value)}>
@@ -370,6 +433,7 @@ export function ConnectionsPage({
                                         <option value="verify-full">完全验证</option>
                                     </select>
                                 </label>
+                                <div className="field field--half" />
                                 <label className="field field--half">
                                     <span>CA 证书路径</span>
                                     <div className="path-browse-row">
@@ -421,14 +485,17 @@ export function ConnectionsPage({
                                         </button>
                                     </div>
                                 </label>
+                            </div>
+                        )}
 
-                                {/* SSH Tunnel Configuration */}
-                                <div className="field field--full section-divider">
-                                    <span className="section-divider__label">
-                                        <input type="checkbox" checked={connectionDraft.useSSH || false} onChange={(event) => updateConnectionField("useSSH", event.target.checked)} style={{ marginRight: 6 }} />
-                                        SSH 隧道
+                        {connTab === "ssh" && !isSQLite && (
+                            <div className="form-grid">
+                                <label className="field field--full">
+                                    <span>
+                                        <input type="checkbox" checked={connectionDraft.useSSH || false} onChange={(event) => updateConnectionField("useSSH", event.target.checked)} style={{ marginRight: 8, verticalAlign: "middle" }} />
+                                        启用 SSH 隧道
                                     </span>
-                                </div>
+                                </label>
                                 {connectionDraft.useSSH ? (
                                     <>
                                         <label className="field field--half">
@@ -465,32 +532,13 @@ export function ConnectionsPage({
                                             </div>
                                         </label>
                                     </>
-                                ) : null}
-                            </>
-                        ) : (
-                            <label className="field field--full">
-                                <span>SQLite 文件</span>
-                                <div className="path-browse-row">
-                                    <input value={connectionDraft.filePath} onChange={(event) => updateConnectionField("filePath", event.target.value)} placeholder="点击右侧选择" readOnly />
-                                    <button
-                                        type="button"
-                                        className="ghost-button ghost-button--sm"
-                                        onClick={async () => {
-                                            const path = await SelectSQLiteFile();
-                                            if (path) updateConnectionField("filePath", path);
-                                        }}
-                                        title="浏览文件"
-                                    >
-                                        浏览
-                                    </button>
-                                </div>
-                            </label>
+                                ) : (
+                                    <div className="field field--full" style={{ color: "var(--text-secondary)", fontSize: 13, padding: "12px 0" }}>
+                                        启用后可通过 SSH 跳板机建立加密隧道连接数据库。
+                                    </div>
+                                )}
+                            </div>
                         )}
-
-                        <label className="field field--full">
-                            <span>备注</span>
-                            <textarea value={connectionDraft.notes} onChange={(event) => updateConnectionField("notes", event.target.value)} rows={4} />
-                        </label>
                     </div>
 
                     {connectionTest ? (
@@ -507,7 +555,7 @@ export function ConnectionsPage({
                 <div
                     ref={ctxMenuRef}
                     className="context-menu"
-                    style={{ position: "fixed", left: ctxMenu.x, top: ctxMenu.y, zIndex: 1000, minWidth: 150 }}
+                    style={{ position: "fixed", left: ctxMenuPos.x, top: ctxMenuPos.y, zIndex: 1000, minWidth: 150 }}
                 >
                     <button
                         type="button"
@@ -523,19 +571,20 @@ export function ConnectionsPage({
                         </svg>
                         编辑连接
                     </button>
-                    <button
-                        type="button"
-                        className="context-menu__item"
-                        onClick={() => handleCtxCloseConnection(ctxMenu.profile!)}
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M18.36 6.64A9 9 0 0 0 5.64 6.64"></path>
-                            <line x1="12" y1="3" x2="12" y2="7"></line>
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <path d="M8 16l1-5h6l1 5"></path>
-                        </svg>
-                        关闭连接
-                    </button>
+                    {ctxMenu.profile.id === selectedConnectionId && (
+                        <button
+                            type="button"
+                            className="context-menu__item"
+                            onClick={() => handleCtxCloseConnection(ctxMenu.profile!)}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                <polyline points="16 17 21 12 16 7"></polyline>
+                                <line x1="21" y1="12" x2="9" y2="12"></line>
+                            </svg>
+                            关闭连接
+                        </button>
+                    )}
                     <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
                     <button
                         type="button"

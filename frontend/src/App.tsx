@@ -1042,6 +1042,40 @@ function App() {
         });
     }
 
+    function handleDropDatabase(database: string) {
+        if (!selectedConnection) return;
+        const engine = selectedConnection.engine;
+        const qDatabase = quoteIdentifierForEngine(database, engine);
+        setDangerConfirm({
+            open: true,
+            title: "删除数据库",
+            message: `确定要删除数据库 "${database}" 吗？该操作会永久删除数据库及其中的所有表和数据，且不可恢复。`,
+            actionLabel: "确认删除",
+            onConfirm: async () => {
+                setDangerConfirm((prev) => ({ ...prev, open: false }));
+                try {
+                    await ExecuteQuery({
+                        connectionId: selectedConnection.id,
+                        database: "",
+                        sql: `DROP DATABASE ${qDatabase};`,
+                        page: 1,
+                        pageSize: 1,
+                    });
+                    pushToast("success", "操作成功", `数据库 "${database}" 已删除`);
+                    if (selectedDatabase === database) {
+                        setSelectedDatabase("");
+                        setSelectedTable("");
+                        setTableDetail(null);
+                    }
+                    await loadExplorer(selectedConnection.id);
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : "删除数据库失败";
+                    pushToast("error", "操作失败", message);
+                }
+            },
+        });
+    }
+
     function splitSQLStatements(sql: string): string[] {
         const statements: string[] = [];
         let current = "";
@@ -2480,6 +2514,7 @@ function App() {
                     onImportCSVToDatabase={handleImportCSVToDatabase}
                     onTruncateTable={handleTruncateTable}
                     onDropTable={handleDropTable}
+                    onDropDatabase={handleDropDatabase}
                 />
 
             <main className="workbench">
@@ -2543,6 +2578,7 @@ function App() {
                         resetConnectionForm={conn.resetConnectionForm}
                         updateConnectionField={conn.updateConnectionField}
                         pushToast={pushToast}
+                        handleCloseConnection={conn.handleCloseConnection}
                         isOptimizingSQL={isOptimizingSQL}
                         sqlText={sqlText}
                         queryNotice={queryNotice}
@@ -2688,10 +2724,7 @@ function App() {
                 <div className="modal-backdrop" onClick={() => setShowCreateDBModal(false)}>
                     <div className="modal-card" onClick={(event) => event.stopPropagation()}>
                         <div className="section-title">
-                            <div>
-                                <h3>新建数据库</h3>
-                                <p>在当前连接中创建一个新的{selectedConnection?.engine === "clickhouse" ? "ClickHouse" : selectedConnection?.engine === "postgresql" ? "PostgreSQL" : "MySQL"}数据库。</p>
-                            </div>
+                            <h3>新建数据库</h3>
                         </div>
                         <label className="field">
                             <span>数据库名称</span>
@@ -2767,7 +2800,7 @@ function App() {
                                 </select>
                             </label>
                         )}
-                        <div className="toolbar-actions toolbar-actions--end">
+                        <div className="toolbar-actions toolbar-actions--end" style={{ marginTop: "20px" }}>
                             <button type="button" className="ghost-button" onClick={() => setShowCreateDBModal(false)}>
                                 取消
                             </button>

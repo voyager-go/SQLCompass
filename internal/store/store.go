@@ -242,7 +242,7 @@ func (s *Store) SaveConnections(state AppState) error {
 	return saveJSON(s.connectionsPath, state)
 }
 
-// encryptConnectionPasswords encrypts any plaintext passwords in the connections.
+// encryptConnectionPasswords encrypts sensitive fields in the connections.
 func (s *Store) encryptConnectionPasswords(state *AppState) {
 	for i := range state.Connections {
 		if state.Connections[i].Password != "" && !isEncrypted(state.Connections[i].Password) {
@@ -251,16 +251,40 @@ func (s *Store) encryptConnectionPasswords(state *AppState) {
 				state.Connections[i].Password = enc
 			}
 		}
+		if state.Connections[i].SSHPassword != "" && !isEncrypted(state.Connections[i].SSHPassword) {
+			enc, err := encrypt(state.Connections[i].SSHPassword)
+			if err == nil {
+				state.Connections[i].SSHPassword = enc
+			}
+		}
+		if state.Connections[i].URL != "" && !isEncrypted(state.Connections[i].URL) {
+			enc, err := encrypt(state.Connections[i].URL)
+			if err == nil {
+				state.Connections[i].URL = enc
+			}
+		}
 	}
 }
 
-// decryptConnectionPasswords decrypts encrypted passwords in the connections.
+// decryptConnectionPasswords decrypts sensitive fields in the connections.
 func (s *Store) decryptConnectionPasswords(state *AppState) {
 	for i := range state.Connections {
 		if state.Connections[i].Password != "" && isEncrypted(state.Connections[i].Password) {
 			dec, err := decrypt(state.Connections[i].Password)
 			if err == nil {
 				state.Connections[i].Password = dec
+			}
+		}
+		if state.Connections[i].SSHPassword != "" && isEncrypted(state.Connections[i].SSHPassword) {
+			dec, err := decrypt(state.Connections[i].SSHPassword)
+			if err == nil {
+				state.Connections[i].SSHPassword = dec
+			}
+		}
+		if state.Connections[i].URL != "" && isEncrypted(state.Connections[i].URL) {
+			dec, err := decrypt(state.Connections[i].URL)
+			if err == nil {
+				state.Connections[i].URL = dec
 			}
 		}
 	}

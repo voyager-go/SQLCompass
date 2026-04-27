@@ -700,9 +700,15 @@ body[data-theme="custom"] .history-item-meta {
     border-color: rgba(37, 99, 235, 0.3);
 }
 
-/* ================================================================
-   CARDS & SECTIONS
-   ================================================================ */
+.icon-btn--close {
+    color: #d97706;
+}
+
+.icon-btn--close:hover {
+    background: rgba(217, 119, 6, 0.08);
+    border-color: rgba(217, 119, 6, 0.3);
+    color: #b45309;
+}
 
 .connection-layout {
     display: grid;
@@ -4340,6 +4346,45 @@ body[data-theme="dark"] .code-block .sh-fnc, body[data-theme="dark"] .sql-highli
     display: flex;
     align-items: center;
     gap: 6px;
+}
+
+/* ── Connection Form Tabs ── */
+
+.conn-form-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.conn-form-tabbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border-bottom: 1px solid var(--border-soft);
+    padding-bottom: 0;
+}
+
+.conn-form-tab {
+    appearance: none;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    margin-bottom: -1px;
+}
+
+.conn-form-tab:hover {
+    color: var(--text-primary);
+}
+
+.conn-form-tab--active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
 }
 
 /* ── Section Divider for Connection Form ── */
