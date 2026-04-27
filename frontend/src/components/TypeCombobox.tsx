@@ -142,7 +142,8 @@ export function TypeCombobox({ options, value, onChange, placeholder }: TypeComb
                     placeholder={placeholder}
                     onChange={(e) => {
                         setInputValue(e.target.value);
-                        setOpen(true);
+                        /* Only open/reopen dropdown if already open — don't force-open on every keystroke */
+                        if (!open) setOpen(true);
                         setActiveIndex(0);
                     }}
                     onFocus={() => {

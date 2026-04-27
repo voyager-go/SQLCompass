@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import type { SchemaFieldInput, SchemaIndexInput } from "../types/runtime";
 import type { WorkbenchPage } from "../lib/constants";
 import { TypeCombobox } from "../components/TypeCombobox";
-import { browserGeneratedID, getFieldTypeOptions, getIndexTypeOptions } from "../lib/utils";
+import { browserGeneratedID, getFieldTypeOptions, getIndexTypeOptions, isIntegerType, isTimestampType } from "../lib/utils";
 
 type PartitionSuggestion = {
     partitionddl: string;
@@ -29,11 +29,13 @@ function emptyField(): FieldWithAI {
         id: browserGeneratedID(),
         name: "",
         type: "",
-        nullable: true,
+        nullable: false,
         defaultValue: "",
         comment: "",
         primary: false,
         autoIncrement: false,
+        unsigned: false,
+        onUpdate: "",
         aiLoading: false,
     };
 }
@@ -218,8 +220,16 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
     // 字段名列表供索引多选用
     const fieldNames = fields.map((f) => f.name).filter(Boolean);
 
-    function addField() {
-        setFields((current) => [...current, emptyField()]);
+    function addField(afterIndex?: number) {
+        setFields((current) => {
+            const newField = emptyField();
+            if (afterIndex !== undefined && afterIndex >= 0) {
+                const next = [...current];
+                next.splice(afterIndex + 1, 0, newField);
+                return next;
+            }
+            return [...current, newField];
+        });
     }
 
     function updateField(index: number, key: keyof SchemaFieldInput, value: unknown) {
@@ -432,6 +442,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                             onChange={(e) => setTableName(e.target.value)}
                             placeholder="输入新表名"
                             style={{ marginBottom: 16 }}
+                            autoComplete="off"
                         />
                         {isPostgreSQL ? (
                             <input
@@ -440,6 +451,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                 onChange={(e) => setSchemaName(e.target.value)}
                                 placeholder="Schema，默认 public"
                                 style={{ marginBottom: 16 }}
+                                autoComplete="off"
                             />
                         ) : null}
 
@@ -451,7 +463,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                             <table className="schema-table">
                                 <thead>
                                     <tr>
-                                        <th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>主键</th><th>自增</th><th>注释</th><th>操作</th>
+                                        <th>字段名</th><th>类型</th><th>可空</th>{isMySQL ? <th>无符号</th> : null}<th>默认值</th>{isMySQL ? <th>自动更新</th> : null}<th>主键</th><th>自增</th><th>注释</th><th>操作</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -462,6 +474,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                                     value={field.name}
                                                     onChange={(e) => updateField(index, "name", e.target.value)}
                                                     placeholder="字段名"
+                                                    autoComplete="off"
                                                 />
                                             </td>
                                             <td>
@@ -472,9 +485,51 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                                     <input type="checkbox" checked={field.nullable} onChange={(e) => updateField(index, "nullable", e.target.checked)} />
                                                 </label>
                                             </td>
-                                            <td>
-                                                <input value={field.defaultValue} onChange={(e) => updateField(index, "defaultValue", e.target.value)} placeholder="默认值" />
+                                            {isMySQL ? (
+                                                <td>
+                                                    {isIntegerType(field.type) ? (
+                                                        <label className="checkbox-cell">
+                                                            <input type="checkbox" checked={field.unsigned || false} onChange={(e) => updateField(index, "unsigned", e.target.checked)} />
+                                                        </label>
+                                                    ) : null}
+                                                </td>
+                                            ) : null}
+                                            <td style={{ position: "relative" }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                                                    <input
+                                                        value={field.defaultValue}
+                                                        onChange={(e) => updateField(index, "defaultValue", e.target.value)}
+                                                        placeholder="默认值"
+                                                        style={{ flex: 1 }}
+                                                        autoComplete="off"
+                                                    />
+                                                    {(isTimestampType(field.type)) ? (
+                                                        <button
+                                                            type="button"
+                                                            className="mini-ai-button"
+                                                            title="填充 CURRENT_TIMESTAMP"
+                                                            onClick={() => updateField(index, "defaultValue", "CURRENT_TIMESTAMP")}
+                                                            style={{ fontSize: 11 }}
+                                                        >
+                                                            NOW
+                                                        </button>
+                                                    ) : null}
+                                                </div>
                                             </td>
+                                            {isMySQL ? (
+                                                <td>
+                                                    {isTimestampType(field.type) && (field.type.toLowerCase() === "timestamp" || field.type.toLowerCase() === "datetime") ? (
+                                                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={field.onUpdate === "CURRENT_TIMESTAMP"}
+                                                                onChange={(e) => updateField(index, "onUpdate", e.target.checked ? "CURRENT_TIMESTAMP" : "")}
+                                                            />
+                                                            自动更新
+                                                        </label>
+                                                    ) : null}
+                                                </td>
+                                            ) : null}
                                             <td>
                                                 <label className="checkbox-cell">
                                                     <input type="checkbox" checked={field.primary} onChange={(e) => updateField(index, "primary", e.target.checked)} />
@@ -487,7 +542,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                             </td>
                                             <td>
                                                 <div className="comment-editor">
-                                                    <input value={field.comment} onChange={(e) => updateField(index, "comment", e.target.value)} placeholder="注释" />
+                                                    <input value={field.comment} onChange={(e) => updateField(index, "comment", e.target.value)} placeholder="注释" autoComplete="off" />
                                                     {aiConfigured ? (
                                                         <button type="button" className="mini-ai-button" onClick={() => handleGenerateFieldComment(index)} disabled={field.aiLoading}>
                                                             {field.aiLoading ? "..." : "AI"}
@@ -496,7 +551,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                                 </div>
                                             </td>
                                             <td style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                                                <button type="button" className="icon-btn icon-btn--add" title="新增字段" onClick={addField}>
+                                                <button type="button" className="icon-btn icon-btn--add" title="在下方插入字段" onClick={() => addField(index)}>
                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                         <line x1="12" y1="5" x2="12" y2="19"></line>
                                                         <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -609,10 +664,50 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                         </button>
                                     ) : null}
                                 </div>
+                                {isMySQL && fields.some((f) => f.primary) && partitionBy.trim() !== "" ? (
+                                    <div style={{
+                                        background: "#fef2f2",
+                                        border: "1px solid #dc2626",
+                                        borderRadius: 8,
+                                        padding: "10px 14px",
+                                        marginBottom: 12,
+                                        fontSize: 12.5,
+                                        color: "#991b1b",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 6,
+                                    }}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <circle cx="12" cy="12" r="10"></circle>
+                                            <line x1="15" y1="9" x2="9" y2="15"></line>
+                                            <line x1="9" y1="9" x2="15" y2="15"></line>
+                                        </svg>
+                                        <span>MySQL 分区要求主键必须包含所有分区键。系统将在建表时自动把分区键追加到主键中。</span>
+                                    </div>
+                                ) : null}
                                 {isMySQL ? (
                                     <label className="field field--full">
                                         <span>PARTITION BY</span>
-                                        <input value={partitionBy} onChange={(e) => setPartitionBy(e.target.value)} />
+                                        <textarea
+                                            value={partitionBy}
+                                            onChange={(e) => setPartitionBy(e.target.value)}
+                                            rows={4}
+                                            style={{
+                                                width: "100%",
+                                                fontFamily: "var(--font-mono)",
+                                                fontSize: 12.5,
+                                                lineHeight: 1.6,
+                                                resize: "vertical",
+                                                minHeight: 80,
+                                                border: "1px solid var(--border-soft)",
+                                                borderRadius: 8,
+                                                padding: "8px 12px",
+                                                background: "var(--surface-2)",
+                                                color: "var(--text-primary)",
+                                                outline: "none",
+                                            }}
+                                            placeholder="例如：PARTITION BY RANGE (YEAR(created_at)) ( PARTITION p2024 VALUES LESS THAN (2025), PARTITION p2025 VALUES LESS THAN (2026), PARTITION pmax VALUES LESS THAN MAXVALUE )"
+                                        />
                                     </label>
                                 ) : (
                                     <>

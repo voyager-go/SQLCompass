@@ -221,6 +221,8 @@ export type SchemaFieldInput = {
     comment: string;
     primary: boolean;
     autoIncrement: boolean;
+    unsigned: boolean;
+    onUpdate: string;
 };
 
 export type SchemaIndexInput = {

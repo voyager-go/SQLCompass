@@ -73,6 +73,10 @@ func buildFieldDefinition(engine string, field SchemaFieldInput) string {
 
 	parts := []string{identifier, fieldType}
 
+	if field.Unsigned && (engine == "mysql" || engine == "mariadb") {
+		parts = append(parts, "UNSIGNED")
+	}
+
 	if field.Nullable {
 		parts = append(parts, "NULL")
 	} else {
@@ -81,6 +85,10 @@ func buildFieldDefinition(engine string, field SchemaFieldInput) string {
 
 	if strings.TrimSpace(field.DefaultValue) != "" {
 		parts = append(parts, "DEFAULT "+stringifySQLValue(strings.TrimSpace(field.DefaultValue)))
+	}
+
+	if strings.TrimSpace(field.OnUpdate) != "" && (engine == "mysql" || engine == "mariadb") {
+		parts = append(parts, "ON UPDATE "+strings.TrimSpace(field.OnUpdate))
 	}
 
 	if field.AutoIncrement {
@@ -539,6 +547,20 @@ func buildMySQLCreateTableSQL(database string, tableName string, input BuildCrea
 	}
 
 	if len(primaryCols) > 0 {
+		if strings.TrimSpace(input.PartitionBy) != "" {
+			for _, pcol := range extractPartitionColumns(input.PartitionBy) {
+				found := false
+				for _, pc := range primaryCols {
+					if strings.Contains(pc, pcol) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					primaryCols = append(primaryCols, quoteIdentifierByEngine("mysql", pcol))
+				}
+			}
+		}
 		fieldDefs = append(fieldDefs, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(primaryCols, ", ")))
 	}
 

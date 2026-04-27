@@ -1,3 +1,6 @@
+/* 全局禁用浏览器自动补全 */
+input { autocomplete: off; -webkit-autocomplete: off; }
+
 :root {
     color-scheme: light;
     --text-primary: #1d2a3c;

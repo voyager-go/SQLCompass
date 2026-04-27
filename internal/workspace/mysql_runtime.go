@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -591,6 +592,45 @@ func (s *Service) createMySQLDatabase(record store.ConnectionRecord, input Creat
 
 	return CreateDatabaseResult{Success: true, Message: fmt.Sprintf("数据库 `%s` 创建成功", dbName)}, nil
 }
+
+// extractPartitionColumns 从 PARTITION BY DDL 中提取涉及的列名
+func extractPartitionColumns(partitionBy string) []string {
+	partitionBy = strings.TrimSpace(partitionBy)
+	if partitionBy == "" {
+		return nil
+	}
+	openIdx := strings.Index(partitionBy, "(")
+	if openIdx == -1 {
+		return nil
+	}
+	closeIdx := strings.LastIndex(partitionBy, ")")
+	if closeIdx == -1 || closeIdx <= openIdx {
+		return nil
+	}
+	inner := partitionBy[openIdx+1 : closeIdx]
+
+	sqlFuncs := map[string]bool{
+		"YEAR": true, "MONTH": true, "DAY": true, "TO_DAYS": true,
+		"TO_SECONDS": true, "UNIX_TIMESTAMP": true,
+		"FLOOR": true, "CEIL": true, "CEILING": true,
+		"ABS": true, "MOD": true, "EXTRACT": true,
+		"DATE": true, "TIME": true,
+		"QUARTER": true, "WEEK": true, "HOUR": true, "MINUTE": true, "SECOND": true,
+	}
+
+	var cols []string
+	tokens := regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*`).FindAllString(inner, -1)
+	for _, tok := range tokens {
+		upper := strings.ToUpper(tok)
+		if !sqlFuncs[upper] && upper != "COLUMNS" && upper != "RANGE" &&
+			upper != "HASH" && upper != "KEY" && upper != "LIST" &&
+			upper != "LINEAR" && upper != "ALGORITHM" {
+			cols = append(cols, tok)
+		}
+	}
+	return cols
+}
+
 func (s *Service) createMySQLTable(record store.ConnectionRecord, input CreateTableRequest) (CreateTableResult, error) {
 
 	database := strings.TrimSpace(input.Database)
@@ -611,6 +651,9 @@ func (s *Service) createMySQLTable(record store.ConnectionRecord, input CreateTa
 			continue
 		}
 		def := fmt.Sprintf("`%s` %s", escapeIdentifier(name), fieldType)
+		if f.Unsigned {
+			def += " UNSIGNED"
+		}
 		if f.AutoIncrement {
 			def += " AUTO_INCREMENT"
 		}
@@ -623,6 +666,9 @@ func (s *Service) createMySQLTable(record store.ConnectionRecord, input CreateTa
 		if strings.TrimSpace(f.DefaultValue) != "" {
 			def += fmt.Sprintf(" DEFAULT %s", strings.TrimSpace(f.DefaultValue))
 		}
+		if strings.TrimSpace(f.OnUpdate) != "" {
+			def += fmt.Sprintf(" ON UPDATE %s", strings.TrimSpace(f.OnUpdate))
+		}
 		if strings.TrimSpace(f.Comment) != "" {
 			def += fmt.Sprintf(" COMMENT '%s'", strings.ReplaceAll(strings.TrimSpace(f.Comment), "'", "\\'"))
 		}
@@ -630,6 +676,21 @@ func (s *Service) createMySQLTable(record store.ConnectionRecord, input CreateTa
 	}
 
 	if len(primaryCols) > 0 {
+		// MySQL 要求主键必须包含所有分区键，自动追加缺失的分区列
+		if strings.TrimSpace(input.PartitionBy) != "" {
+			for _, pcol := range extractPartitionColumns(input.PartitionBy) {
+				found := false
+				for _, pc := range primaryCols {
+					if strings.Contains(pc, pcol) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					primaryCols = append(primaryCols, fmt.Sprintf("`%s`", escapeIdentifier(pcol)))
+				}
+			}
+		}
 		fieldDefs = append(fieldDefs, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(primaryCols, ", ")))
 	}
 

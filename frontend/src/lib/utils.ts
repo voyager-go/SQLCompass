@@ -332,6 +332,17 @@ export function getFieldTypeOptions(engine: string, dynamicTypes: string[] = [])
     return [...new Set([...baseOptions, ...dynamicTypes.filter(Boolean)])];
 }
 
+const integerTypePattern = /^(tinyint|smallint|mediumint|int|bigint|Int8|Int16|Int32|Int64|UInt8|UInt16|UInt32|UInt64|integer|INTEGER|smallint|serial|bigserial)/i;
+const timestampTypePattern = /^(datetime|timestamp|date|time|DateTime|DateTime64|timestamptz|timestamp|DATETIME|DATE|TIME)/i;
+
+export function isIntegerType(type: string): boolean {
+    return integerTypePattern.test(type);
+}
+
+export function isTimestampType(type: string): boolean {
+    return timestampTypePattern.test(type);
+}
+
 const indexTypeOptionsByEngine: Record<string, string[]> = {
     mysql: ["BTREE", "HASH", "FULLTEXT", "SPATIAL"],
     mariadb: ["BTREE", "HASH", "FULLTEXT", "SPATIAL"],

@@ -351,6 +351,8 @@ type SchemaFieldInput struct {
 	Comment       string `json:"comment"`
 	Primary       bool   `json:"primary"`
 	AutoIncrement bool   `json:"autoIncrement"`
+	Unsigned      bool   `json:"unsigned"`
+	OnUpdate      string `json:"onUpdate"`
 }
 
 type SchemaIndexInput struct {
