@@ -76,9 +76,13 @@ jobs:
       - name: Rename output with platform suffix
         shell: pwsh
         run: |
-          Get-ChildItem "build/bin" -Filter "*.exe" | ForEach-Object {
+          $executables = @(Get-ChildItem "build/bin" -Filter "*.exe")
+          if ($executables.Count -eq 0) {
+            throw "No Windows executable was produced in build/bin."
+          }
+          $executables | ForEach-Object {
             $new = $_.Name -replace '\.exe$', '-Windows-amd64.exe'
-            Rename-Item $_.FullName "build/bin\$new"
+            Rename-Item -Path $_.FullName -NewName $new
           }
 
       - uses: actions/upload-artifact@v4
