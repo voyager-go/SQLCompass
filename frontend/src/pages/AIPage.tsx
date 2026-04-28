@@ -61,6 +61,21 @@ export function AIPage({
                                 placeholder="输入新 Key 后保存"
                             />
                         </label>
+                        <label className="field">
+                            <span>SQL 自动修复最大次数</span>
+                            <input
+                                type="number"
+                                min={1}
+                                max={10}
+                                value={aiForm.chatMaxRepairAttempts}
+                                onChange={(event) =>
+                                    setAIForm((current) => ({
+                                        ...current,
+                                        chatMaxRepairAttempts: Math.min(10, Math.max(1, Number(event.target.value) || 3)),
+                                    }))
+                                }
+                            />
+                        </label>
                     </div>
                     <div className="form-actions" style={{ display: "flex", gap: "8px", marginTop: "16px", paddingTop: "16px", borderTop: "1px solid rgba(0,0,0,0.06)" }}>
                         <button type="button" className="ghost-button" onClick={onClear} disabled={isSavingAI}>
@@ -95,6 +110,10 @@ export function AIPage({
                         <div className="summary-item">
                             <span>当前连接</span>
                             <strong>{selectedConnectionName || "未选择"}</strong>
+                        </div>
+                        <div className="summary-item">
+                            <span>失败自动修复</span>
+                            <strong>最多 {aiForm.chatMaxRepairAttempts || 3} 次</strong>
                         </div>
                     </div>
                 </div>

@@ -24,6 +24,7 @@ export interface UseChatDeps {
     queryPageSize: number;
     previewPageSize: number;
     explorerTree: ExplorerTree | null;
+    maxRepairAttempts: number;
     pushToast: (tone: NoticeTone, title: string, message: string) => void;
     setQueryResult: (v: QueryResult | null) => void;
     setLastExecutedSQL: (v: string) => void;
@@ -43,6 +44,7 @@ export function useChat(deps: UseChatDeps) {
         queryPageSize,
         previewPageSize,
         explorerTree,
+        maxRepairAttempts,
         pushToast,
         setQueryResult,
         setLastExecutedSQL,
@@ -282,6 +284,9 @@ export function useChat(deps: UseChatDeps) {
             return;
         }
 
+        setIsRunningChat(true);
+        pushToast("info", "正在执行", "已收到确认，正在执行 SQL 并准备结果。");
+
         const effectiveDatabase = chatContextDatabase || selectedDatabase;
         const selectedTableText = chatContextTables.length > 0 ? chatContextTables.join(", ") : selectedTable;
 
@@ -301,15 +306,16 @@ export function useChat(deps: UseChatDeps) {
             setSQLAnalysis(result.analysis);
             setQueryErrorDetail("");
 
+            const finalContent =
+                displayMode === "table"
+                    ? `${replyPrefix || "已执行 SQL。"} 已为你展示结果表格。`
+                    : `${replyPrefix || "已执行 SQL。"} ${summarizeChatResult(result)} 耗时 ${result.durationMs} ms。`;
             setChatMessages((current) => [
                 ...current,
                 {
                     id: browserGeneratedID(),
                     role: "assistant",
-                    content:
-                        displayMode === "table"
-                            ? `${replyPrefix || "已执行 SQL。"} 已为你展示结果表格。`
-                            : `${replyPrefix || "已执行 SQL。"} ${summarizeChatResult(result)} 耗时 ${result.durationMs} ms。`,
+                    content: finalContent,
                     sql: statement,
                     result,
                     reasoning: previousReason,
@@ -319,7 +325,8 @@ export function useChat(deps: UseChatDeps) {
             await loadHistory(selectedConnection.id);
         } catch (error) {
             const message = getErrorMessage(error);
-            if (repairAttempt < 2) {
+            const repairLimit = Math.min(10, Math.max(1, Math.floor(Number(maxRepairAttempts) || 3)));
+            if (repairAttempt < repairLimit) {
                 try {
                     const repairHistory: ChatMessage[] = chatMessages.slice(-8).map((item) => ({
                         role: item.role,
@@ -342,7 +349,7 @@ export function useChat(deps: UseChatDeps) {
                         {
                             id: browserGeneratedID(),
                             role: "assistant",
-                            content: repair.reply || `上一条 SQL 执行失败，我已根据报错继续修正。`,
+                            content: repair.reply || `上一条 SQL 执行失败，我正在第 ${repairAttempt + 1}/${repairLimit} 次根据报错继续修正。`,
                             sql: repair.sql || statement,
                             reasoning: repair.reasoning,
                         },
@@ -402,8 +409,9 @@ export function useChat(deps: UseChatDeps) {
             ]);
         } finally {
             setChatPendingAction(null);
+            setIsRunningChat(false);
         }
-    }, [selectedConnection, selectedDatabase, selectedTable, chatContextDatabase, chatContextTables, queryPageSize, previewPageSize, chatMessages, setQueryResult, setLastExecutedSQL, setQueryPage, setPreviewContext, setSQLAnalysis, setQueryErrorDetail, loadHistory]);
+    }, [selectedConnection, selectedDatabase, selectedTable, chatContextDatabase, chatContextTables, queryPageSize, previewPageSize, chatMessages, maxRepairAttempts, pushToast, setQueryResult, setLastExecutedSQL, setQueryPage, setPreviewContext, setSQLAnalysis, setQueryErrorDetail, loadHistory]);
 
     const handleChatInputChange = useCallback((value: string, cursorPos?: number) => {
         setChatInput(value);

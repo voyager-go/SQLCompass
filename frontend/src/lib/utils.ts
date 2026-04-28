@@ -101,6 +101,7 @@ export const emptyWorkspaceState: WorkspaceState = {
         apiKeySource: "等待本地配置",
         apiKeyPreview: "",
         storageMode: "本地安全存储",
+        chatMaxRepairAttempts: 3,
     },
     storagePath: "",
 };
@@ -135,7 +136,11 @@ export function loadBrowserWorkspaceState(): WorkspaceState {
         const parsed = JSON.parse(raw) as Partial<WorkspaceState>;
         return {
             connections: parsed.connections ?? [],
-            ai: parsed.ai ?? emptyWorkspaceState.ai,
+            ai: {
+                ...emptyWorkspaceState.ai,
+                ...(parsed.ai ?? {}),
+                chatMaxRepairAttempts: clamp(Number(parsed.ai?.chatMaxRepairAttempts ?? 3), 1, 10),
+            },
             storagePath: "浏览器本地预览",
         };
     } catch {
@@ -198,6 +203,7 @@ export function createAIForm(state: WorkspaceState): AISettingsInput {
         baseUrl: state.ai.baseUrl,
         modelName: state.ai.modelName,
         apiKey: "",
+        chatMaxRepairAttempts: clamp(Number(state.ai.chatMaxRepairAttempts ?? 3), 1, 10),
     };
 }
 
@@ -255,6 +261,7 @@ export function updateBrowserAIState(state: WorkspaceState, form: AISettingsInpu
             apiKeySource: form.apiKey.trim().length > 0 ? "浏览器预览表单" : state.ai.apiKeySource,
             apiKeyPreview: form.apiKey.trim().length > 0 ? "已写入浏览器本地存储" : state.ai.apiKeyPreview,
             storageMode: "浏览器本地预览",
+            chatMaxRepairAttempts: clamp(Number(form.chatMaxRepairAttempts || 3), 1, 10),
         },
     };
 }
@@ -437,7 +444,30 @@ export function getDefaultFieldType(engine: string): string {
 
 function buildFieldDefinition(engine: string, field: SchemaDraftField): string {
     const identifier = quoteIdentifierByEngine(engine, field.name || "new_column");
-    const parts = [`\`${field.name || "new_column"}\``, field.type || getDefaultFieldType(engine)];
+    const rawType = field.type || getDefaultFieldType(engine);
+    const typeWithoutUnsigned = rawType.replace(/\s+unsigned\b/gi, "").trim();
+    const supportsUnsigned = engine === "mysql" || engine === "mariadb";
+    const unsignedAllowed = /(tinyint|smallint|mediumint|int|integer|bigint|decimal|numeric|float|double|real|bit)\b/i.test(typeWithoutUnsigned);
+    let fieldType = supportsUnsigned && field.unsigned && unsignedAllowed
+        ? `${typeWithoutUnsigned} unsigned`
+        : typeWithoutUnsigned || rawType;
+
+    // MySQL/MariaDB treat CHARACTER SET/COLLATE as part of the character type,
+    // so they must appear before NULL/DEFAULT/COMMENT column attributes.
+    if ((engine === "mysql" || engine === "mariadb") && /(char|text|enum|set)\b/i.test(fieldType)) {
+        const charset = (field.charset ?? "").trim();
+        const collation = (field.collation ?? "").trim();
+        const typeClauses: string[] = [fieldType];
+        if (charset && !/\bcharacter\s+set\b/i.test(fieldType) && !/\bcharset\b/i.test(fieldType)) {
+            typeClauses.push(`CHARACTER SET ${charset}`);
+        }
+        if (collation && !/\bcollate\b/i.test(fieldType)) {
+            typeClauses.push(`COLLATE ${collation}`);
+        }
+        fieldType = typeClauses.join(" ");
+    }
+
+    const parts = [`\`${field.name || "new_column"}\``, fieldType];
     parts[0] = identifier;
     parts.push(field.nullable ? "NULL" : "NOT NULL");
 
@@ -451,6 +481,11 @@ function buildFieldDefinition(engine: string, field: SchemaDraftField): string {
         } else if (engine !== "sqlite" && engine !== "clickhouse") {
             parts.push("AUTO_INCREMENT");
         }
+    }
+
+    const onUpdate = (field.onUpdate ?? "").trim();
+    if ((engine === "mysql" || engine === "mariadb") && onUpdate) {
+        parts.push(`ON UPDATE ${onUpdate}`);
     }
 
     if (field.comment.trim() && engine !== "postgresql" && engine !== "sqlite" && engine !== "clickhouse") {
@@ -469,6 +504,8 @@ export function fieldSignature(field: SchemaDraftField | TableField): string {
         field.comment.trim(),
         field.primary ? "1" : "0",
         field.autoIncrement ? "1" : "0",
+        field.unsigned ? "1" : "0",
+        (field.onUpdate ?? "").trim(),
     ].join("|");
 }
 

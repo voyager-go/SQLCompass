@@ -46,6 +46,7 @@ export type AISettingsInput = {
     baseUrl: string;
     modelName: string;
     apiKey: string;
+    chatMaxRepairAttempts: number;
 };
 
 export type AISettingsView = {
@@ -55,6 +56,7 @@ export type AISettingsView = {
     apiKeySource: string;
     apiKeyPreview: string;
     storageMode: string;
+    chatMaxRepairAttempts: number;
 };
 
 export type WorkspaceState = {

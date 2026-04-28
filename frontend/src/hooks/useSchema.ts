@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SchemaDraftField, TableDetail, AIFieldCommentResult, FieldDictionarySuggestion } from "../types/runtime";
 import { RenameTable, GenerateFieldComment, GetFieldDictionarySuggestion, GenerateIndexName, ExecuteQuery } from "../../wailsjs/go/main/App";
-import { browserGeneratedID, buildAlterSQL, copyText, getFieldTypeOptions, getIndexTypeOptions, getDefaultFieldType, isIntegerType, isTimestampType } from "../lib/utils";
+import { browserGeneratedID, buildAlterSQL, copyText, getErrorMessage, getFieldTypeOptions, getIndexTypeOptions, getDefaultFieldType, isIntegerType, isTimestampType } from "../lib/utils";
 import type { NoticeTone } from "../lib/constants";
 import type { SchemaDraftIndex } from "../lib/utils";
 
@@ -9,6 +9,13 @@ type Notice = {
     tone: NoticeTone;
     message: string;
 };
+
+export type AlterPreviewState = {
+    scope: "fields" | "indexes";
+    title: string;
+    sql: string;
+    error?: string;
+} | null;
 
 export interface UseSchemaOptions {
     browserPreview: boolean;
@@ -51,7 +58,10 @@ export interface UseSchemaReturn {
     handleDeleteDraftIndex: (index: number) => void;
     updateDraftIndex: <K extends keyof SchemaDraftIndex>(index: number, key: K, value: SchemaDraftIndex[K]) => void;
     handleGenerateIndexName: (index: number, tableName: string) => Promise<void>;
+    alterPreview: AlterPreviewState;
+    setAlterPreview: React.Dispatch<React.SetStateAction<AlterPreviewState>>;
     handleSaveFields: () => Promise<void>;
+    handleConfirmAlterPreview: () => Promise<void>;
     isSavingFields: boolean;
     handleSaveIndexes: () => Promise<void>;
     isSavingIndexes: boolean;
@@ -81,8 +91,13 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
     const [isRenamingTable, setIsRenamingTable] = useState(false);
     const [isSavingFields, setIsSavingFields] = useState(false);
     const [isSavingIndexes, setIsSavingIndexes] = useState(false);
+    const [alterPreview, setAlterPreview] = useState<AlterPreviewState>(null);
 
     const currentAlterSQL = useMemo(() => buildAlterSQL(activeEngine, tableDetail, selectedTable, schemaDraftFields, schemaDraftIndexes), [activeEngine, tableDetail, selectedTable, schemaDraftFields, schemaDraftIndexes]);
+
+    useEffect(() => {
+        setAlterPreview(null);
+    }, [selectedConnection, selectedDatabase, selectedTable]);
 
     const fieldTypeOptions = useMemo(() => {
         const dynamicTypes = schemaDraftFields.map((item) => item.type).filter(Boolean);
@@ -409,71 +424,74 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
         return null;
     }
 
-    async function handleSaveFields() {
+    function buildAlterPreview(scope: "fields" | "indexes") {
         if (!selectedConnection || !selectedDatabase || !selectedTable || !tableDetail) {
+            setSchemaNotice({ tone: "error", message: "请先选择一张真实表。" });
+            return null;
+        }
+        const error = scope === "fields"
+            ? validateFields(schemaDraftFields)
+            : validateIndexes(schemaDraftIndexes, schemaDraftFields);
+        if (error) {
+            setSchemaNotice({ tone: "error", message: error });
+            return null;
+        }
+        const sql = buildAlterSQL(activeEngine, tableDetail, selectedTable, schemaDraftFields, schemaDraftIndexes, scope);
+        if (sql.startsWith("--")) {
+            setSchemaNotice({ tone: "info", message: scope === "fields" ? "当前没有字段结构变更。" : "当前没有索引结构变更。" });
+            return null;
+        }
+        return {
+            scope,
+            title: scope === "fields" ? "字段结构变更预览" : "索引结构变更预览",
+            sql,
+        };
+    }
+
+    async function executeAlterSQL(preview: Exclude<AlterPreviewState, null>) {
+        if (!selectedConnection || !selectedDatabase || !selectedTable) {
             setSchemaNotice({ tone: "error", message: "请先选择一张真实表。" });
             return;
         }
-        const error = validateFields(schemaDraftFields);
-        if (error) {
-            setSchemaNotice({ tone: "error", message: error });
-            return;
-        }
-        const sql = buildAlterSQL(activeEngine, tableDetail, selectedTable, schemaDraftFields, schemaDraftIndexes, "fields");
-        if (sql.startsWith("--")) {
-            setSchemaNotice({ tone: "info", message: "当前没有字段结构变更。" });
-            return;
-        }
+        const setSaving = preview.scope === "fields" ? setIsSavingFields : setIsSavingIndexes;
         try {
-            setIsSavingFields(true);
+            setSaving(true);
             await ExecuteQuery({
                 connectionId: selectedConnection.id,
                 database: selectedDatabase,
-                sql,
+                sql: preview.sql,
                 page: 1,
                 pageSize: 1,
             });
-            setSchemaNotice({ tone: "success", message: "字段结构已保存。" });
+            setAlterPreview(null);
+            setSchemaNotice({ tone: "success", message: preview.scope === "fields" ? "字段结构已保存。" : "索引结构已保存。" });
             await loadTable(selectedConnection.id, selectedDatabase, selectedTable);
         } catch (err) {
-            const message = err instanceof Error ? err.message : "保存字段结构失败";
-            setSchemaNotice({ tone: "error", message });
+            const message = getErrorMessage(err);
+            setAlterPreview((current) => current ? { ...current, error: message } : { ...preview, error: message });
+            setSchemaNotice(null);
         } finally {
-            setIsSavingFields(false);
+            setSaving(false);
+        }
+    }
+
+    async function handleSaveFields() {
+        const preview = buildAlterPreview("fields");
+        if (preview) {
+            setAlterPreview(preview);
         }
     }
 
     async function handleSaveIndexes() {
-        if (!selectedConnection || !selectedDatabase || !selectedTable || !tableDetail) {
-            setSchemaNotice({ tone: "error", message: "请先选择一张真实表。" });
-            return;
+        const preview = buildAlterPreview("indexes");
+        if (preview) {
+            setAlterPreview(preview);
         }
-        const error = validateIndexes(schemaDraftIndexes, schemaDraftFields);
-        if (error) {
-            setSchemaNotice({ tone: "error", message: error });
-            return;
-        }
-        const sql = buildAlterSQL(activeEngine, tableDetail, selectedTable, schemaDraftFields, schemaDraftIndexes, "indexes");
-        if (sql.startsWith("--")) {
-            setSchemaNotice({ tone: "info", message: "当前没有索引结构变更。" });
-            return;
-        }
-        try {
-            setIsSavingIndexes(true);
-            await ExecuteQuery({
-                connectionId: selectedConnection.id,
-                database: selectedDatabase,
-                sql,
-                page: 1,
-                pageSize: 1,
-            });
-            setSchemaNotice({ tone: "success", message: "索引结构已保存。" });
-            await loadTable(selectedConnection.id, selectedDatabase, selectedTable);
-        } catch (err) {
-            const message = err instanceof Error ? err.message : "保存索引结构失败";
-            setSchemaNotice({ tone: "error", message });
-        } finally {
-            setIsSavingIndexes(false);
+    }
+
+    async function handleConfirmAlterPreview() {
+        if (alterPreview) {
+            await executeAlterSQL(alterPreview);
         }
     }
 
@@ -503,7 +521,10 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
         handleDeleteDraftIndex,
         updateDraftIndex,
         handleGenerateIndexName,
+        alterPreview,
+        setAlterPreview,
         handleSaveFields,
+        handleConfirmAlterPreview,
         isSavingFields,
         handleSaveIndexes,
         isSavingIndexes,

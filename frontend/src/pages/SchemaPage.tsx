@@ -6,6 +6,7 @@ import { FieldSettingsPanel } from "../components/FieldSettingsPanel";
 import { MultiSelectCombobox } from "../components/MultiSelectCombobox";
 import type { TableDetail, SchemaDraftField } from "../types/runtime";
 import type { SchemaDraftIndex } from "../lib/utils";
+import type { AlterPreviewState } from "../hooks/useSchema";
 import { getIndexTypeOptions, isIntegerType, isTimestampType } from "../lib/utils";
 import { highlightSQL } from "../lib/sqlHighlight";
 
@@ -327,7 +328,10 @@ interface SchemaPageProps {
     updateDraftIndex: <K extends keyof SchemaDraftIndex>(index: number, key: K, value: SchemaDraftIndex[K]) => void;
     handleGenerateIndexName: (index: number, tableName: string) => Promise<void>;
     aiConfigured: boolean;
+    alterPreview: AlterPreviewState;
+    setAlterPreview: React.Dispatch<React.SetStateAction<AlterPreviewState>>;
     handleSaveFields: () => Promise<void>;
+    handleConfirmAlterPreview: () => Promise<void>;
     isSavingFields: boolean;
     handleSaveIndexes: () => Promise<void>;
     isSavingIndexes: boolean;
@@ -363,7 +367,10 @@ export function SchemaPage({
     updateDraftIndex,
     handleGenerateIndexName,
     aiConfigured,
+    alterPreview,
+    setAlterPreview,
     handleSaveFields,
+    handleConfirmAlterPreview,
     isSavingFields,
     handleSaveIndexes,
     isSavingIndexes,
@@ -380,6 +387,7 @@ export function SchemaPage({
     const [modelCodeModal, setModelCodeModal] = useState<{ open: boolean; title: string; code: string }>({ open: false, title: "", code: "" });
     // 字段设置面板状态
     const [settingsFieldIndex, setSettingsFieldIndex] = useState<number | null>(null);
+    const [settingsAnchorEl, setSettingsAnchorEl] = useState<HTMLButtonElement | null>(null);
     // 主键勾选后自增提示框状态
     const [pkAutoIncrPrompt, setPkAutoIncrPrompt] = useState<{ index: number; target: HTMLElement } | null>(null);
 
@@ -494,6 +502,8 @@ export function SchemaPage({
                                                     onChange={(event) => updateDraftField(index, "name", event.target.value)}
                                                     onBlur={(event) => applyFieldSuggestion(index, event.target.value)}
                                                     autoCapitalize="none"
+                                                    autoComplete="off"
+                                                    spellCheck={false}
                                                 />
                                             </td>
                                             <td>
@@ -564,7 +574,21 @@ export function SchemaPage({
                                                 </div>
                                             </td>
                                             <td style={{ display: "flex", gap: 4, alignItems: "center", position: "relative" }}>
-                                                <button type="button" className="icon-btn icon-btn--settings" title="字段设置" onClick={() => setSettingsFieldIndex(settingsFieldIndex === index ? null : index)}>
+                                                <button
+                                                    type="button"
+                                                    className="icon-btn icon-btn--settings"
+                                                    title="字段设置"
+                                                    aria-expanded={settingsFieldIndex === index}
+                                                    onClick={(event) => {
+                                                        if (settingsFieldIndex === index) {
+                                                            setSettingsFieldIndex(null);
+                                                            setSettingsAnchorEl(null);
+                                                            return;
+                                                        }
+                                                        setSettingsFieldIndex(index);
+                                                        setSettingsAnchorEl(event.currentTarget);
+                                                    }}
+                                                >
                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                         <circle cx="12" cy="12" r="3"></circle>
                                                         <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"></path>
@@ -580,13 +604,17 @@ export function SchemaPage({
                                                     onUpdate={field.onUpdate || ""}
                                                     charset={field.charset || "utf8mb4"}
                                                     collation={field.collation || "utf8mb4_general_ci"}
+                                                    anchorEl={settingsFieldIndex === index ? settingsAnchorEl : null}
                                                     onToggleUnsigned={() => updateDraftField(index, "unsigned", !(field.unsigned || false))}
                                                     onToggleAutoIncrement={() => updateDraftField(index, "autoIncrement", !(field.autoIncrement || false))}
                                                     onChangeDefaultValue={(val) => updateDraftField(index, "defaultValue", val)}
                                                     onToggleOnUpdate={(checked) => updateDraftField(index, "onUpdate", checked ? "CURRENT_TIMESTAMP" : "")}
                                                     onChangeCharset={(val) => updateDraftField(index, "charset", val)}
                                                     onChangeCollation={(val) => updateDraftField(index, "collation", val)}
-                                                    onClose={() => setSettingsFieldIndex(null)}
+                                                    onClose={() => {
+                                                        setSettingsFieldIndex(null);
+                                                        setSettingsAnchorEl(null);
+                                                    }}
                                                 />
                                                 <button type="button" className="icon-btn icon-btn--add" title="在下方插入字段" onClick={() => handleAddField(index)}>
                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -791,6 +819,41 @@ export function SchemaPage({
                             </button>
                             <button type="button" className="primary-button" onClick={handleRenameTable} disabled={isRenamingTable}>
                                 {isRenamingTable ? "处理中..." : "确认重命名"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
+            {alterPreview ? (
+                <div className="modal-backdrop" onClick={() => setAlterPreview(null)}>
+                    <div className="modal-card modal-card--wide alter-preview-modal" onClick={(event) => event.stopPropagation()}>
+                        <div className="section-title">
+                            <div>
+                                <h3>{alterPreview.title}</h3>
+                                <p>确认无误后再执行，避免误改表结构。</p>
+                            </div>
+                        </div>
+                        <div className="code-block code-block--wide alter-preview-modal__sql">
+                            <pre dangerouslySetInnerHTML={{ __html: highlightSQL(alterPreview.sql) }} />
+                        </div>
+                        {alterPreview.error ? (
+                            <div className="alter-preview-modal__error" role="alert">
+                                <div className="alter-preview-modal__error-head">
+                                    <span>执行失败</span>
+                                    <button type="button" className="mini-ghost-button" onClick={() => pushToast("info", "字段更新失败", alterPreview.error || "未获取到错误详情")}>
+                                        查看详情
+                                    </button>
+                                </div>
+                                <pre>{alterPreview.error}</pre>
+                            </div>
+                        ) : null}
+                        <div className="toolbar-actions" style={{ justifyContent: "flex-end", width: "100%" }}>
+                            <button type="button" className="ghost-button" onClick={() => setAlterPreview(null)} disabled={isSavingFields || isSavingIndexes}>
+                                取消
+                            </button>
+                            <button type="button" className="primary-button" onClick={handleConfirmAlterPreview} disabled={isSavingFields || isSavingIndexes}>
+                                {isSavingFields || isSavingIndexes ? "执行中..." : alterPreview.error ? "再次执行" : "确认执行"}
                             </button>
                         </div>
                     </div>

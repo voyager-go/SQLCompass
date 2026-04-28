@@ -49,6 +49,8 @@ interface SidebarProps {
     onExportDatabaseStructureAndData: (database: string) => void;
     onImportSQLToDatabase: (database: string) => void;
     onImportCSVToDatabase: (database: string) => void;
+    onRefreshDatabase: (database: string) => void;
+    onRefreshTable: (database: string, table: string) => void;
     onTruncateTable: (database: string, table: string) => void;
     onDropTable: (database: string, table: string) => void;
     onDropDatabase: (database: string) => void;
@@ -99,6 +101,8 @@ export function Sidebar({
     onExportDatabaseStructureAndData,
     onImportSQLToDatabase,
     onImportCSVToDatabase,
+    onRefreshDatabase,
+    onRefreshTable,
     onTruncateTable,
     onDropTable,
     onDropDatabase,
@@ -343,6 +347,8 @@ export function Sidebar({
                                     onExportDatabaseStructureAndData={onExportDatabaseStructureAndData}
                                     onImportSQLToDatabase={onImportSQLToDatabase}
                                     onImportCSVToDatabase={onImportCSVToDatabase}
+                                    onRefreshDatabase={onRefreshDatabase}
+                                    onRefreshTable={onRefreshTable}
                                     onTruncateTable={onTruncateTable}
                                     onDropTable={onDropTable}
                                     onDropDatabase={onDropDatabase}

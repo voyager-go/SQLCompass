@@ -71,11 +71,11 @@ func buildFieldDefinition(engine string, field SchemaFieldInput) string {
 		fieldType = getDefaultFieldType(engine)
 	}
 
-	parts := []string{identifier, fieldType}
-
-	if field.Unsigned && (engine == "mysql" || engine == "mariadb") {
-		parts = append(parts, "UNSIGNED")
+	if field.Unsigned && (engine == "mysql" || engine == "mariadb") && !strings.Contains(strings.ToLower(fieldType), "unsigned") {
+		fieldType += " UNSIGNED"
 	}
+
+	parts := []string{identifier, fieldType}
 
 	if field.Nullable {
 		parts = append(parts, "NULL")

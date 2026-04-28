@@ -16,37 +16,38 @@ const historyRetentionDays = 3
 // --- Data Models ---
 
 type AIState struct {
-	BaseURL   string `json:"baseUrl"`
-	ModelName string `json:"modelName"`
-	APIKey    string `json:"apiKey"`
+	BaseURL               string `json:"baseUrl"`
+	ModelName             string `json:"modelName"`
+	APIKey                string `json:"apiKey"`
+	ChatMaxRepairAttempts int    `json:"chatMaxRepairAttempts"`
 }
 
 type ConnectionRecord struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Engine      string `json:"engine"`
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	Database    string `json:"database"`
-	FilePath    string `json:"filePath"`
-	URL         string `json:"url"`
-	Notes       string `json:"notes"`
-	Group       string `json:"group"`
-	GroupColor  string `json:"groupColor"`
-	SSLMode     string `json:"sslMode"`     // "disable" | "require" | "verify-ca" | "verify-full"
-	SSLCACert   string `json:"sslCaCert"`   // Path to CA certificate
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Engine        string `json:"engine"`
+	Host          string `json:"host"`
+	Port          int    `json:"port"`
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+	Database      string `json:"database"`
+	FilePath      string `json:"filePath"`
+	URL           string `json:"url"`
+	Notes         string `json:"notes"`
+	Group         string `json:"group"`
+	GroupColor    string `json:"groupColor"`
+	SSLMode       string `json:"sslMode"`       // "disable" | "require" | "verify-ca" | "verify-full"
+	SSLCACert     string `json:"sslCaCert"`     // Path to CA certificate
 	SSLClientCert string `json:"sslClientCert"` // Path to client certificate
 	SSLClientKey  string `json:"sslClientKey"`  // Path to client key
-	SSHHost     string `json:"sshHost"`     // SSH tunnel host
-	SSHPort     int    `json:"sshPort"`     // SSH tunnel port
-	SSHUser     string `json:"sshUser"`     // SSH tunnel username
-	SSHPassword string `json:"sshPassword"` // SSH tunnel password
-	SSHKeyFile  string `json:"sshKeyFile"`  // Path to SSH private key
-	UseSSH      bool   `json:"useSSH"`      // Whether to use SSH tunnel
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
+	SSHHost       string `json:"sshHost"`       // SSH tunnel host
+	SSHPort       int    `json:"sshPort"`       // SSH tunnel port
+	SSHUser       string `json:"sshUser"`       // SSH tunnel username
+	SSHPassword   string `json:"sshPassword"`   // SSH tunnel password
+	SSHKeyFile    string `json:"sshKeyFile"`    // Path to SSH private key
+	UseSSH        bool   `json:"useSSH"`        // Whether to use SSH tunnel
+	CreatedAt     string `json:"createdAt"`
+	UpdatedAt     string `json:"updatedAt"`
 }
 
 type QueryHistoryRecord struct {
@@ -180,19 +181,19 @@ func (s *Store) SetDataDir(newDir string) error {
 	}
 
 	files := map[string]string{
-		"app-state.json":  filepath.Join(absDir, "app-state.json"),
-		"config.json":     filepath.Join(absDir, "config.json"),
+		"app-state.json":     filepath.Join(absDir, "app-state.json"),
+		"config.json":        filepath.Join(absDir, "config.json"),
 		"query-history.json": filepath.Join(absDir, "query-history.json"),
-		"crash-logs.json": filepath.Join(absDir, "crash-logs.json"),
-		"ai-snapshots.json": filepath.Join(absDir, "ai-snapshots.json"),
+		"crash-logs.json":    filepath.Join(absDir, "crash-logs.json"),
+		"ai-snapshots.json":  filepath.Join(absDir, "ai-snapshots.json"),
 	}
 
 	for oldName, oldPath := range map[string]string{
-		"app-state.json":  s.connectionsPath,
-		"config.json":     s.configPath,
+		"app-state.json":     s.connectionsPath,
+		"config.json":        s.configPath,
 		"query-history.json": s.historyPath,
-		"crash-logs.json": s.crashLogsPath,
-		"ai-snapshots.json": s.aiSnapshotsPath,
+		"crash-logs.json":    s.crashLogsPath,
+		"ai-snapshots.json":  s.aiSnapshotsPath,
 	} {
 		newPath := files[oldName]
 		if _, err := os.Stat(oldPath); err == nil {

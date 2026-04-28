@@ -28,56 +28,56 @@ type WorkspaceState struct {
 }
 
 type ConnectionInput struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Engine         string `json:"engine"`
-	Host           string `json:"host"`
-	Port           int    `json:"port"`
-	Username       string `json:"username"`
-	Password       string `json:"password"`
-	Database       string `json:"database"`
-	FilePath       string `json:"filePath"`
-	URL            string `json:"url"`
-	Notes          string `json:"notes"`
-	Group          string `json:"group"`
-	GroupColor     string `json:"groupColor"`
-	SSLMode        string `json:"sslMode"`
-	SSLCACert      string `json:"sslCaCert"`
-	SSLClientCert  string `json:"sslClientCert"`
-	SSLClientKey   string `json:"sslClientKey"`
-	SSHHost        string `json:"sshHost"`
-	SSHPort        int    `json:"sshPort"`
-	SSHUser        string `json:"sshUser"`
-	SSHPassword    string `json:"sshPassword"`
-	SSHKeyFile     string `json:"sshKeyFile"`
-	UseSSH         bool   `json:"useSSH"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Engine        string `json:"engine"`
+	Host          string `json:"host"`
+	Port          int    `json:"port"`
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+	Database      string `json:"database"`
+	FilePath      string `json:"filePath"`
+	URL           string `json:"url"`
+	Notes         string `json:"notes"`
+	Group         string `json:"group"`
+	GroupColor    string `json:"groupColor"`
+	SSLMode       string `json:"sslMode"`
+	SSLCACert     string `json:"sslCaCert"`
+	SSLClientCert string `json:"sslClientCert"`
+	SSLClientKey  string `json:"sslClientKey"`
+	SSHHost       string `json:"sshHost"`
+	SSHPort       int    `json:"sshPort"`
+	SSHUser       string `json:"sshUser"`
+	SSHPassword   string `json:"sshPassword"`
+	SSHKeyFile    string `json:"sshKeyFile"`
+	UseSSH        bool   `json:"useSSH"`
 }
 
 type ConnectionProfile struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Engine         string `json:"engine"`
-	Host           string `json:"host"`
-	Port           int    `json:"port"`
-	Username       string `json:"username"`
-	Database       string `json:"database"`
-	FilePath       string `json:"filePath"`
-	URL            string `json:"url"`
-	Notes          string `json:"notes"`
-	Group          string `json:"group"`
-	GroupColor     string `json:"groupColor"`
-	PasswordSet    bool   `json:"passwordSet"`
-	SSLMode        string `json:"sslMode"`
-	SSLCACert      string `json:"sslCaCert"`
-	SSLClientCert  string `json:"sslClientCert"`
-	SSLClientKey   string `json:"sslClientKey"`
-	SSHHost        string `json:"sshHost"`
-	SSHPort        int    `json:"sshPort"`
-	SSHUser        string `json:"sshUser"`
-	SSHKeyFile     string `json:"sshKeyFile"`
-	UseSSH         bool   `json:"useSSH"`
-	CreatedAt      string `json:"createdAt"`
-	UpdatedAt      string `json:"updatedAt"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Engine        string `json:"engine"`
+	Host          string `json:"host"`
+	Port          int    `json:"port"`
+	Username      string `json:"username"`
+	Database      string `json:"database"`
+	FilePath      string `json:"filePath"`
+	URL           string `json:"url"`
+	Notes         string `json:"notes"`
+	Group         string `json:"group"`
+	GroupColor    string `json:"groupColor"`
+	PasswordSet   bool   `json:"passwordSet"`
+	SSLMode       string `json:"sslMode"`
+	SSLCACert     string `json:"sslCaCert"`
+	SSLClientCert string `json:"sslClientCert"`
+	SSLClientKey  string `json:"sslClientKey"`
+	SSHHost       string `json:"sshHost"`
+	SSHPort       int    `json:"sshPort"`
+	SSHUser       string `json:"sshUser"`
+	SSHKeyFile    string `json:"sshKeyFile"`
+	UseSSH        bool   `json:"useSSH"`
+	CreatedAt     string `json:"createdAt"`
+	UpdatedAt     string `json:"updatedAt"`
 }
 
 type ConnectionTestResult struct {
@@ -87,18 +87,20 @@ type ConnectionTestResult struct {
 }
 
 type AISettingsInput struct {
-	BaseURL   string `json:"baseUrl"`
-	ModelName string `json:"modelName"`
-	APIKey    string `json:"apiKey"`
+	BaseURL               string `json:"baseUrl"`
+	ModelName             string `json:"modelName"`
+	APIKey                string `json:"apiKey"`
+	ChatMaxRepairAttempts int    `json:"chatMaxRepairAttempts"`
 }
 
 type AISettingsView struct {
-	BaseURL          string `json:"baseUrl"`
-	ModelName        string `json:"modelName"`
-	APIKeyConfigured bool   `json:"apiKeyConfigured"`
-	APIKeySource     string `json:"apiKeySource"`
-	APIKeyPreview    string `json:"apiKeyPreview"`
-	StorageMode      string `json:"storageMode"`
+	BaseURL               string `json:"baseUrl"`
+	ModelName             string `json:"modelName"`
+	APIKeyConfigured      bool   `json:"apiKeyConfigured"`
+	APIKeySource          string `json:"apiKeySource"`
+	APIKeyPreview         string `json:"apiKeyPreview"`
+	StorageMode           string `json:"storageMode"`
+	ChatMaxRepairAttempts int    `json:"chatMaxRepairAttempts"`
 }
 
 type Service struct {
@@ -321,6 +323,7 @@ func (s *Service) SaveAISettings(input AISettingsInput) (AISettingsView, error) 
 
 	configState.AI.BaseURL = baseURL
 	configState.AI.ModelName = modelName
+	configState.AI.ChatMaxRepairAttempts = normalizeChatMaxRepairAttempts(input.ChatMaxRepairAttempts)
 	if strings.TrimSpace(input.APIKey) != "" {
 		configState.AI.APIKey = strings.TrimSpace(input.APIKey)
 	}
@@ -440,29 +443,29 @@ func isSupportedEngine(engine string) bool {
 
 func connectionRecordFromInput(input ConnectionInput) store.ConnectionRecord {
 	return store.ConnectionRecord{
-		ID:             input.ID,
-		Name:           input.Name,
-		Engine:         input.Engine,
-		Host:           input.Host,
-		Port:           input.Port,
-		Username:       input.Username,
-		Password:       input.Password,
-		Database:       input.Database,
-		FilePath:       input.FilePath,
-		URL:            input.URL,
-		Notes:          input.Notes,
-		Group:          input.Group,
-		GroupColor:     input.GroupColor,
-		SSLMode:        input.SSLMode,
-		SSLCACert:      input.SSLCACert,
-		SSLClientCert:  input.SSLClientCert,
-		SSLClientKey:   input.SSLClientKey,
-		SSHHost:        input.SSHHost,
-		SSHPort:        input.SSHPort,
-		SSHUser:        input.SSHUser,
-		SSHPassword:    input.SSHPassword,
-		SSHKeyFile:     input.SSHKeyFile,
-		UseSSH:         input.UseSSH,
+		ID:            input.ID,
+		Name:          input.Name,
+		Engine:        input.Engine,
+		Host:          input.Host,
+		Port:          input.Port,
+		Username:      input.Username,
+		Password:      input.Password,
+		Database:      input.Database,
+		FilePath:      input.FilePath,
+		URL:           input.URL,
+		Notes:         input.Notes,
+		Group:         input.Group,
+		GroupColor:    input.GroupColor,
+		SSLMode:       input.SSLMode,
+		SSLCACert:     input.SSLCACert,
+		SSLClientCert: input.SSLClientCert,
+		SSLClientKey:  input.SSLClientKey,
+		SSHHost:       input.SSHHost,
+		SSHPort:       input.SSHPort,
+		SSHUser:       input.SSHUser,
+		SSHPassword:   input.SSHPassword,
+		SSHKeyFile:    input.SSHKeyFile,
+		UseSSH:        input.UseSSH,
 	}
 }
 
@@ -580,13 +583,24 @@ func buildAISettingsView(saved store.AIState) AISettingsView {
 	}
 
 	return AISettingsView{
-		BaseURL:          baseURL,
-		ModelName:        modelName,
-		APIKeyConfigured: apiKey != "",
-		APIKeySource:     source,
-		APIKeyPreview:    maskSecret(apiKey),
-		StorageMode:      "Restricted local config file with 0600 permissions; env fallback supported",
+		BaseURL:               baseURL,
+		ModelName:             modelName,
+		APIKeyConfigured:      apiKey != "",
+		APIKeySource:          source,
+		APIKeyPreview:         maskSecret(apiKey),
+		StorageMode:           "Restricted local config file with 0600 permissions; env fallback supported",
+		ChatMaxRepairAttempts: normalizeChatMaxRepairAttempts(saved.ChatMaxRepairAttempts),
 	}
+}
+
+func normalizeChatMaxRepairAttempts(value int) int {
+	if value <= 0 {
+		return 3
+	}
+	if value > 10 {
+		return 10
+	}
+	return value
 }
 
 func firstNonEmpty(values ...string) string {

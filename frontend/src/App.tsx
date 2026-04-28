@@ -119,6 +119,13 @@ type DangerConfirmState = {
     onConfirm: (() => void) | null;
 };
 
+type LeaveConfirmState = {
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: (() => void | Promise<void>) | null;
+};
+
 type SQLCompletionSpec = {
     label: string;
     insertText: string;
@@ -220,6 +227,7 @@ function App() {
     const monacoRef = useRef<Monaco | null>(null);
     const chatStreamRef = useRef<HTMLDivElement | null>(null);
     const completionDisposableRef = useRef<IDisposable | null>(null);
+    const navigationGuardBypassRef = useRef(false);
     const [monacoReady, setMonacoReady] = useState(false);
 
     const [workspaceState, setWorkspaceState] = useState<WorkspaceState>(emptyWorkspaceState);
@@ -353,7 +361,6 @@ function App() {
     const [createDBForm, setCreateDBForm] = useState({ name: "", charset: "utf8mb4", collation: "utf8mb4_unicode_ci" });
     const [isCreatingDB, setIsCreatingDB] = useState(false);
     const [dbContextMenu, setDbContextMenu] = useState<{ x: number; y: number; database: string } | null>(null);
-    const [chatBlockerModalOpen, setChatBlockerModalOpen] = useState(false);
     const [dangerConfirm, setDangerConfirm] = useState<DangerConfirmState>({
         open: false,
         title: "",
@@ -361,6 +368,13 @@ function App() {
         actionLabel: "",
         onConfirm: null,
     });
+    const [leaveConfirm, setLeaveConfirm] = useState<LeaveConfirmState>({
+        open: false,
+        title: "",
+        message: "",
+        onConfirm: null,
+    });
+    const [createTableDirty, setCreateTableDirty] = useState(false);
 
     const selectedConnection = workspaceState.connections.find((item) => item.id === selectedConnectionId) ?? null;
     const primaryFieldNames = useMemo(() => tableDetail?.fields.filter((field) => field.primary).map((field) => field.name) ?? [], [tableDetail]);
@@ -423,6 +437,7 @@ function App() {
         queryPageSize,
         previewPageSize,
         explorerTree,
+        maxRepairAttempts: workspaceState.ai.chatMaxRepairAttempts ?? 3,
         pushToast,
         setQueryResult,
         setLastExecutedSQL,
@@ -491,6 +506,55 @@ function App() {
         pushToast,
         setQueryNotice,
     });
+
+    function hasUnsavedStructureChanges() {
+        if (activePage === "create-table" && createTableDirty) {
+            return true;
+        }
+
+        const alterSQL = schema.currentAlterSQL.trim();
+        return Boolean(
+            activePage === "schema" &&
+                tableDetail &&
+                alterSQL &&
+                !alterSQL.startsWith("--"),
+        );
+    }
+
+    function runWithStructureLeaveGuard(action: () => void | Promise<void>) {
+        if (navigationGuardBypassRef.current || !hasUnsavedStructureChanges()) {
+            void action();
+            return true;
+        }
+
+        setLeaveConfirm({
+            open: true,
+            title: "放弃当前修改？",
+            message: activePage === "create-table"
+                ? "当前新建表内容尚未保存，离开后会放弃这些草稿。是否继续？"
+                : "当前表结构存在未保存的变更，离开后会放弃这些修改。是否继续？",
+            onConfirm: async () => {
+                setLeaveConfirm((current) => ({ ...current, open: false }));
+                navigationGuardBypassRef.current = true;
+                setCreateTableDirty(false);
+                schema.setAlterPreview(null);
+                try {
+                    await action();
+                } finally {
+                    navigationGuardBypassRef.current = false;
+                }
+            },
+        });
+        return false;
+    }
+
+    function setActivePageWithGuard(page: WorkbenchPage) {
+        if (page === activePage) {
+            setActivePage(page);
+            return;
+        }
+        runWithStructureLeaveGuard(() => setActivePage(page));
+    }
 
 
     function pushToast(tone: NoticeTone, title: string, message: string) {
@@ -798,6 +862,17 @@ function App() {
                 aiLoading: false,
                 charset: (field as any).charset || "utf8mb4",
                 collation: (field as any).collation || "utf8mb4_general_ci",
+            })),
+        );
+        schema.setSchemaDraftIndexes(
+            detail.indexes.map((index) => ({
+                id: browserGeneratedID(),
+                originName: index.name,
+                name: index.name,
+                columns: index.columns,
+                unique: index.unique,
+                indexType: index.indexType,
+                aiLoading: false,
             })),
         );
         schema.setSchemaNotice(null);
@@ -1694,6 +1769,11 @@ function App() {
     }, [chat.pagedSlashMenuItems, chat.slashMenuOpen]);
 
     function handleSelectDatabase(databaseName: string) {
+        if (!navigationGuardBypassRef.current && hasUnsavedStructureChanges()) {
+            runWithStructureLeaveGuard(() => handleSelectDatabase(databaseName));
+            return;
+        }
+
         setSelectedDatabase(databaseName);
         setSQLText("");
         chat.setChatContextDatabase(databaseName);
@@ -1724,9 +1804,12 @@ function App() {
             setWorkspaceNotice({ tone: "error", message: "请先选择连接。" });
             return;
         }
-        if (workMode === "chat") {
-            setChatBlockerModalOpen(true);
+        if (!navigationGuardBypassRef.current && hasUnsavedStructureChanges()) {
+            runWithStructureLeaveGuard(() => handlePreviewTableWithSize(databaseName, tableName, nextPage, pageSize));
             return;
+        }
+        if (workMode === "chat") {
+            setWorkMode("normal");
         }
 
         try {
@@ -1906,10 +1989,12 @@ function App() {
     }
 
     function openTableDesigner(databaseName: string, tableName: string) {
-        if (workMode === "chat") {
-            setChatBlockerModalOpen(true);
-            setTableContextMenu(null);
+        if (!navigationGuardBypassRef.current && hasUnsavedStructureChanges()) {
+            runWithStructureLeaveGuard(() => openTableDesigner(databaseName, tableName));
             return;
+        }
+        if (workMode === "chat") {
+            setWorkMode("normal");
         }
         setSelectedDatabase(databaseName);
         setSelectedTable(tableName);
@@ -1923,9 +2008,12 @@ function App() {
     }
 
     function openPartitionPage() {
-        if (workMode === "chat") {
-            setChatBlockerModalOpen(true);
+        if (!navigationGuardBypassRef.current && hasUnsavedStructureChanges()) {
+            runWithStructureLeaveGuard(openPartitionPage);
             return;
+        }
+        if (workMode === "chat") {
+            setWorkMode("normal");
         }
         setActivePage("partition");
     }
@@ -2454,12 +2542,57 @@ function App() {
     }
 
     function openCreateTablePage(databaseName: string) {
+        if (!navigationGuardBypassRef.current && hasUnsavedStructureChanges()) {
+            runWithStructureLeaveGuard(() => openCreateTablePage(databaseName));
+            return;
+        }
+
         setSelectedDatabase(databaseName);
         setSelectedTable("");
         setActivePage("create-table");
         setTableContextMenu(null);
         setDbContextMenu(null);
         schema.setSchemaDraftFields([]);
+        schema.setSchemaDraftIndexes([]);
+    }
+
+    async function handleRefreshDatabase(database: string) {
+        if (!selectedConnection) {
+            pushToast("error", "刷新失败", "请先选择连接");
+            return;
+        }
+        if (!navigationGuardBypassRef.current && hasUnsavedStructureChanges()) {
+            runWithStructureLeaveGuard(() => handleRefreshDatabase(database));
+            return;
+        }
+        try {
+            await loadExplorer(selectedConnection.id, database);
+            setExpandedDatabases((current) => ({ ...current, [database]: true }));
+            pushToast("success", "已刷新", `数据库 ${database} 已重新加载`);
+        } catch (error) {
+            pushToast("error", "刷新失败", getErrorMessage(error));
+        }
+    }
+
+    async function handleRefreshTable(database: string, table: string) {
+        if (!selectedConnection) {
+            pushToast("error", "刷新失败", "请先选择连接");
+            return;
+        }
+        if (!navigationGuardBypassRef.current && hasUnsavedStructureChanges()) {
+            runWithStructureLeaveGuard(() => handleRefreshTable(database, table));
+            return;
+        }
+        try {
+            await loadExplorer(selectedConnection.id, database);
+            if (selectedDatabase === database && selectedTable === table) {
+                await loadTable(selectedConnection.id, database, table);
+            }
+            setExpandedDatabases((current) => ({ ...current, [database]: true }));
+            pushToast("success", "已刷新", `数据表 ${table} 已重新加载`);
+        } catch (error) {
+            pushToast("error", "刷新失败", getErrorMessage(error));
+        }
     }
 
     return (
@@ -2499,7 +2632,7 @@ function App() {
                     openTableDesigner={openTableDesigner}
                     pushToast={pushToast}
                     activePage={activePage}
-                    setActivePage={setActivePage}
+                    setActivePage={setActivePageWithGuard}
                     saveFilterSettings={saveFilterSettings}
                     setShowCreateDBModal={setShowCreateDBModal}
                     setCreateDBForm={setCreateDBForm}
@@ -2512,6 +2645,8 @@ function App() {
                     onExportDatabaseStructureAndData={handleExportDatabaseStructureAndData}
                     onImportSQLToDatabase={handleImportSQLToDatabase}
                     onImportCSVToDatabase={handleImportCSVToDatabase}
+                    onRefreshDatabase={handleRefreshDatabase}
+                    onRefreshTable={handleRefreshTable}
                     onTruncateTable={handleTruncateTable}
                     onDropTable={handleDropTable}
                     onDropDatabase={handleDropDatabase}
@@ -2637,7 +2772,7 @@ function App() {
                         setPreviewContext={setPreviewContext}
                         setExpandedDatabases={setExpandedDatabases}
                         setSelectedTable={setSelectedTable}
-                        setActivePage={setActivePage}
+                        setActivePage={setActivePageWithGuard}
                         setSidebarView={setSidebarView}
                         setQueryNotice={setQueryNotice}
                         schemaNotice={schema.schemaNotice}
@@ -2663,7 +2798,10 @@ function App() {
                         updateDraftIndex={schema.updateDraftIndex}
                         handleGenerateIndexName={schema.handleGenerateIndexName}
                         aiConfigured={workspaceState.ai.apiKeyConfigured}
+                        alterPreview={schema.alterPreview}
+                        setAlterPreview={schema.setAlterPreview}
                         handleSaveFields={schema.handleSaveFields}
+                        handleConfirmAlterPreview={schema.handleConfirmAlterPreview}
                         isSavingFields={schema.isSavingFields}
                         handleSaveIndexes={schema.handleSaveIndexes}
                         isSavingIndexes={schema.isSavingIndexes}
@@ -2692,6 +2830,7 @@ function App() {
                         refreshWorkspaceState={refreshWorkspaceState}
                         handleSelectDatabase={handleSelectDatabase}
                         loadExplorer={loadExplorer}
+                        onCreateTableDirtyChange={setCreateTableDirty}
                     />
                 </div>
             </main>
@@ -2719,6 +2858,32 @@ function App() {
                 isExecutingQuery={isExecutingQuery}
                 handleConfirmDeleteSelectedRows={handleConfirmDeleteSelectedRows}
             />
+
+            {leaveConfirm.open ? (
+                <div className="modal-backdrop" onClick={() => setLeaveConfirm((prev) => ({ ...prev, open: false }))}>
+                    <div className="modal-card modal-card--leave" onClick={(event) => event.stopPropagation()}>
+                        <div className="section-title">
+                            <div>
+                                <h3>{leaveConfirm.title}</h3>
+                                <p>为了避免误丢结构修改，离开前需要你确认一次。</p>
+                            </div>
+                        </div>
+                        <p className="modal-card__message">{leaveConfirm.message}</p>
+                        <div className="toolbar-actions toolbar-actions--end">
+                            <button type="button" className="ghost-button" onClick={() => setLeaveConfirm((prev) => ({ ...prev, open: false }))}>
+                                继续编辑
+                            </button>
+                            <button
+                                type="button"
+                                className="primary-button primary-button--danger"
+                                onClick={() => leaveConfirm.onConfirm?.()}
+                            >
+                                放弃并离开
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
 
             {showCreateDBModal ? (
                 <div className="modal-backdrop" onClick={() => setShowCreateDBModal(false)}>
@@ -2811,27 +2976,6 @@ function App() {
                                 disabled={isCreatingDB || !createDBForm.name.trim()}
                             >
                                 {isCreatingDB ? "创建中..." : "确认创建"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            ) : null}
-
-            {chatBlockerModalOpen ? (
-                <div className="modal-backdrop" onClick={() => setChatBlockerModalOpen(false)}>
-                    <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-                        <div className="section-title">
-                            <div>
-                                <h3>操作受限</h3>
-                                <p>当前处于 Chat 模式，该操作不可用。</p>
-                            </div>
-                        </div>
-                        <p style={{ margin: "12px 0", color: "var(--text-primary)" }}>
-                            请先关闭 Chat 模式后再进行此操作。
-                        </p>
-                        <div className="toolbar-actions toolbar-actions--end">
-                            <button type="button" className="primary-button" onClick={() => setChatBlockerModalOpen(false)}>
-                                知道了
                             </button>
                         </div>
                     </div>

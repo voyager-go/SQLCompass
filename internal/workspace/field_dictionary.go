@@ -634,6 +634,9 @@ func (s *Service) ChatWithDatabase(input ChatDatabaseRequest) (ChatDatabaseRespo
 		"如果用户表达清楚且是安全查询（SELECT/SHOW/DESC/EXPLAIN），mode 输出 query，并给出 sql。",
 		"如果用户表达不够清楚，mode 输出 ask，只追问一个最关键的问题，sql 留空。",
 		"如果用户要执行 UPDATE/DELETE/INSERT/ALTER/DROP/TRUNCATE 等敏感操作，mode 输出 confirm，给出 sql 和风险说明，不要直接执行。",
+		"当用户要求新增/插入数据但没有给出完整字段值时，不要追问用户补值。你必须根据字段名、字段类型、字段注释自动生成一组合理的测试数据。",
+		"生成 INSERT 时禁止使用 ?、:param、${var} 等占位符；所有 VALUES 必须是可直接执行的具体 SQL 字面量或 NOW()/CURRENT_TIMESTAMP 等数据库函数。",
+		"生成 INSERT 时应跳过自增主键；必填字段必须给值；可空字段可使用 NULL；密码类字段如无哈希函数上下文可生成明确的测试明文并在 reply 中提示风险。",
 		"不得编造不存在的表或字段，只能基于提供的结构上下文。",
 		"displayMode 只能是 summary 或 table。用户要明细/列表/表格时优先 table，否则 summary。",
 		"输出格式：{\"mode\":\"ask|query|confirm\",\"reply\":\"给用户看的中文说明\",\"sql\":\"SQL 或空字符串\",\"displayMode\":\"summary|table\",\"reasoning\":\"内部推理摘要\"}",
@@ -654,7 +657,22 @@ func (s *Service) ChatWithDatabase(input ChatDatabaseRequest) (ChatDatabaseRespo
 		return ChatDatabaseResponse{}, err
 	}
 
-	return parseChatDatabaseResponse(content, displayMode)
+	response, err := parseChatDatabaseResponse(content, displayMode)
+	if err != nil {
+		return ChatDatabaseResponse{}, err
+	}
+	if sqlContainsPlaceholder(response.SQL) {
+		retryPrompt := prompt + "\n\n你刚才生成的 SQL 包含占位符，这在本客户端中不可执行。请重新输出 JSON：如果是 INSERT，请基于表结构自动生成具体可执行的测试数据，禁止出现 ? 或参数占位符。"
+		content, err = callChatCompletion(baseURL, modelName, apiKey, retryPrompt)
+		if err != nil {
+			return ChatDatabaseResponse{}, err
+		}
+		response, err = parseChatDatabaseResponse(content, displayMode)
+		if err != nil {
+			return ChatDatabaseResponse{}, err
+		}
+	}
+	return response, nil
 }
 
 func (s *Service) RepairChatSQL(input ChatRepairRequest) (ChatDatabaseResponse, error) {
@@ -702,6 +720,7 @@ func (s *Service) RepairChatSQL(input ChatRepairRequest) (ChatDatabaseResponse, 
 		"如果仍然无法确定，mode 输出 ask，只追问一个最关键的问题。",
 		"如果修复后的 SQL 是 SELECT/SHOW/DESC/EXPLAIN 等安全查询，mode 输出 query。",
 		"如果修复后的 SQL 是 UPDATE/DELETE/INSERT/ALTER/DROP/TRUNCATE 等敏感操作，mode 输出 confirm，不要直接执行。",
+		"修复 INSERT 时禁止继续使用 ?、:param、${var} 等占位符；如果用户没有给出字段值，你必须根据字段名、类型和注释自动生成具体测试数据。",
 		"reply 用中文告诉用户你为什么调整了字段或条件，reasoning 用更短的中文总结推理过程。",
 		"只输出 JSON，不要 markdown。输出格式：{\"mode\":\"ask|query|confirm\",\"reply\":\"...\",\"sql\":\"...\",\"displayMode\":\"summary|table\",\"reasoning\":\"...\"}",
 		"",
@@ -731,7 +750,22 @@ func (s *Service) RepairChatSQL(input ChatRepairRequest) (ChatDatabaseResponse, 
 		return ChatDatabaseResponse{}, err
 	}
 
-	return parseChatDatabaseResponse(content, displayMode)
+	response, err := parseChatDatabaseResponse(content, displayMode)
+	if err != nil {
+		return ChatDatabaseResponse{}, err
+	}
+	if sqlContainsPlaceholder(response.SQL) {
+		retryPrompt := prompt + "\n\n你修复后的 SQL 仍然包含占位符，不能直接执行。请重新输出 JSON，并把占位符替换成根据表结构生成的具体测试数据。"
+		content, err = callChatCompletion(baseURL, modelName, apiKey, retryPrompt)
+		if err != nil {
+			return ChatDatabaseResponse{}, err
+		}
+		response, err = parseChatDatabaseResponse(content, displayMode)
+		if err != nil {
+			return ChatDatabaseResponse{}, err
+		}
+	}
+	return response, nil
 }
 
 func (s *Service) SummarizeChatResult(input ChatResultSummaryRequest) (ChatResultSummary, error) {
@@ -894,6 +928,9 @@ func parseChatDatabaseResponse(content string, fallbackDisplayMode string) (Chat
 		mode = "ask"
 	}
 	sqlText := strings.TrimSpace(parsed.SQL)
+	if sqlText != "" {
+		sqlText = formatSQLText(sqlText)
+	}
 	analysis := analyzeSQL(sqlText)
 	requiresConfirm := mode == "confirm" || analysis.RequiresConfirm
 	responseDisplayMode := strings.TrimSpace(parsed.DisplayMode)
@@ -910,6 +947,15 @@ func parseChatDatabaseResponse(content string, fallbackDisplayMode string) (Chat
 		RequiresConfirm: requiresConfirm,
 		Reasoning:       strings.TrimSpace(parsed.Reasoning),
 	}, nil
+}
+
+func sqlContainsPlaceholder(sqlText string) bool {
+	trimmed := strings.TrimSpace(sqlText)
+	if trimmed == "" {
+		return false
+	}
+	placeholderPattern := regexp.MustCompile(`(?i)(\?|:[a-z_][a-z0-9_]*|\$\{[^}]+\})`)
+	return placeholderPattern.MatchString(trimmed)
 }
 
 func extractJSONBlock(content string) string {

@@ -1,9 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { isIntegerType, isTimestampType, isStringType } from "../lib/utils";
 
 const DEFAULT_CHARSET = "utf8mb4";
 const DEFAULT_COLLATION = "utf8mb4_general_ci";
+const PANEL_WIDTH = 304;
+const VIEWPORT_PADDING = 12;
+const ANCHOR_GAP = 8;
 
 interface FieldSettingsPanelProps {
     visible: boolean;
@@ -15,6 +18,7 @@ interface FieldSettingsPanelProps {
     onUpdate: string;
     charset: string;
     collation: string;
+    anchorEl?: HTMLElement | null;
     onToggleUnsigned: () => void;
     onToggleAutoIncrement: () => void;
     onChangeDefaultValue: (value: string) => void;
@@ -22,6 +26,26 @@ interface FieldSettingsPanelProps {
     onChangeCharset: (value: string) => void;
     onChangeCollation: (value: string) => void;
     onClose: () => void;
+}
+
+function calculatePanelPosition(anchor: HTMLElement, panelHeight = 260) {
+    const rect = anchor.getBoundingClientRect();
+    const maxLeft = window.innerWidth - VIEWPORT_PADDING - PANEL_WIDTH;
+    let left = rect.left;
+    if (left + PANEL_WIDTH > window.innerWidth - VIEWPORT_PADDING) {
+        left = rect.right - PANEL_WIDTH;
+    }
+    left = Math.max(VIEWPORT_PADDING, Math.min(left, maxLeft));
+
+    let top = rect.bottom + ANCHOR_GAP;
+    if (top + panelHeight > window.innerHeight - VIEWPORT_PADDING) {
+        top = rect.top - panelHeight - ANCHOR_GAP;
+    }
+
+    return {
+        top: Math.max(VIEWPORT_PADDING, top),
+        left,
+    };
 }
 
 export function FieldSettingsPanel({
@@ -34,6 +58,7 @@ export function FieldSettingsPanel({
     onUpdate,
     charset,
     collation,
+    anchorEl,
     onToggleUnsigned,
     onToggleAutoIncrement,
     onChangeDefaultValue,
@@ -43,6 +68,29 @@ export function FieldSettingsPanel({
     onClose,
 }: FieldSettingsPanelProps) {
     const panelRef = useRef<HTMLDivElement>(null);
+    const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+    useLayoutEffect(() => {
+        if (!visible || !anchorEl) return;
+        const anchor = anchorEl;
+
+        function updatePosition() {
+            const height = panelRef.current?.offsetHeight ?? 260;
+            setPos(calculatePanelPosition(anchor, height));
+        }
+
+        updatePosition();
+        window.addEventListener("scroll", updatePosition, true);
+        window.addEventListener("resize", updatePosition);
+        return () => {
+            window.removeEventListener("scroll", updatePosition, true);
+            window.removeEventListener("resize", updatePosition);
+        };
+    }, [visible, anchorEl]);
+
+    useEffect(() => {
+        if (!visible) setPos(null);
+    }, [visible]);
 
     useEffect(() => {
         if (!visible) return;
@@ -70,74 +118,57 @@ export function FieldSettingsPanel({
     const showCharset = isStringType(fieldType);
     const showCollation = isStringType(fieldType);
 
-    if (!visible) return null;
+    if (!visible || !anchorEl) return null;
+
+    const panelPosition = pos ?? calculatePanelPosition(anchorEl);
+    const fieldTypeLabel = fieldType.trim() || "未选择类型";
 
     return createPortal(
         <div
             ref={panelRef}
             className="field-settings-panel"
             style={{
-                position: "absolute",
-                top: "100%",
-                left: 0,
-                zIndex: 50,
-                minWidth: 280,
-                background: "var(--surface-1)",
-                border: "1px solid var(--border-soft)",
-                borderRadius: 10,
-                boxShadow: "0 6px 24px rgba(0,0,0,.12), 0 2px 6px rgba(0,0,0,.06)",
-                padding: 12,
-                marginTop: 4,
-                fontSize: 12.5,
-                color: "var(--text-primary)",
+                top: panelPosition.top,
+                left: panelPosition.left,
             }}
         >
-            <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 10, color: "var(--text-secondary)" }}>
-                字段设置
+            <div className="field-settings-panel__header">
+                <div>
+                    <div className="field-settings-panel__eyebrow">字段设置</div>
+                    <div className="field-settings-panel__type">{fieldTypeLabel}</div>
+                </div>
             </div>
 
-            {/* 无符号 */}
             {showUnsigned ? (
-                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", cursor: "pointer" }}>
+                <label className="field-settings-panel__row">
                     <span>无符号</span>
-                    <input type="checkbox" checked={unsigned} onChange={onToggleUnsigned} />
+                    <input className="field-settings-panel__toggle" type="checkbox" checked={unsigned} onChange={onToggleUnsigned} />
                 </label>
             ) : null}
 
-            {/* 自增 */}
-            <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", cursor: "pointer" }}>
+            <label className="field-settings-panel__row">
                 <span>自增</span>
-                <input type="checkbox" checked={autoIncrement} onChange={onToggleAutoIncrement} />
+                <input className="field-settings-panel__toggle" type="checkbox" checked={autoIncrement} onChange={onToggleAutoIncrement} />
             </label>
 
-            {/* 默认值 */}
-            <div style={{ padding: "5px 0" }} key={`dv-${fieldType}`}>
-                <span style={{ display: "block", marginBottom: 3, color: "var(--text-secondary)" }}>默认值</span>
-                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <div className="field-settings-panel__field" key={`dv-${fieldType}`}>
+                <span>默认值</span>
+                <div className="field-settings-panel__input-row">
                     <input
+                        className="field-settings-panel__input"
                         value={defaultValue}
                         onChange={(e) => onChangeDefaultValue(e.target.value)}
                         placeholder="默认值"
                         autoComplete="off"
                         autoCapitalize="none"
-                        style={{
-                            flex: 1,
-                            padding: "4px 7px",
-                            border: "1px solid var(--border-soft)",
-                            borderRadius: 6,
-                            background: "var(--input-bg)",
-                            color: "var(--text-primary)",
-                            fontSize: 12,
-                            outline: "none",
-                        }}
+                        spellCheck={false}
                     />
                     {showNowButton ? (
                         <button
                             type="button"
-                            className="mini-ai-button"
+                            className="field-settings-panel__token-button"
                             title="填充 CURRENT_TIMESTAMP"
                             onClick={() => onChangeDefaultValue("CURRENT_TIMESTAMP")}
-                            style={{ flexShrink: 0 }}
                         >
                             NOW
                         </button>
@@ -145,31 +176,20 @@ export function FieldSettingsPanel({
                 </div>
             </div>
 
-            {/* 自动更新 */}
             {showAutoUpdate ? (
-                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", cursor: "pointer" }}>
+                <label className="field-settings-panel__row">
                     <span>自动更新</span>
-                    <input type="checkbox" checked={onUpdate === "CURRENT_TIMESTAMP"} onChange={(e) => onToggleOnUpdate(e.target.checked)} />
+                    <input className="field-settings-panel__toggle" type="checkbox" checked={onUpdate === "CURRENT_TIMESTAMP"} onChange={(e) => onToggleOnUpdate(e.target.checked)} />
                 </label>
             ) : null}
 
-            {/* 字符集 */}
             {showCharset ? (
-                <div style={{ padding: "5px 0" }}>
-                    <span style={{ display: "block", marginBottom: 3, color: "var(--text-secondary)" }}>字符集</span>
+                <div className="field-settings-panel__field">
+                    <span>字符集</span>
                     <select
+                        className="field-settings-panel__select"
                         value={charset || DEFAULT_CHARSET}
                         onChange={(e) => onChangeCharset(e.target.value)}
-                        style={{
-                            width: "100%",
-                            padding: "4px 7px",
-                            border: "1px solid var(--border-soft)",
-                            borderRadius: 6,
-                            background: "var(--input-bg)",
-                            color: "var(--text-primary)",
-                            fontSize: 12,
-                            outline: "none",
-                        }}
                     >
                         <option value="utf8mb4">utf8mb4</option>
                         <option value="utf8">utf8</option>
@@ -180,23 +200,13 @@ export function FieldSettingsPanel({
                 </div>
             ) : null}
 
-            {/* 排序规则 */}
             {showCollation ? (
-                <div style={{ padding: "5px 0" }}>
-                    <span style={{ display: "block", marginBottom: 3, color: "var(--text-secondary)" }}>排序规则</span>
+                <div className="field-settings-panel__field">
+                    <span>排序规则</span>
                     <select
+                        className="field-settings-panel__select"
                         value={collation || DEFAULT_COLLATION}
                         onChange={(e) => onChangeCollation(e.target.value)}
-                        style={{
-                            width: "100%",
-                            padding: "4px 7px",
-                            border: "1px solid var(--border-soft)",
-                            borderRadius: 6,
-                            background: "var(--input-bg)",
-                            color: "var(--text-primary)",
-                            fontSize: 12,
-                            outline: "none",
-                        }}
                     >
                         <option value="utf8mb4_general_ci">utf8mb4_general_ci</option>
                         <option value="utf8mb4_unicode_ci">utf8mb4_unicode_ci</option>
@@ -211,8 +221,8 @@ export function FieldSettingsPanel({
             ) : null}
 
             {!showUnsigned && !showAutoUpdate && !showCharset && !showCollation ? (
-                <div style={{ padding: "8px 0", color: "var(--text-tertiary)", fontStyle: "italic", fontSize: 11.5 }}>
-                    当前字段类型无额外设置项
+                <div className="field-settings-panel__empty">
+                    无更多类型专属设置
                 </div>
             ) : null}
         </div>,

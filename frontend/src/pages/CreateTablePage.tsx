@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { CreateTable, GenerateFieldComment, GenerateIndexName, SuggestPartition } from "../../wailsjs/go/main/App";
 import { createPortal } from "react-dom";
 import type { SchemaFieldInput, SchemaIndexInput } from "../types/runtime";
@@ -21,6 +21,7 @@ interface CreateTablePageProps {
     loadExplorer: (connectionId: string, preferredDatabase?: string) => Promise<void>;
     setActivePage: (v: WorkbenchPage) => void;
     aiConfigured: boolean;
+    onDirtyChange?: (dirty: boolean) => void;
 }
 
 type FieldWithAI = SchemaFieldInput & { id: string; aiLoading: boolean };
@@ -56,7 +57,7 @@ function emptyIndex(engine: string): IndexWithAI {
     };
 }
 
-export function CreateTablePage({ selectedConnection, selectedDatabase, pushToast, loadExplorer, setActivePage, aiConfigured }: CreateTablePageProps) {
+export function CreateTablePage({ selectedConnection, selectedDatabase, pushToast, loadExplorer, setActivePage, aiConfigured, onDirtyChange }: CreateTablePageProps) {
     const [tableName, setTableName] = useState("");
     const [schemaName, setSchemaName] = useState("public");
     const [partitionBy, setPartitionBy] = useState("");
@@ -73,6 +74,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
     const [isSuggestingPartition, setIsSuggestingPartition] = useState(false);
     // 字段设置面板状态
     const [settingsFieldIndex, setSettingsFieldIndex] = useState<number | null>(null);
+    const [settingsAnchorEl, setSettingsAnchorEl] = useState<HTMLButtonElement | null>(null);
     // 主键勾选后自增提示框状态
     const [pkAutoIncrPrompt, setPkAutoIncrPrompt] = useState<{ index: number; target: HTMLElement } | null>(null);
     const fieldTypeOptions = getFieldTypeOptions(selectedConnection?.engine ?? "mysql", fields.map((f) => f.type));
@@ -85,6 +87,37 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
 
     // 字段名列表供索引多选用
     const fieldNames = fields.map((f) => f.name).filter(Boolean);
+
+    useEffect(() => {
+        const hasFieldDraft = fields.some((field) =>
+            Boolean(
+                field.name.trim() ||
+                    field.type.trim() ||
+                    field.defaultValue.trim() ||
+                    field.comment.trim() ||
+                    field.primary ||
+                    field.autoIncrement ||
+                    field.unsigned ||
+                    field.nullable,
+            ),
+        );
+        const hasIndexDraft = indexes.some((idx) => Boolean(idx.name.trim() || idx.columns.length > 0 || idx.unique));
+        const dirty = Boolean(
+            tableName.trim() ||
+                (isPostgreSQL && schemaName.trim() !== "public") ||
+                partitionBy.trim() ||
+                primaryKeyExpr.trim() ||
+                orderByExpr.trim() ||
+                sampleByExpr.trim() ||
+                hasFieldDraft ||
+                hasIndexDraft,
+        );
+        onDirtyChange?.(dirty);
+    }, [fields, indexes, isPostgreSQL, onDirtyChange, orderByExpr, partitionBy, primaryKeyExpr, sampleByExpr, schemaName, tableName]);
+
+    useEffect(() => {
+        return () => onDirtyChange?.(false);
+    }, [onDirtyChange]);
 
     function addField(afterIndex?: number) {
         setFields((current) => {
@@ -260,6 +293,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
             if (result.success) {
                 pushToast("success", "创建成功", result.message);
                 await loadExplorer(selectedConnection.id, selectedDatabase);
+                onDirtyChange?.(false);
                 setActivePage("query");
             } else {
                 setNotice({ tone: "error", message: result.message });
@@ -343,6 +377,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                                     placeholder="字段名"
                                                     autoComplete="off"
                                                     autoCapitalize="none"
+                                                    spellCheck={false}
                                                 />
                                             </td>
                                             <td>
@@ -409,7 +444,21 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                                 </div>
                                             </td>
                                             <td style={{ display: "flex", gap: 4, alignItems: "center", position: "relative" }}>
-                                                <button type="button" className="icon-btn icon-btn--settings" title="字段设置" onClick={() => setSettingsFieldIndex(settingsFieldIndex === index ? null : index)}>
+                                                <button
+                                                    type="button"
+                                                    className="icon-btn icon-btn--settings"
+                                                    title="字段设置"
+                                                    aria-expanded={settingsFieldIndex === index}
+                                                    onClick={(event) => {
+                                                        if (settingsFieldIndex === index) {
+                                                            setSettingsFieldIndex(null);
+                                                            setSettingsAnchorEl(null);
+                                                            return;
+                                                        }
+                                                        setSettingsFieldIndex(index);
+                                                        setSettingsAnchorEl(event.currentTarget);
+                                                    }}
+                                                >
                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                         <circle cx="12" cy="12" r="3"></circle>
                                                         <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"></path>
@@ -425,13 +474,17 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                                     onUpdate={field.onUpdate}
                                                     charset={field.charset || "utf8mb4"}
                                                     collation={field.collation || "utf8mb4_general_ci"}
+                                                    anchorEl={settingsFieldIndex === index ? settingsAnchorEl : null}
                                                     onToggleUnsigned={() => updateField(index, "unsigned", !(field.unsigned || false))}
                                                     onToggleAutoIncrement={() => updateField(index, "autoIncrement", !(field.autoIncrement || false))}
                                                     onChangeDefaultValue={(val) => updateField(index, "defaultValue", val)}
                                                     onToggleOnUpdate={(checked) => updateField(index, "onUpdate", checked ? "CURRENT_TIMESTAMP" : "")}
                                                     onChangeCharset={(val) => updateField(index, "charset", val)}
                                                     onChangeCollation={(val) => updateField(index, "collation", val)}
-                                                    onClose={() => setSettingsFieldIndex(null)}
+                                                    onClose={() => {
+                                                        setSettingsFieldIndex(null);
+                                                        setSettingsAnchorEl(null);
+                                                    }}
                                                 />
                                                 <button type="button" className="icon-btn icon-btn--add" title="在下方插入字段" onClick={() => addField(index)}>
                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>

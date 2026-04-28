@@ -1,5 +1,89 @@
 import type { QueryResult, ChatEntry, ChatPendingAction, ChatDropPayload, ChatDisplayMode } from "../types/runtime";
 
+function formatSQLForDisplay(sql: string) {
+    let output = sql.trim().replace(/\r\n/g, "\n");
+    if (!output) return "";
+
+    const keywords = [
+        "INSERT INTO", "DELETE FROM", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN", "GROUP BY", "ORDER BY",
+        "SELECT", "FROM", "WHERE", "VALUES", "UPDATE", "SET", "JOIN", "ON", "AND", "OR", "LIMIT", "OFFSET",
+        "CREATE", "ALTER", "DROP", "TRUNCATE",
+    ];
+    for (const keyword of keywords) {
+        const pattern = keyword.replace(/\s+/g, "\\s+");
+        output = output.replace(new RegExp(`\\b${pattern}\\b`, "gi"), keyword);
+    }
+
+    const lineBreaks = ["INSERT INTO", "VALUES", "SELECT", "FROM", "WHERE", "GROUP BY", "ORDER BY", "LIMIT", "OFFSET", "UPDATE", "SET", "DELETE FROM", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN", "JOIN", "ON"];
+    for (const keyword of lineBreaks) {
+        const pattern = keyword.replace(/\s+/g, "\\s+");
+        output = output.replace(new RegExp(`\\s*\\b${pattern}\\b`, "gi"), `\n${keyword}`);
+    }
+    output = output
+        .replace(/\n(AND|OR)\b/g, "\n  $1")
+        .replace(/\(\s*/g, "(")
+        .replace(/\s*\)/g, ")")
+        .replace(/\s*,\s*/g, ", ")
+        .replace(/\n{2,}/g, "\n")
+        .trim();
+
+    return output.endsWith(";") ? output : `${output};`;
+}
+
+function renderChatContent(content: string) {
+    const segments = content.split(/```/g);
+
+    return (
+        <div className="chat-content">
+            {segments.map((segment, index) => {
+                if (!segment.trim()) return null;
+
+                if (index % 2 === 1) {
+                    const lines = segment.replace(/^\n/, "").split("\n");
+                    const maybeLanguage = lines[0]?.trim() ?? "";
+                    const hasLanguage = /^[a-zA-Z][\w-]*$/.test(maybeLanguage);
+                    const code = hasLanguage ? lines.slice(1).join("\n") : segment.trim();
+                    return (
+                        <pre key={`code-${index}`} className="chat-content__code">
+                            {code}
+                        </pre>
+                    );
+                }
+
+                return segment
+                    .trim()
+                    .split(/\n{2,}/)
+                    .map((block, blockIndex) => {
+                        const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+                        if (lines.length === 0) return null;
+
+                        if (lines.every((line) => /^[-*]\s+/.test(line))) {
+                            return (
+                                <ul key={`list-${index}-${blockIndex}`} className="chat-content__list">
+                                    {lines.map((line, lineIndex) => (
+                                        <li key={lineIndex}>{line.replace(/^[-*]\s+/, "")}</li>
+                                    ))}
+                                </ul>
+                            );
+                        }
+
+                        if (lines.every((line) => /^\d+[.)]\s+/.test(line))) {
+                            return (
+                                <ol key={`olist-${index}-${blockIndex}`} className="chat-content__list">
+                                    {lines.map((line, lineIndex) => (
+                                        <li key={lineIndex}>{line.replace(/^\d+[.)]\s+/, "")}</li>
+                                    ))}
+                                </ol>
+                            );
+                        }
+
+                        return <p key={`p-${index}-${blockIndex}`}>{lines.join("\n")}</p>;
+                    });
+            })}
+        </div>
+    );
+}
+
 interface ChatPageProps {
     selectedConnection: { name: string } | null;
     chatDisplayMode: ChatDisplayMode;
@@ -109,19 +193,19 @@ export function ChatPage({
                                     <div className="chat-message__label">{item.role === "assistant" ? "AI 助手" : "你"}</div>
                                 </div>
                                 <div className={`chat-bubble chat-bubble--${item.role}`}>
-                                    <p>{item.content}</p>
+                                    {renderChatContent(item.content)}
                                 </div>
                                 {item.role === "user" ? (
                                     <div className="chat-bubble-actions">
-                                        <button type="button" className="chat-bubble-actions__btn" onClick={() => handleCopyUserMessage(item)} title="复制内容">📋</button>
-                                        <button type="button" className="chat-bubble-actions__btn" onClick={() => handleEditUserMessage(item)} title="修改内容">✏️</button>
+                                        <button type="button" className="chat-bubble-actions__btn" onClick={() => handleCopyUserMessage(item)} title="复制内容">复制</button>
+                                        <button type="button" className="chat-bubble-actions__btn" onClick={() => handleEditUserMessage(item)} title="修改内容">编辑</button>
                                     </div>
                                 ) : null}
                                 {item.reasoning ? <span className="chat-reasoning">{item.reasoning}</span> : null}
                                 {item.sql ? (
-                                    <div className="code-block code-block--light code-block--with-copy">
-                                        <pre>{item.sql}</pre>
-                                        <button type="button" className="code-block__copy-btn" onClick={() => handleCopyText(item.sql ?? "", "SQL")}>📋 复制</button>
+                                    <div className="code-block code-block--light code-block--with-copy chat-code-block">
+                                        <pre>{formatSQLForDisplay(item.sql)}</pre>
+                                        <button type="button" className="code-block__copy-btn" onClick={() => handleCopyText(formatSQLForDisplay(item.sql ?? ""), "SQL")}>复制 SQL</button>
                                     </div>
                                 ) : null}
                                 {item.result ? (
@@ -130,7 +214,7 @@ export function ChatPage({
                                             <span>{item.result.statementType || "SELECT"}</span>
                                             <span>{item.result.rows.length} 行</span>
                                             <span>{item.result.durationMs} ms</span>
-                                            <button type="button" className="chat-result-shell__copy-btn" onClick={() => handleCopyChatResult(item)}>📋 复制结果</button>
+                                            <button type="button" className="chat-result-shell__copy-btn" onClick={() => handleCopyChatResult(item)}>复制结果</button>
                                         </div>
                                         {item.displayMode === "summary" ? (
                                             <div className="chat-result-summary">
@@ -170,7 +254,7 @@ export function ChatPage({
                                 {item.role === "assistant" ? (
                                     <div className="chat-message__footer">
                                         <button type="button" className="chat-copy-all-btn" onClick={() => handleCopyChatMessage(item)} title="复制整轮对话">
-                                            📋 复制全部
+                                            复制全部
                                         </button>
                                     </div>
                                 ) : null}
@@ -195,15 +279,15 @@ export function ChatPage({
                         <div className="chat-pending-card">
                             <strong>敏感操作待确认</strong>
                             <p>{chatPendingAction.reply}</p>
-                            <div className="code-block code-block--light">
-                                <pre>{chatPendingAction.sql}</pre>
+                            <div className="code-block code-block--light chat-code-block">
+                                <pre>{formatSQLForDisplay(chatPendingAction.sql)}</pre>
                             </div>
                             <div className="toolbar-actions">
                                 <button type="button" className="ghost-button" onClick={() => setChatPendingAction(null)}>
                                     取消
                                 </button>
                                 <button type="button" className="primary-button" onClick={() => executeChatSQL(chatPendingAction.sql, chatPendingAction.displayMode, chatPendingAction.reply, chatPendingAction.userMessage, chatPendingAction.reasoning, 0)} disabled={isRunningChat || isExecutingQuery}>
-                                    确认执行
+                                    {isRunningChat || isExecutingQuery ? "执行中..." : "确认执行"}
                                 </button>
                             </div>
                         </div>
@@ -281,18 +365,33 @@ export function ChatPage({
                     <div className="chat-composer">
                         <div className="chat-context-tags">
                             {chatContextDatabase ? (
-                                <button type="button" className="chat-context-tag chat-context-tag--database" onClick={() => {
-                                    setChatContextDatabase("");
-                                    setChatContextTables([]);
-                                }}>
-                                    数据库 · {chatContextDatabase}<span aria-hidden="true">×</span>
-                                </button>
+                                <span className="chat-context-tag chat-context-tag--database">
+                                    数据库 · {chatContextDatabase}
+                                    <button
+                                        type="button"
+                                        className="chat-context-tag__close"
+                                        onClick={() => {
+                                            setChatContextDatabase("");
+                                            setChatContextTables([]);
+                                        }}
+                                        aria-label={`移除数据库 ${chatContextDatabase}`}
+                                    >
+                                        ×
+                                    </button>
+                                </span>
                             ) : null}
                             {chatContextTables.map((tableName) => (
-                                <button key={tableName} type="button" className="chat-context-tag chat-context-tag--table" onClick={() => setChatContextTables((current) => current.filter((item) => item !== tableName))}>
+                                <span key={tableName} className="chat-context-tag chat-context-tag--table">
                                     数据表 · {tableName}
-                                    <span aria-hidden="true">×</span>
-                                </button>
+                                    <button
+                                        type="button"
+                                        className="chat-context-tag__close"
+                                        onClick={() => setChatContextTables((current) => current.filter((item) => item !== tableName))}
+                                        aria-label={`移除数据表 ${tableName}`}
+                                    >
+                                        ×
+                                    </button>
+                                </span>
                             ))}
                             {!chatContextDatabase && chatContextTables.length === 0 ? <span className="chat-context-tag chat-context-tag--muted">可从左侧拖入数据库或数据表作为上下文</span> : null}
                         </div>

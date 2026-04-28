@@ -12,6 +12,7 @@ import { AIPage } from "../pages/AIPage";
 import { ThemePage } from "../pages/ThemePage";
 import { SettingsPage } from "../pages/SettingsPage";
 import type { WorkbenchPage, WorkMode } from "../lib/constants";
+import type { AlterPreviewState } from "../hooks/useSchema";
 import type {
     ChatDisplayMode,
     ChatEntry,
@@ -205,7 +206,10 @@ export interface WorkbenchRouterProps {
     updateDraftIndex: <K extends keyof { id: string; originName: string; name: string; columns: string[]; unique: boolean; indexType: string; aiLoading: boolean }>(index: number, key: K, value: { id: string; originName: string; name: string; columns: string[]; unique: boolean; indexType: string; aiLoading: boolean }[K]) => void;
     handleGenerateIndexName: (index: number, tableName: string) => Promise<void>;
     aiConfigured: boolean;
+    alterPreview: AlterPreviewState;
+    setAlterPreview: React.Dispatch<React.SetStateAction<AlterPreviewState>>;
     handleSaveFields: () => Promise<void>;
+    handleConfirmAlterPreview: () => Promise<void>;
     isSavingFields: boolean;
     handleSaveIndexes: () => Promise<void>;
     isSavingIndexes: boolean;
@@ -261,6 +265,7 @@ export interface WorkbenchRouterProps {
     refreshWorkspaceState: () => Promise<void>;
     handleSelectDatabase: (databaseName: string) => void;
     loadExplorer: (connectionId: string, preferredDatabase?: string) => Promise<void>;
+    onCreateTableDirtyChange: (dirty: boolean) => void;
 }
 
 export function WorkbenchRouter(props: WorkbenchRouterProps) {
@@ -412,7 +417,10 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         updateDraftIndex,
         handleGenerateIndexName,
         aiConfigured,
+        alterPreview,
+        setAlterPreview,
         handleSaveFields,
+        handleConfirmAlterPreview,
         isSavingFields,
         handleSaveIndexes,
         isSavingIndexes,
@@ -443,6 +451,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         setShowClearModal,
         refreshWorkspaceState,
         loadExplorer,
+        onCreateTableDirtyChange,
     } = props;
 
     if (workMode === "chat") {
@@ -622,7 +631,10 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     updateDraftIndex={updateDraftIndex}
                     handleGenerateIndexName={handleGenerateIndexName}
                     aiConfigured={aiConfigured}
+                    alterPreview={alterPreview}
+                    setAlterPreview={setAlterPreview}
                     handleSaveFields={handleSaveFields}
+                    handleConfirmAlterPreview={handleConfirmAlterPreview}
                     isSavingFields={isSavingFields}
                     handleSaveIndexes={handleSaveIndexes}
                     isSavingIndexes={isSavingIndexes}
@@ -696,6 +708,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     loadExplorer={loadExplorer}
                     setActivePage={setActivePage}
                     aiConfigured={workspaceState.ai.apiKeyConfigured}
+                    onDirtyChange={onCreateTableDirtyChange}
                 />
             );
         case "settings":
