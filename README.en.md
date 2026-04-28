@@ -2,7 +2,7 @@
 
 A desktop database client built for DBAs and backend developers. Deep integration with MySQL, PostgreSQL, SQLite, ClickHouse, MongoDB, and Redis.
 
-![Workbench](./docs/preview/workbench.png)
+![Workbench](./docs/preview/connection.png)
 
 ---
 
@@ -22,6 +22,15 @@ Describe what you need in plain English — SQLCompass generates the query. Incl
 
 ![AI Chat](./docs/preview/chat_1.png)
 
+![AI Chat](./docs/preview/chat_2.png)
+
+![AI Chat](./docs/preview/chat_3.png)
+
+### Select Table Data
+Intelligent SQL completion, a simple and elegant SQL editor that supports transactions, imports and exports, and filtering of databases and data tables.
+
+![Select Table](./docs/preview/table_select.png)
+
 ### Visual Table Designer
 Design tables visually and preview the exact DDL before it runs. Full support for field types, indexes, character sets, and more.
 
@@ -36,6 +45,13 @@ Import CSV, Excel, or SQL files into your database. Export query results to CSV,
 | Intelligent filling (auto-detect PK, sequences) | Normal filling (direct insert) |
 
 ![Intelligent Data Filling](./docs/preview/intelligent_data_filling_1.png)
+![Intelligent Data Filling](./docs/preview/intelligent_data_filling_2.png)
+![Common Data Filling](./docs/preview/common_data_filling_1.png)
+
+### Query History
+Every query auto-saved with instant recall.
+
+![Query History](./docs/preview/workbench_sql_history.png)
 
 ### Additional Features
 - **Query History**: Every query auto-saved with instant recall

@@ -2,7 +2,7 @@
 
 一款面向 DBA 和后端开发者的桌面数据库客户端，深度支持 MySQL / PostgreSQL / SQLite / ClickHouse / MongoDB / Redis 等主流数据库。
 
-![工作台](./docs/preview/workbench.png)
+![工作台](./docs/preview/connection.png)
 
 ---
 
@@ -22,6 +22,15 @@
 
 ![AI 对话](./docs/preview/chat_1.png)
 
+![AI 对话](./docs/preview/chat_2.png)
+
+![AI 对话](./docs/preview/chat_3.png)
+
+### 查询数据
+智能SQL补全，简单优雅的SQL编辑器，支持事务，支持导入、导出，支持数据库、数据表的筛选等。
+
+![查询表数据](./docs/preview/table_select.png)
+
 ### 可视化表设计器
 拖拽式 DDL 设计，实时预览生成语句，支持字段类型、索引、外键、字符集等完整配置。
 
@@ -36,6 +45,13 @@
 | 智能数据填充（自动识别主键、序号等） | 普通填充（直接写入） |
 
 ![智能填充](./docs/preview/intelligent_data_filling_1.png)
+![智能填充](./docs/preview/intelligent_data_filling_2.png)
+![常规填充](./docs/preview/common_data_filling_1.png)
+
+### 查询历史
+每次查询自动保存，支持快速回溯。
+
+![查询历史](./docs/preview/workbench_sql_history.png)
 
 ### 其他功能
 - **查询历史**：每次查询自动保存，支持快速回溯
