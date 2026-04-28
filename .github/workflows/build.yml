@@ -113,7 +113,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - name: Build Linux binary
-        run: wails build -clean
+        run: wails build -clean -tags webkit2_41
 
       - name: Package as tarball
         run: tar czf "build/bin/${{ env.BINARY_NAME }}-Linux-amd64.tar.gz" -C build/bin "${{ env.BINARY_NAME }}"
