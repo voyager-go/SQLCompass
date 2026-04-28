@@ -271,7 +271,7 @@ func (s *Service) runRelationalQuery(record store.ConnectionRecord, input QueryR
 		_ = s.appendHistory(record, databaseName, statement, statement, analysis, true, affectedRows, duration)
 	}
 
-	return QueryResult{Columns: []string{}, Rows: []map[string]string{}, AffectedRows: affectedRows, DurationMS: duration.Milliseconds(), EffectiveSQL: statement, StatementType: analysis.StatementType, Message: fmt.Sprintf("执行成功，影响 %d 行", affectedRows), Page: 1, PageSize: pageSize, AutoLimited: false, HasNextPage: false, Analysis: analysis}, nil
+	return QueryResult{Columns: []string{}, Rows: QueryRows{}, AffectedRows: affectedRows, DurationMS: duration.Milliseconds(), EffectiveSQL: statement, StatementType: analysis.StatementType, Message: fmt.Sprintf("执行成功，影响 %d 行", affectedRows), Page: 1, PageSize: pageSize, AutoLimited: false, HasNextPage: false, Analysis: analysis}, nil
 }
 func splitSchemaAndTable(value string, defaultSchema string) (string, string) {
 	parts := strings.SplitN(strings.TrimSpace(value), ".", 2)

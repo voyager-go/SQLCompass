@@ -1,5 +1,7 @@
 package workspace
 
+import "encoding/json"
+
 type ExplorerRequest struct {
 	ConnectionID string `json:"connectionId"`
 	Database     string `json:"database"`
@@ -128,6 +130,34 @@ type QueryRequest struct {
 	PageSize     int    `json:"pageSize"`
 }
 
+type StringMap map[string]string
+type QueryRow struct {
+	values map[string]string
+}
+type QueryRows []QueryRow
+
+func newQueryRow(values map[string]string) QueryRow {
+	return QueryRow{values: values}
+}
+
+func queryRows(rows []map[string]string) QueryRows {
+	if rows == nil {
+		return nil
+	}
+	result := make(QueryRows, len(rows))
+	for index, row := range rows {
+		result[index] = newQueryRow(row)
+	}
+	return result
+}
+
+func (row QueryRow) MarshalJSON() ([]byte, error) {
+	if row.values == nil {
+		return []byte("{}"), nil
+	}
+	return json.Marshal(row.values)
+}
+
 type SQLAnalysis struct {
 	StatementType   string   `json:"statementType"`
 	RiskLevel       string   `json:"riskLevel"`
@@ -138,8 +168,8 @@ type SQLAnalysis struct {
 
 type QueryResult struct {
 	Columns       []string            `json:"columns"`
-	Rows          []map[string]string `json:"rows"`
-	Meta          map[string]string   `json:"meta,omitempty"`
+	Rows          QueryRows           `json:"rows"`
+	Meta          StringMap           `json:"meta,omitempty"`
 	AffectedRows  int64               `json:"affectedRows"`
 	DurationMS    int64               `json:"durationMs"`
 	EffectiveSQL  string              `json:"effectiveSql"`
@@ -511,11 +541,11 @@ type ImportPreviewRequest struct {
 }
 
 type ImportPreviewResult struct {
-	Columns []string            `json:"columns"`
-	Rows    []map[string]string `json:"rows"`
-	Total   int                 `json:"total"`
-	Format  string              `json:"format"`
-	Message string              `json:"message"`
+	Columns []string  `json:"columns"`
+	Rows    QueryRows `json:"rows"`
+	Total   int       `json:"total"`
+	Format  string    `json:"format"`
+	Message string    `json:"message"`
 }
 
 type ImportResult struct {
@@ -535,11 +565,11 @@ type PerformanceRequest struct {
 }
 
 type PerformanceResult struct {
-	MetricType string              `json:"metricType"`
-	Columns    []string            `json:"columns"`
-	Rows       []map[string]string `json:"rows"`
-	Supported  bool                `json:"supported"`
-	Message    string              `json:"message"`
+	MetricType string    `json:"metricType"`
+	Columns    []string  `json:"columns"`
+	Rows       QueryRows `json:"rows"`
+	Supported  bool      `json:"supported"`
+	Message    string    `json:"message"`
 }
 
 // --- Database users & access control types ---

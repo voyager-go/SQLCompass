@@ -113,8 +113,8 @@ func (s *Service) GetTableRowCounts(input TableRowCountRequest) (TableRowCountRe
 	return s.getTableRowCountsByRecord(record, input.Database, input.Tables)
 }
 
-func scanRows(rows *dbsql.Rows, columns []string) ([]map[string]string, error) {
-	result := []map[string]string{}
+func scanRows(rows *dbsql.Rows, columns []string) (QueryRows, error) {
+	result := QueryRows{}
 	for rows.Next() {
 		values := make([]any, len(columns))
 		scanArgs := make([]any, len(columns))
@@ -139,7 +139,7 @@ func scanRows(rows *dbsql.Rows, columns []string) ([]map[string]string, error) {
 				item[column] = fmt.Sprint(value)
 			}
 		}
-		result = append(result, item)
+		result = append(result, newQueryRow(item))
 	}
 
 	return result, rows.Err()

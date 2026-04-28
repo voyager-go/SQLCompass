@@ -126,7 +126,7 @@ func (s *Service) previewCSV(input ImportPreviewRequest) (ImportPreviewResult, e
 
 	return ImportPreviewResult{
 		Columns: columns,
-		Rows:    rows,
+		Rows:    queryRows(rows),
 		Total:   total,
 		Format:  "csv",
 		Message: fmt.Sprintf("预览前 %d 行，共检测到 %d 行数据", len(rows), total),
@@ -161,7 +161,7 @@ func (s *Service) previewSQL(input ImportPreviewRequest) (ImportPreviewResult, e
 
 	return ImportPreviewResult{
 		Columns: []string{"index", "sql"},
-		Rows:    rows,
+		Rows:    queryRows(rows),
 		Total:   len(statements),
 		Format:  "sql",
 		Message: fmt.Sprintf("预览前 %d 条语句，共检测到 %d 条", len(rows), len(statements)),

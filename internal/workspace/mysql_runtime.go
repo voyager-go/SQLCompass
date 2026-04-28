@@ -336,7 +336,7 @@ func (s *Service) runMySQLQuery(record store.ConnectionRecord, input QueryReques
 
 	return QueryResult{
 		Columns:       []string{},
-		Rows:          []map[string]string{},
+		Rows:          QueryRows{},
 		AffectedRows:  affectedRows,
 		DurationMS:    duration.Milliseconds(),
 		EffectiveSQL:  statement,

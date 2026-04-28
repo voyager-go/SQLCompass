@@ -357,7 +357,7 @@ func (s *Service) runMongoDBRawCommand(ctx context.Context, client *mongo.Client
 	}
 
 	columns := []string{"result"}
-	rows := []map[string]string{{"result": fmt.Sprintf("%v", formatBSONValue(result))}}
+	rows := queryRows([]map[string]string{{"result": fmt.Sprintf("%v", formatBSONValue(result))}})
 
 	return QueryResult{
 		Columns:       columns,
@@ -479,7 +479,7 @@ func (s *Service) runMongoDBCount(ctx context.Context, coll *mongo.Collection, a
 
 	return QueryResult{
 		Columns:       []string{"count"},
-		Rows:          []map[string]string{{"count": fmt.Sprintf("%d", count)}},
+		Rows:          queryRows([]map[string]string{{"count": fmt.Sprintf("%d", count)}}),
 		Page:          page,
 		DurationMS:    0,
 		HasNextPage:   false,
@@ -506,7 +506,7 @@ func (s *Service) runMongoDBInsertOne(ctx context.Context, coll *mongo.Collectio
 
 	return QueryResult{
 		Columns:       []string{"insertedId"},
-		Rows:          []map[string]string{{"insertedId": insertedID}},
+		Rows:          queryRows([]map[string]string{{"insertedId": insertedID}}),
 		Page:          page,
 		DurationMS:    0,
 		HasNextPage:   false,
@@ -537,7 +537,7 @@ func (s *Service) runMongoDBUpdateOne(ctx context.Context, coll *mongo.Collectio
 
 	return QueryResult{
 		Columns:       []string{"matchedCount", "modifiedCount"},
-		Rows:          []map[string]string{{"matchedCount": fmt.Sprintf("%d", result.MatchedCount), "modifiedCount": fmt.Sprintf("%d", result.ModifiedCount)}},
+		Rows:          queryRows([]map[string]string{{"matchedCount": fmt.Sprintf("%d", result.MatchedCount), "modifiedCount": fmt.Sprintf("%d", result.ModifiedCount)}}),
 		Page:          page,
 		DurationMS:    0,
 		HasNextPage:   false,
@@ -559,7 +559,7 @@ func (s *Service) runMongoDBDeleteOne(ctx context.Context, coll *mongo.Collectio
 
 	return QueryResult{
 		Columns:       []string{"deletedCount"},
-		Rows:          []map[string]string{{"deletedCount": fmt.Sprintf("%d", result.DeletedCount)}},
+		Rows:          queryRows([]map[string]string{{"deletedCount": fmt.Sprintf("%d", result.DeletedCount)}}),
 		Page:          page,
 		DurationMS:    0,
 		HasNextPage:   false,
@@ -593,7 +593,7 @@ func splitMongoArgs(argsStr string, expected int) []string {
 }
 
 func mongoCursorToQueryResult(cursor *mongo.Cursor, ctx context.Context, page int, pageSize int, stmtType string) (QueryResult, error) {
-	rows := []map[string]string{}
+	rows := QueryRows{}
 	columnSet := map[string]bool{}
 
 	for cursor.Next(ctx) {
@@ -602,7 +602,7 @@ func mongoCursorToQueryResult(cursor *mongo.Cursor, ctx context.Context, page in
 			continue
 		}
 		row := flattenBSON(doc)
-		for k := range row {
+		for k := range row.values {
 			columnSet[k] = true
 		}
 		rows = append(rows, row)
@@ -630,12 +630,12 @@ func mongoCursorToQueryResult(cursor *mongo.Cursor, ctx context.Context, page in
 	}, nil
 }
 
-func flattenBSON(doc bson.M) map[string]string {
+func flattenBSON(doc bson.M) QueryRow {
 	result := map[string]string{}
 	for k, v := range doc {
 		result[k] = fmt.Sprintf("%v", formatBSONValue(v))
 	}
-	return result
+	return newQueryRow(result)
 }
 
 func formatBSONValue(v interface{}) interface{} {

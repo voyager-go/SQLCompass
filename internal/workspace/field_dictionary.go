@@ -797,12 +797,12 @@ func (s *Service) SummarizeChatResult(input ChatResultSummaryRequest) (ChatResul
 	}
 
 	payload, err := json.Marshal(struct {
-		StatementType string              `json:"statementType"`
-		Columns       []string            `json:"columns"`
-		Rows          []map[string]string `json:"rows"`
-		RowCount      int                 `json:"rowCount"`
-		AffectedRows  int64               `json:"affectedRows"`
-		DurationMS    int64               `json:"durationMs"`
+		StatementType string    `json:"statementType"`
+		Columns       []string  `json:"columns"`
+		Rows          QueryRows `json:"rows"`
+		RowCount      int       `json:"rowCount"`
+		AffectedRows  int64     `json:"affectedRows"`
+		DurationMS    int64     `json:"durationMs"`
 	}{
 		StatementType: input.Result.StatementType,
 		Columns:       input.Result.Columns,

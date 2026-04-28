@@ -143,20 +143,20 @@ func (s *Service) previewRedisKey(record store.ConnectionRecord, input TablePrev
 	}
 	ttl, _ := client.TTL(ctx, input.Table).Result()
 	encoding, _ := client.Do(ctx, "OBJECT", "ENCODING", input.Table).Text()
-	meta := map[string]string{
+	meta := StringMap{
 		"key":      input.Table,
 		"type":     typeName,
 		"ttl":      ttl.String(),
 		"encoding": encoding,
 	}
 	var columns []string
-	var rows []map[string]string
+	var rows QueryRows
 	switch typeName {
 	case "string":
 		value, _ := client.Get(ctx, input.Table).Result()
 		meta["preview"] = value
 		columns = []string{"value"}
-		rows = []map[string]string{{"value": value}}
+		rows = queryRows([]map[string]string{{"value": value}})
 	case "hash":
 		pairs, _ := client.HGetAll(ctx, input.Table).Result()
 		columns = []string{"field", "value"}
@@ -165,16 +165,16 @@ func (s *Service) previewRedisKey(record store.ConnectionRecord, input TablePrev
 			keys = append(keys, key)
 		}
 		sort.Strings(keys)
-		rows = make([]map[string]string, 0, len(keys))
+		rows = make(QueryRows, 0, len(keys))
 		for _, key := range keys {
-			rows = append(rows, map[string]string{"field": key, "value": pairs[key]})
+			rows = append(rows, newQueryRow(map[string]string{"field": key, "value": pairs[key]}))
 		}
 	case "list":
 		values, _ := client.LRange(ctx, input.Table, 0, 19).Result()
 		columns = []string{"index", "value"}
-		rows = make([]map[string]string, 0, len(values))
+		rows = make(QueryRows, 0, len(values))
 		for index, value := range values {
-			rows = append(rows, map[string]string{"index": strconv.Itoa(index), "value": value})
+			rows = append(rows, newQueryRow(map[string]string{"index": strconv.Itoa(index), "value": value}))
 		}
 	case "set":
 		values, _ := client.SMembers(ctx, input.Table).Result()
@@ -183,30 +183,30 @@ func (s *Service) previewRedisKey(record store.ConnectionRecord, input TablePrev
 		}
 		sort.Strings(values)
 		columns = []string{"value"}
-		rows = make([]map[string]string, 0, len(values))
+		rows = make(QueryRows, 0, len(values))
 		for _, value := range values {
-			rows = append(rows, map[string]string{"value": value})
+			rows = append(rows, newQueryRow(map[string]string{"value": value}))
 		}
 	case "zset":
 		values, _ := client.ZRangeWithScores(ctx, input.Table, 0, 19).Result()
 		columns = []string{"member", "score"}
-		rows = make([]map[string]string, 0, len(values))
+		rows = make(QueryRows, 0, len(values))
 		for _, value := range values {
-			rows = append(rows, map[string]string{"member": fmt.Sprint(value.Member), "score": strconv.FormatFloat(value.Score, 'f', -1, 64)})
+			rows = append(rows, newQueryRow(map[string]string{"member": fmt.Sprint(value.Member), "score": strconv.FormatFloat(value.Score, 'f', -1, 64)}))
 		}
 	case "stream":
 		values, _ := client.XRangeN(ctx, input.Table, "-", "+", 10).Result()
 		columns = []string{"id", "field", "value"}
-		rows = []map[string]string{}
+		rows = QueryRows{}
 		for _, entry := range values {
 			for field, value := range entry.Values {
-				rows = append(rows, map[string]string{"id": entry.ID, "field": field, "value": fmt.Sprint(value)})
+				rows = append(rows, newQueryRow(map[string]string{"id": entry.ID, "field": field, "value": fmt.Sprint(value)}))
 			}
 		}
 	default:
 		meta["preview"] = "暂不支持该类型的值预览"
 		columns = []string{"value"}
-		rows = []map[string]string{{"value": meta["preview"]}}
+		rows = queryRows([]map[string]string{{"value": meta["preview"]}})
 	}
 	return QueryResult{Columns: columns, Rows: rows, Meta: meta, AffectedRows: int64(len(rows)), DurationMS: 0, EffectiveSQL: input.Table, StatementType: "REDIS_KEY", Message: fmt.Sprintf("已读取 Key %s 的详情", input.Table), Page: 1, PageSize: maxInt(1, len(rows)), AutoLimited: false, HasNextPage: false, Analysis: analyzeSQL(input.Table)}, nil
 }
@@ -266,21 +266,21 @@ func (s *Service) runRedisQuery(record store.ConnectionRecord, input QueryReques
 func redisValueToQueryResult(value any) QueryResult {
 	switch typed := value.(type) {
 	case nil:
-		return QueryResult{Columns: []string{"result"}, Rows: []map[string]string{}, Message: "命令执行完成，没有返回内容"}
+		return QueryResult{Columns: []string{"result"}, Rows: QueryRows{}, Message: "命令执行完成，没有返回内容"}
 	case []any:
-		rows := make([]map[string]string, 0, len(typed))
+		rows := make(QueryRows, 0, len(typed))
 		for index, item := range typed {
-			rows = append(rows, map[string]string{"index": strconv.Itoa(index), "value": fmt.Sprint(item)})
+			rows = append(rows, newQueryRow(map[string]string{"index": strconv.Itoa(index), "value": fmt.Sprint(item)}))
 		}
 		return QueryResult{Columns: []string{"index", "value"}, Rows: rows}
 	case map[string]any:
-		rows := make([]map[string]string, 0, len(typed))
+		rows := make(QueryRows, 0, len(typed))
 		for key, item := range typed {
-			rows = append(rows, map[string]string{"key": key, "value": fmt.Sprint(item)})
+			rows = append(rows, newQueryRow(map[string]string{"key": key, "value": fmt.Sprint(item)}))
 		}
 		return QueryResult{Columns: []string{"key", "value"}, Rows: rows}
 	default:
-		return QueryResult{Columns: []string{"result"}, Rows: []map[string]string{{"result": fmt.Sprint(typed)}}}
+		return QueryResult{Columns: []string{"result"}, Rows: queryRows([]map[string]string{{"result": fmt.Sprint(typed)}})}
 	}
 }
 
