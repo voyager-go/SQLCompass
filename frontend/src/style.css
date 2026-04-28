@@ -4085,6 +4085,31 @@ body[data-theme="dark"] .page-panel--chat .sql-highlight .sh-cmt {
     box-shadow: 0 12px 28px rgba(19, 35, 60, 0.06);
 }
 
+.chat-stop-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border: none;
+    border-radius: 8px;
+    background: color-mix(in srgb, #ef4444 12%, transparent);
+    color: #dc2626;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.16s ease, transform 0.16s ease;
+}
+
+.chat-stop-btn:hover {
+    background: color-mix(in srgb, #ef4444 20%, transparent);
+    transform: scale(1.05);
+}
+
+.chat-stop-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
 .chat-thinking__spinner,
 .chat-send-button__spinner {
     display: inline-flex;
@@ -4126,8 +4151,21 @@ body[data-theme="dark"] .page-panel--chat .sql-highlight .sh-cmt {
     height: 16px;
 }
 
-.chat-send-button--loading {
-    background: linear-gradient(135deg, #6088b8, #88a8c8);
+.chat-send-button--stop {
+    background: linear-gradient(135deg, #ef4444, #f87171);
+}
+
+.chat-send-button--stop:hover {
+    transform: translateY(-1px) scale(1.02) !important;
+}
+
+body[data-theme="dark"] .chat-stop-btn {
+    background: color-mix(in srgb, #ef4444 18%, transparent);
+    color: #f87171;
+}
+
+body[data-theme="dark"] .chat-stop-btn:hover {
+    background: color-mix(in srgb, #ef4444 28%, transparent);
 }
 
 body[data-theme="dark"] .chat-bubble--user {

@@ -91,6 +91,7 @@ interface ChatPageProps {
     chatStreamRef: React.RefObject<HTMLDivElement | null>;
     chatMessages: ChatEntry[];
     isRunningChat: boolean;
+    handleStopChat: () => void;
     handleCopyUserMessage: (item: ChatEntry) => void;
     handleEditUserMessage: (item: ChatEntry) => void;
     handleCopyText: (text: string, label?: string) => void;
@@ -131,6 +132,7 @@ export function ChatPage({
     chatStreamRef,
     chatMessages,
     isRunningChat,
+    handleStopChat,
     handleCopyUserMessage,
     handleEditUserMessage,
     handleCopyText,
@@ -270,6 +272,12 @@ export function ChatPage({
                                 <div className="chat-thinking">
                                     <span className="chat-thinking__spinner">✦</span>
                                     <span>正在思考并读取当前数据库上下文...</span>
+                                    <button type="button" className="chat-stop-btn" onClick={handleStopChat} title="停止生成" aria-label="停止生成">
+                                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                            <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+                                        </svg>
+                                        停止
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -441,13 +449,17 @@ export function ChatPage({
                             />
                             <button
                                 type="button"
-                                className={`chat-send-button${isRunningChat ? " chat-send-button--loading" : ""}`}
-                                onClick={() => handleSendChatMessage()}
-                                disabled={!selectedConnection || !chatInput.trim() || isRunningChat}
-                                aria-label={isRunningChat ? "正在思考" : "发送"}
+                                className={`chat-send-button${isRunningChat ? " chat-send-button--stop" : ""}`}
+                                onClick={() => isRunningChat ? handleStopChat() : handleSendChatMessage()}
+                                disabled={!isRunningChat && (!selectedConnection || !chatInput.trim())}
+                                aria-label={isRunningChat ? "停止生成" : "发送"}
                             >
                                 {isRunningChat ? (
-                                    <span className="chat-send-button__spinner">✦</span>
+                                    <>
+                                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                            <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+                                        </svg>
+                                    </>
                                 ) : (
                                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                         <path d="M21 3L10 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

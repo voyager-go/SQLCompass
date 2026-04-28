@@ -2664,6 +2664,7 @@ function App() {
                         chatStreamRef={chatStreamRef}
                         chatMessages={chat.chatMessages}
                         isRunningChat={chat.isRunningChat}
+                        handleStopChat={chat.handleStopChat}
                         handleCopyUserMessage={chat.handleCopyUserMessage}
                         handleEditUserMessage={chat.handleEditUserMessage}
                         handleCopyText={chat.handleCopyText}

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useRef, useMemo, useState } from "react";
 import { ChatWithDatabase, ExecuteQuery, RepairChatSQL } from "../../wailsjs/go/main/App";
 import type {
     ChatDisplayMode,
@@ -71,6 +71,7 @@ export function useChat(deps: UseChatDeps) {
     const [slashMenuStart, setSlashMenuStart] = useState(0);
     const [slashMenuActiveIndex, setSlashMenuActiveIndex] = useState(0);
     const [isRunningChat, setIsRunningChat] = useState(false);
+    const chatAbortRef = useRef<AbortController | null>(null);
 
     const slashMenuItems = useMemo(() => {
         if (slashMenuType === "command") {
@@ -166,6 +167,9 @@ export function useChat(deps: UseChatDeps) {
         setChatInput("");
         setIsRunningChat(true);
 
+        const controller = new AbortController();
+        chatAbortRef.current = controller;
+
         try {
             const response = (await ChatWithDatabase({
                 connectionId: selectedConnection.id,
@@ -176,10 +180,14 @@ export function useChat(deps: UseChatDeps) {
                 displayMode: chatDisplayMode,
             })) as ChatDatabaseResponse;
 
+            if (controller.signal.aborted) return;
+
             if (response.sql && !response.requiresConfirm) {
                 await executeChatSQL(response.sql, response.displayMode as ChatDisplayMode, response.reply, contextualMessage, response.reasoning, 0);
                 return;
             }
+
+            if (controller.signal.aborted) return;
 
             const assistantMessage: ChatEntry = {
                 id: browserGeneratedID(),
@@ -202,6 +210,7 @@ export function useChat(deps: UseChatDeps) {
                 });
             }
         } catch (error) {
+            if (controller.signal.aborted) return;
             const messageText = getErrorMessage(error);
             setChatMessages((current) => [
                 ...current,
@@ -212,9 +221,23 @@ export function useChat(deps: UseChatDeps) {
                 },
             ]);
         } finally {
+            chatAbortRef.current = null;
             setIsRunningChat(false);
         }
     }, [chatInput, chatMessages, chatDisplayMode, selectedConnection, selectedDatabase, selectedTable, chatContextDatabase, chatContextTables]);
+
+    const handleStopChat = useCallback(() => {
+        chatAbortRef.current?.abort();
+        setChatMessages((current) => [
+            ...current,
+            {
+                id: browserGeneratedID(),
+                role: "assistant",
+                content: "*已停止生成*",
+            },
+        ]);
+        setIsRunningChat(false);
+    }, []);
 
     const handleCopyText = useCallback(async (text: string, label?: string) => {
         try {
@@ -565,6 +588,7 @@ export function useChat(deps: UseChatDeps) {
         setSlashMenuActiveIndex,
         isRunningChat,
         setIsRunningChat,
+        handleStopChat,
         slashMenuItems,
         slashMenuTotalPages,
         slashMenuPageSafe,

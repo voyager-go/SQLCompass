@@ -1,0 +1,147 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.25"
+  NODE_VERSION: "20"
+  BINARY_NAME: SQLCompass
+
+jobs:
+  # ──────────────────────────────────────────────
+  # macOS Universal Binary (Intel + Apple Silicon)
+  # ──────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build macOS Universal Binary
+        run: wails build -clean -platform darwin/universal
+
+      - name: Create ZIP archive
+        run: cd build/bin && zip -r ${{ env.BINARY_NAME }}-macOS-Universal.zip ${{ env.BINARY_NAME }}.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-macOS-Universal
+          path: build/bin/${{ env.BINARY_NAME }}-macOS-Universal.zip
+
+  # ──────────────────────────────────────────────
+  # Windows (exe + NSIS installer)
+  # ──────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install NSIS
+        run: choco install nsis -y
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build Windows
+        run: wails build -clean
+
+      - name: Rename outputs with platform suffix
+        shell: pwsh
+        run: |
+          $bin = "build/bin"
+          Get-ChildItem $bin -Filter *.exe | ForEach-Object {
+            $newName = $_.Name -replace '\.exe$', '-Windows-amd64.exe'
+            Rename-Item $_.FullName "$bin\$newName"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-Windows
+          path: build/bin/*.exe
+
+  # ──────────────────────────────────────────────
+  # Linux amd64
+  # ──────────────────────────────────────────────
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build Linux
+        run: wails build -clean
+
+      - name: Create tarball
+        run: tar czf build/bin/${{ env.BINARY_NAME }}-Linux-amd64.tar.gz -C build/bin ${{ env.BINARY_NAME }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-Linux-amd64
+          path: build/bin/${{ env.BINARY_NAME }}-Linux-amd64.tar.gz
+
+  # ──────────────────────────────────────────────
+  # GitHub Release (only on tag push v*)
+  # ──────────────────────────────────────────────
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+
+      - name: List downloaded artifacts
+        run: find . -type f | head -30
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            **/*.zip
+            **/*.exe
+            **/*.tar.gz

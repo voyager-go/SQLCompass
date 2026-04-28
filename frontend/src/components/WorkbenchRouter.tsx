@@ -57,6 +57,7 @@ export interface WorkbenchRouterProps {
     chatStreamRef: React.RefObject<HTMLDivElement | null>;
     chatMessages: ChatEntry[];
     isRunningChat: boolean;
+    handleStopChat: () => void;
     handleCopyUserMessage: (item: ChatEntry) => void;
     handleEditUserMessage: (item: ChatEntry) => void;
     handleCopyText: (text: string, label?: string) => void;
@@ -279,6 +280,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         chatStreamRef,
         chatMessages,
         isRunningChat,
+        handleStopChat,
         handleCopyUserMessage,
         handleEditUserMessage,
         handleCopyText,
@@ -463,6 +465,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                 chatStreamRef={chatStreamRef}
                 chatMessages={chatMessages}
                 isRunningChat={isRunningChat}
+                handleStopChat={handleStopChat}
                 handleCopyUserMessage={handleCopyUserMessage}
                 handleEditUserMessage={handleEditUserMessage}
                 handleCopyText={handleCopyText}
