@@ -18,13 +18,13 @@ type ExplorerTree struct {
 }
 
 type DatabaseNode struct {
-	Name       string      `json:"name"`
-	IsSystem   bool        `json:"isSystem"`
-	TableCount int         `json:"tableCount"`
+	Name       string       `json:"name"`
+	IsSystem   bool         `json:"isSystem"`
+	TableCount int          `json:"tableCount"`
 	Schemas    []SchemaNode `json:"schemas,omitempty"`
-	Tables     []TableNode `json:"tables"`
-	NextCursor uint64      `json:"nextCursor,omitempty"`
-	HasMore    bool        `json:"hasMore,omitempty"`
+	Tables     []TableNode  `json:"tables"`
+	NextCursor uint64       `json:"nextCursor,omitempty"`
+	HasMore    bool         `json:"hasMore,omitempty"`
 }
 
 type SchemaNode struct {
@@ -34,12 +34,12 @@ type SchemaNode struct {
 }
 
 type TableNode struct {
-	Name     string `json:"name"`
-	Rows     int64  `json:"rows"`
-	Engine   string `json:"engine"`
-	Comment  string `json:"comment"`
-	KeyType  string `json:"keyType,omitempty"`
-	Loading  bool   `json:"loading"` // 行数是否正在加载中
+	Name    string `json:"name"`
+	Rows    int64  `json:"rows"`
+	Engine  string `json:"engine"`
+	Comment string `json:"comment"`
+	KeyType string `json:"keyType,omitempty"`
+	Loading bool   `json:"loading"` // 行数是否正在加载中
 }
 
 type TableRowCountRequest struct {
@@ -49,9 +49,9 @@ type TableRowCountRequest struct {
 }
 
 type TableRowCountResult struct {
-	ConnectionID string            `json:"connectionId"`
-	Database     string            `json:"database"`
-	Counts       map[string]int64  `json:"counts"` // table_name -> row_count
+	ConnectionID string           `json:"connectionId"`
+	Database     string           `json:"database"`
+	Counts       map[string]int64 `json:"counts"` // table_name -> row_count
 }
 
 type RedisKeyBrowseRequest struct {
@@ -132,12 +132,12 @@ type QueryRequest struct {
 
 type StringMap map[string]string
 type QueryRow struct {
-	values map[string]string
+	Values StringMap `json:"values"`
 }
 type QueryRows []QueryRow
 
 func newQueryRow(values map[string]string) QueryRow {
-	return QueryRow{values: values}
+	return QueryRow{Values: StringMap(values)}
 }
 
 func queryRows(rows []map[string]string) QueryRows {
@@ -152,10 +152,10 @@ func queryRows(rows []map[string]string) QueryRows {
 }
 
 func (row QueryRow) MarshalJSON() ([]byte, error) {
-	if row.values == nil {
+	if row.Values == nil {
 		return []byte("{}"), nil
 	}
-	return json.Marshal(row.values)
+	return json.Marshal(row.Values)
 }
 
 type SQLAnalysis struct {
@@ -167,19 +167,19 @@ type SQLAnalysis struct {
 }
 
 type QueryResult struct {
-	Columns       []string            `json:"columns"`
-	Rows          QueryRows           `json:"rows"`
-	Meta          StringMap           `json:"meta,omitempty"`
-	AffectedRows  int64               `json:"affectedRows"`
-	DurationMS    int64               `json:"durationMs"`
-	EffectiveSQL  string              `json:"effectiveSql"`
-	StatementType string              `json:"statementType"`
-	Message       string              `json:"message"`
-	Page          int                 `json:"page"`
-	PageSize      int                 `json:"pageSize"`
-	AutoLimited   bool                `json:"autoLimited"`
-	HasNextPage   bool                `json:"hasNextPage"`
-	Analysis      SQLAnalysis         `json:"analysis"`
+	Columns       []string    `json:"columns"`
+	Rows          QueryRows   `json:"rows"`
+	Meta          StringMap   `json:"meta,omitempty"`
+	AffectedRows  int64       `json:"affectedRows"`
+	DurationMS    int64       `json:"durationMs"`
+	EffectiveSQL  string      `json:"effectiveSql"`
+	StatementType string      `json:"statementType"`
+	Message       string      `json:"message"`
+	Page          int         `json:"page"`
+	PageSize      int         `json:"pageSize"`
+	AutoLimited   bool        `json:"autoLimited"`
+	HasNextPage   bool        `json:"hasNextPage"`
+	Analysis      SQLAnalysis `json:"analysis"`
 }
 
 type HistoryItem struct {
@@ -285,13 +285,13 @@ type ChatDatabaseResponse struct {
 }
 
 type ChatResultSummaryRequest struct {
-	ConnectionID  string              `json:"connectionId"`
-	Database      string              `json:"database"`
-	UserMessage   string              `json:"userMessage"`
-	SQL           string              `json:"sql"`
-	Reasoning     string              `json:"reasoning"`
-	Result        QueryResult         `json:"result"`
-	History       []ChatMessage       `json:"history"`
+	ConnectionID string        `json:"connectionId"`
+	Database     string        `json:"database"`
+	UserMessage  string        `json:"userMessage"`
+	SQL          string        `json:"sql"`
+	Reasoning    string        `json:"reasoning"`
+	Result       QueryResult   `json:"result"`
+	History      []ChatMessage `json:"history"`
 }
 
 type ChatResultSummary struct {
@@ -344,9 +344,9 @@ type SmartFillTableRequest struct {
 }
 
 type SmartFillTableResult struct {
-	Success      bool   `json:"success"`
-	Message      string `json:"message"`
-	InsertedRows int    `json:"insertedRows"`
+	Success      bool     `json:"success"`
+	Message      string   `json:"message"`
+	InsertedRows int      `json:"insertedRows"`
 	SQLs         []string `json:"sqls"`
 }
 
@@ -365,14 +365,14 @@ type PreviewSmartFillSQLResult struct {
 }
 
 type CreateTableRequest struct {
-	ConnectionID string            `json:"connectionId"`
-	Database     string            `json:"database"`
-	Schema       string            `json:"schema"`
-	TableName    string            `json:"tableName"`
-	PartitionBy  string            `json:"partitionBy"`
-	PrimaryKey   string            `json:"primaryKey"`
-	OrderBy      string            `json:"orderBy"`
-	SampleBy     string            `json:"sampleBy"`
+	ConnectionID string             `json:"connectionId"`
+	Database     string             `json:"database"`
+	Schema       string             `json:"schema"`
+	TableName    string             `json:"tableName"`
+	PartitionBy  string             `json:"partitionBy"`
+	PrimaryKey   string             `json:"primaryKey"`
+	OrderBy      string             `json:"orderBy"`
+	SampleBy     string             `json:"sampleBy"`
 	Fields       []SchemaFieldInput `json:"fields"`
 	Indexes      []SchemaIndexInput `json:"indexes"`
 }
@@ -424,16 +424,16 @@ type PartitionInfo struct {
 }
 
 type SuggestPartitionRequest struct {
-	Engine     string             `json:"engine"`
-	TableName  string             `json:"tableName"`
-	Fields     []SchemaFieldInput `json:"fields"`
-	Indexes    []SchemaIndexInput `json:"indexes"`
+	Engine    string             `json:"engine"`
+	TableName string             `json:"tableName"`
+	Fields    []SchemaFieldInput `json:"fields"`
+	Indexes   []SchemaIndexInput `json:"indexes"`
 }
 
 type SuggestPartitionResult struct {
-	PartitionDDL  string   `json:"partitionddl"` // 完整的 PARTITION BY 子句
-	Suggestion    string   `json:"suggestion"`   // AI 的分区策略说明
-	Warnings      []string `json:"warnings"`     // 注意事项（主键、自增、索引等）
+	PartitionDDL string   `json:"partitionddl"` // 完整的 PARTITION BY 子句
+	Suggestion   string   `json:"suggestion"`   // AI 的分区策略说明
+	Warnings     []string `json:"warnings"`     // 注意事项（主键、自增、索引等）
 }
 
 type TablePartitionRequest struct {
@@ -524,7 +524,7 @@ type ImportFileRequest struct {
 	Database     string `json:"database"`
 	Table        string `json:"table"`
 	FilePath     string `json:"filePath"`
-	Format       string `json:"format"`   // "csv" | "sql"
+	Format       string `json:"format"`    // "csv" | "sql"
 	Delimiter    string `json:"delimiter"` // CSV delimiter, default ","
 	HasHeader    bool   `json:"hasHeader"` // CSV has header row
 	Encoding     string `json:"encoding"`  // "utf-8" | "gbk" | "latin1"

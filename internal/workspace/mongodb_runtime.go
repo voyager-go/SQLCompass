@@ -602,7 +602,7 @@ func mongoCursorToQueryResult(cursor *mongo.Cursor, ctx context.Context, page in
 			continue
 		}
 		row := flattenBSON(doc)
-		for k := range row.values {
+		for k := range row.Values {
 			columnSet[k] = true
 		}
 		rows = append(rows, row)
