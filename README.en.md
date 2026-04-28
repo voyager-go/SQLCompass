@@ -2,6 +2,8 @@
 
 A desktop database client built for DBAs and backend developers. Deep integration with MySQL, PostgreSQL, SQLite, ClickHouse, MongoDB, and Redis.
 
+[中文](./README.md)
+
 ![Workbench](./docs/preview/connection.png)
 
 ---

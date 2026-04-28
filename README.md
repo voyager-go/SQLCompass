@@ -2,6 +2,8 @@
 
 一款面向 DBA 和后端开发者的桌面数据库客户端，深度支持 MySQL / PostgreSQL / SQLite / ClickHouse / MongoDB / Redis 等主流数据库。
 
+[English](./README.en.md)
+
 ![工作台](./docs/preview/connection.png)
 
 ---
