@@ -74,6 +74,7 @@ type ConnectionProfile struct {
 	SSHHost       string `json:"sshHost"`
 	SSHPort       int    `json:"sshPort"`
 	SSHUser       string `json:"sshUser"`
+	SSHPassword   string `json:"sshPassword"`
 	SSHKeyFile    string `json:"sshKeyFile"`
 	UseSSH        bool   `json:"useSSH"`
 	CreatedAt     string `json:"createdAt"`

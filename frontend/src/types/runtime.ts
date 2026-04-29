@@ -134,9 +134,11 @@ export type SQLAnalysis = {
     requiresConfirm: boolean;
 };
 
+export type QueryRow = Record<string, string>;
+
 export type QueryResult = {
     columns: string[];
-    rows: Record<string, string>[];
+    rows: QueryRow[];
     meta?: Record<string, string>;
     affectedRows: number;
     durationMs: number;
@@ -470,7 +472,7 @@ export type PerformanceRequest = {
 export type PerformanceResult = {
     metricType: string;
     columns: string[];
-    rows: Record<string, string>[];
+    rows: QueryRow[];
     supported: boolean;
     message: string;
 };
@@ -546,7 +548,7 @@ export type ImportPreviewRequest = {
 
 export type ImportPreviewResult = {
     columns: string[];
-    rows: Record<string, string>[];
+    rows: QueryRow[];
     total: number;
     format: string;
     message: string;

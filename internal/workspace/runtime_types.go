@@ -1,7 +1,5 @@
 package workspace
 
-import "encoding/json"
-
 type ExplorerRequest struct {
 	ConnectionID string `json:"connectionId"`
 	Database     string `json:"database"`
@@ -131,13 +129,11 @@ type QueryRequest struct {
 }
 
 type StringMap map[string]string
-type QueryRow struct {
-	Values StringMap `json:"values"`
-}
+type QueryRow = StringMap
 type QueryRows []QueryRow
 
 func newQueryRow(values map[string]string) QueryRow {
-	return QueryRow{Values: StringMap(values)}
+	return QueryRow(values)
 }
 
 func queryRows(rows []map[string]string) QueryRows {
@@ -149,13 +145,6 @@ func queryRows(rows []map[string]string) QueryRows {
 		result[index] = newQueryRow(row)
 	}
 	return result
-}
-
-func (row QueryRow) MarshalJSON() ([]byte, error) {
-	if row.Values == nil {
-		return []byte("{}"), nil
-	}
-	return json.Marshal(row.Values)
 }
 
 type SQLAnalysis struct {

@@ -1,5 +1,6 @@
 import { useCallback, useRef, useMemo, useState } from "react";
 import { ChatWithDatabase, ExecuteQuery, RepairChatSQL } from "../../wailsjs/go/main/App";
+import { workspace } from "../../wailsjs/go/models";
 import type {
     ChatDisplayMode,
     ChatEntry,
@@ -171,14 +172,14 @@ export function useChat(deps: UseChatDeps) {
         chatAbortRef.current = controller;
 
         try {
-            const response = (await ChatWithDatabase({
+            const response = (await ChatWithDatabase(workspace.ChatDatabaseRequest.createFrom({
                 connectionId: selectedConnection.id,
                 database: effectiveDatabase,
                 selectedTable: selectedTableText,
                 message: contextualMessage,
                 history: nextHistory,
                 displayMode: chatDisplayMode,
-            })) as ChatDatabaseResponse;
+            }))) as ChatDatabaseResponse;
 
             if (controller.signal.aborted) return;
 
@@ -365,7 +366,7 @@ export function useChat(deps: UseChatDeps) {
                         previousReason: previousReason,
                         history: repairHistory,
                         displayMode,
-                    })) as ChatDatabaseResponse;
+                    } as any)) as ChatDatabaseResponse;
 
                     setChatMessages((current) => [
                         ...current,

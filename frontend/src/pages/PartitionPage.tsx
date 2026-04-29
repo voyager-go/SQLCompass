@@ -128,7 +128,7 @@ export function PartitionPage({ selectedConnection, selectedDatabase, selectedTa
     }
 
     async function previewAction() {
-        if (!selectedConnection || !selectedDatabase || !selectedTable) return;
+        if (!selectedConnection || !selectedDatabase || !selectedTable || !dialogMode) return;
         setPreviewing(true);
         try {
             const result = (await BuildPartitionDDL({
@@ -149,7 +149,7 @@ export function PartitionPage({ selectedConnection, selectedDatabase, selectedTa
     }
 
     async function executeAction() {
-        if (!selectedConnection || !selectedDatabase || !selectedTable) return;
+        if (!selectedConnection || !selectedDatabase || !selectedTable || !dialogMode) return;
         const actionLabel = dialogMode === "add" ? "添加" : dialogMode === "drop" ? "删除" : "截断";
         if (!confirm(`确认${actionLabel}分区？此操作不可撤销。`)) return;
         setExecuting(true);

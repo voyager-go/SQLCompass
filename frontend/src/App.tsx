@@ -2253,7 +2253,8 @@ function App() {
                 database: selectedDatabase,
                 sql: selectedSnippet.text,
                 prompt: "",
-            })) as SQLOptimizeResult;
+                table: "",
+            } as any)) as SQLOptimizeResult;
             applySelectedSnippetResult(result, "已美化选中的 SQL 片段。");
         } catch (error) {
             const message = getErrorMessage(error);

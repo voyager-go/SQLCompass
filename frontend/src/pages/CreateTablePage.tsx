@@ -185,7 +185,8 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
             );
             const result = (await GenerateIndexName({
                 tableName: tableName.trim() || "new_table",
-                columns: idx.columns.join(","),
+                columns: idx.columns,
+                unique: idx.unique || false,
             })) as { name: string };
             setIndexes((current) =>
                 current.map((item, itemIndex) =>
@@ -219,7 +220,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                 indexes: indexes
                     .filter((idx) => idx.name.trim() && idx.columns.length > 0)
                     .map(({ id, aiLoading, ...rest }) => rest),
-            })) as PartitionSuggestion;
+            } as any)) as PartitionSuggestion;
             setPartitionSuggestion(result);
         } catch (err) {
             const msg = err instanceof Error ? err.message : "AI 分区建议失败";
@@ -289,7 +290,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                 indexes: indexes
                     .filter((idx) => idx.name.trim() && idx.columns.length > 0)
                     .map(({ id, aiLoading, ...rest }) => rest),
-            })) as { success: boolean; message: string };
+            } as any)) as { success: boolean; message: string };
             if (result.success) {
                 pushToast("success", "创建成功", result.message);
                 await loadExplorer(selectedConnection.id, selectedDatabase);
