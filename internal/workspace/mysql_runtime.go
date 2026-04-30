@@ -234,120 +234,20 @@ func (s *Service) getMySQLTableDetail(record store.ConnectionRecord, databaseNam
 		IndexDiagnostics: diagnoseIndexes(fields, indexes),
 	}, nil
 }
-func (s *Service) runMySQLQuery(record store.ConnectionRecord, input QueryRequest, persistHistory bool) (QueryResult, error) {
-	statement := strings.TrimSpace(input.SQL)
-	if statement == "" {
-		return QueryResult{}, errors.New("SQL 不能为空")
-	}
-
-	analysis := analyzeSQL(statement)
-	page := input.Page
-	if page <= 0 {
-		page = 1
-	}
-
-	pageSize := input.PageSize
-	if pageSize <= 0 {
-		pageSize = 20
-	}
-
-	databaseName := strings.TrimSpace(input.Database)
-	if databaseName == "" {
-		databaseName = record.Database
-	}
-
-	db, err := openMySQLDatabase(record, databaseName)
+func (s *Service) previewMySQLTable(record store.ConnectionRecord, input TablePreviewRequest) (QueryResult, error) {
+	statement := fmt.Sprintf("SELECT * FROM `%s`", escapeIdentifier(input.Table))
+	result, err := s.runRelationalQuery(record, QueryRequest{
+		ConnectionID: input.ConnectionID,
+		Database:     input.Database,
+		SQL:          statement,
+		Page:         input.Page,
+		PageSize:     input.PageSize,
+	}, false, openMySQLDatabase)
 	if err != nil {
 		return QueryResult{}, err
 	}
-	defer db.Close()
-
-	effectiveSQL, autoLimited := applyDefaultPagination(statement, page, pageSize)
-	executedSQL := effectiveSQL
-	if queryLikePattern.MatchString(statement) && autoLimited {
-		executedSQL = buildLookaheadPaginatedSQL(statement, page, pageSize)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	startedAt := time.Now()
-	var result QueryResult
-	if queryLikePattern.MatchString(statement) {
-		rows, err := db.QueryContext(ctx, executedSQL)
-		if err != nil {
-			if persistHistory {
-				_ = s.appendHistory(record, databaseName, statement, effectiveSQL, analysis, false, 0, time.Since(startedAt))
-			}
-			return QueryResult{}, err
-		}
-		defer rows.Close()
-
-		columns, err := rows.Columns()
-		if err != nil {
-			return QueryResult{}, err
-		}
-
-		resultRows, err := scanRows(rows, columns)
-		if err != nil {
-			return QueryResult{}, err
-		}
-
-		hasNextPage := false
-		if autoLimited && len(resultRows) > pageSize {
-			hasNextPage = true
-			resultRows = resultRows[:pageSize]
-		}
-
-		duration := time.Since(startedAt)
-		if persistHistory {
-			_ = s.appendHistory(record, databaseName, statement, effectiveSQL, analysis, true, int64(len(resultRows)), duration)
-		}
-		result = QueryResult{
-			Columns:       columns,
-			Rows:          resultRows,
-			AffectedRows:  int64(len(resultRows)),
-			DurationMS:    duration.Milliseconds(),
-			EffectiveSQL:  effectiveSQL,
-			StatementType: analysis.StatementType,
-			Message:       fmt.Sprintf("查询完成，返回 %d 行", len(resultRows)),
-			Page:          page,
-			PageSize:      pageSize,
-			AutoLimited:   autoLimited,
-			HasNextPage:   hasNextPage,
-			Analysis:      analysis,
-		}
-		return result, nil
-	}
-
-	execResult, err := db.ExecContext(ctx, statement)
-	if err != nil {
-		if persistHistory {
-			_ = s.appendHistory(record, databaseName, statement, statement, analysis, false, 0, time.Since(startedAt))
-		}
-		return QueryResult{}, err
-	}
-
-	affectedRows, _ := execResult.RowsAffected()
-	duration := time.Since(startedAt)
-	if persistHistory {
-		_ = s.appendHistory(record, databaseName, statement, statement, analysis, true, affectedRows, duration)
-	}
-
-	return QueryResult{
-		Columns:       []string{},
-		Rows:          QueryRows{},
-		AffectedRows:  affectedRows,
-		DurationMS:    duration.Milliseconds(),
-		EffectiveSQL:  statement,
-		StatementType: analysis.StatementType,
-		Message:       fmt.Sprintf("执行成功，影响 %d 行", affectedRows),
-		Page:          1,
-		PageSize:      pageSize,
-		AutoLimited:   false,
-		HasNextPage:   false,
-		Analysis:      analysis,
-	}, nil
+	result.Message = fmt.Sprintf("已预览表 %s 的前 %d 行数据", input.Table, len(result.Rows))
+	return result, nil
 }
 func loadMySQLFields(ctx context.Context, db *dbsql.DB, databaseName string, tableName string) ([]TableField, error) {
 	rows, err := db.QueryContext(ctx, `
@@ -389,6 +289,7 @@ func loadMySQLFields(ctx context.Context, db *dbsql.DB, databaseName string, tab
 		field.Nullable = strings.EqualFold(nullable, "YES")
 		field.Primary = columnKey == "PRI"
 		field.AutoIncrement = strings.Contains(strings.ToLower(extra), "auto_increment")
+		field.Unsigned = strings.Contains(strings.ToLower(field.Type), "unsigned")
 		fields = append(fields, field)
 	}
 
@@ -499,9 +400,8 @@ func openMySQLDatabase(record store.ConnectionRecord, databaseOverride string) (
 		return nil, err
 	}
 
-	db.SetConnMaxLifetime(2 * time.Minute)
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(2)
+	db.SetMaxOpenConns(PoolMaxOpenConns)
+	db.SetMaxIdleConns(PoolMaxIdleConns)
 
 	return db, nil
 }

@@ -16,11 +16,10 @@ import (
 )
 
 func (s *Service) getRedisExplorerTree(record store.ConnectionRecord, preferredDatabase string) (ExplorerTree, error) {
-	client, err := openRedisClient(record)
+	client, err := s.getRedisClient(record)
 	if err != nil {
 		return ExplorerTree{}, err
 	}
-	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -77,11 +76,10 @@ func (s *Service) BrowseRedisKeys(input RedisKeyBrowseRequest) (RedisKeyBrowseRe
 }
 
 func (s *Service) browseRedisKeys(record store.ConnectionRecord, input RedisKeyBrowseRequest) (RedisKeyBrowseResult, error) {
-	client, err := openRedisClient(record)
+	client, err := s.getRedisClient(record)
 	if err != nil {
 		return RedisKeyBrowseResult{}, err
 	}
-	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -119,11 +117,10 @@ func (s *Service) browseRedisKeys(record store.ConnectionRecord, input RedisKeyB
 }
 
 func (s *Service) previewRedisKey(record store.ConnectionRecord, input TablePreviewRequest) (QueryResult, error) {
-	client, err := openRedisClient(record)
+	client, err := s.getRedisClient(record)
 	if err != nil {
 		return QueryResult{}, err
 	}
-	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -222,15 +219,13 @@ func (s *Service) runRedisQuery(record store.ConnectionRecord, input QueryReques
 	}
 
 	analysis := analyzeSQL(statement)
-	client, err := openRedisClient(record)
+	client, err := s.getRedisClient(record)
 	if err != nil {
 		return QueryResult{}, err
 	}
-	defer client.Close()
 
 	databaseName := normalizeRedisDatabaseName(input.Database, record.Database)
 	if index, err := strconv.Atoi(strings.TrimPrefix(databaseName, "db")); err == nil {
-		client = client.WithTimeout(30 * time.Second)
 		if err := client.Do(context.Background(), "SELECT", index).Err(); err != nil {
 			return QueryResult{}, err
 		}
@@ -290,6 +285,13 @@ func openRedisClient(record store.ConnectionRecord) (*redis.Client, error) {
 		return nil, err
 	}
 	return redis.NewClient(options), nil
+}
+
+// getRedisClient returns a pooled Redis client.
+func (s *Service) getRedisClient(record store.ConnectionRecord) (*redis.Client, error) {
+	return s.pool.GetRedis(record.ID, func() (*redis.Client, error) {
+		return openRedisClient(record)
+	})
 }
 
 func connectionInputFromRecord(record store.ConnectionRecord) ConnectionInput {

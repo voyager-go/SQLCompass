@@ -53,6 +53,13 @@ func openMongoDBClient(record store.ConnectionRecord) (*mongo.Client, error) {
 	return client, nil
 }
 
+// getMongoDBClient returns a pooled MongoDB client.
+func (s *Service) getMongoDBClient(record store.ConnectionRecord) (*mongo.Client, error) {
+	return s.pool.GetMongo(record.ID, func() (*mongo.Client, error) {
+		return openMongoDBClient(record)
+	})
+}
+
 func testMongoDBConnection(normalized ConnectionInput) (ConnectionTestResult, error) {
 	record := connectionRecordFromInput(normalized)
 	client, err := openMongoDBClient(record)
@@ -73,11 +80,10 @@ func testMongoDBConnection(normalized ConnectionInput) (ConnectionTestResult, er
 }
 
 func (s *Service) getMongoDBExplorerTree(record store.ConnectionRecord, preferredDatabase string) (ExplorerTree, error) {
-	client, err := openMongoDBClient(record)
+	client, err := s.getMongoDBClient(record)
 	if err != nil {
 		return ExplorerTree{}, err
 	}
-	defer client.Disconnect(context.Background())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -133,11 +139,10 @@ func (s *Service) getMongoDBExplorerTree(record store.ConnectionRecord, preferre
 }
 
 func (s *Service) getMongoDBTableDetail(record store.ConnectionRecord, databaseName string, tableName string) (TableDetail, error) {
-	client, err := openMongoDBClient(record)
+	client, err := s.getMongoDBClient(record)
 	if err != nil {
 		return TableDetail{}, err
 	}
-	defer client.Disconnect(context.Background())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -280,11 +285,10 @@ func (s *Service) runMongoDBQuery(record store.ConnectionRecord, input QueryRequ
 	analysis := analyzeSQL(statement)
 	startedAt := time.Now()
 
-	client, err := openMongoDBClient(record)
+	client, err := s.getMongoDBClient(record)
 	if err != nil {
 		return QueryResult{}, err
 	}
-	defer client.Disconnect(context.Background())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -691,11 +695,10 @@ func formatBSONValue(v interface{}) interface{} {
 }
 
 func (s *Service) previewMongoDBCollection(record store.ConnectionRecord, input TablePreviewRequest) (QueryResult, error) {
-	client, err := openMongoDBClient(record)
+	client, err := s.getMongoDBClient(record)
 	if err != nil {
 		return QueryResult{}, err
 	}
-	defer client.Disconnect(context.Background())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -728,11 +731,10 @@ func (s *Service) previewMongoDBCollection(record store.ConnectionRecord, input 
 }
 
 func (s *Service) getMongoDBTableRowCounts(record store.ConnectionRecord, databaseName string, tables []string) (TableRowCountResult, error) {
-	client, err := openMongoDBClient(record)
+	client, err := s.getMongoDBClient(record)
 	if err != nil {
 		return TableRowCountResult{}, err
 	}
-	defer client.Disconnect(context.Background())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -762,11 +764,10 @@ func (s *Service) getMongoDBTableRowCounts(record store.ConnectionRecord, databa
 }
 
 func (s *Service) fillMongoDBTable(record store.ConnectionRecord, input FillTableRequest) (FillTableResult, error) {
-	client, err := openMongoDBClient(record)
+	client, err := s.getMongoDBClient(record)
 	if err != nil {
 		return FillTableResult{}, err
 	}
-	defer client.Disconnect(context.Background())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -831,11 +832,10 @@ func (s *Service) fillMongoDBTable(record store.ConnectionRecord, input FillTabl
 }
 
 func (s *Service) renameMongoDBCollection(record store.ConnectionRecord, input RenameTableInput) (RenameTableResult, error) {
-	client, err := openMongoDBClient(record)
+	client, err := s.getMongoDBClient(record)
 	if err != nil {
 		return RenameTableResult{}, err
 	}
-	defer client.Disconnect(context.Background())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

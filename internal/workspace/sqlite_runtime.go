@@ -211,7 +211,7 @@ func (s *Service) renameSQLiteTable(record store.ConnectionRecord, input RenameT
 }
 
 func loadSQLiteFields(ctx context.Context, db *sql.DB, databaseName string, tableName string) ([]TableField, error) {
-	query := fmt.Sprintf("PRAGMA %s.table_xinfo(%s)", quoteSQLiteIdentifier(databaseName), sqliteStringLiteral(tableName))
+	query := fmt.Sprintf("PRAGMA %s.table_info(%s)", quoteSQLiteIdentifier(databaseName), sqliteStringLiteral(tableName))
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -224,8 +224,7 @@ func loadSQLiteFields(ctx context.Context, db *sql.DB, databaseName string, tabl
 		var field TableField
 		var notNull int
 		var pk int
-		var hidden int
-		if err := rows.Scan(&cid, &field.Name, &field.Type, &notNull, &field.DefaultValue, &pk, &hidden); err != nil {
+		if err := rows.Scan(&cid, &field.Name, &field.Type, &notNull, &field.DefaultValue, &pk); err != nil {
 			return nil, err
 		}
 		field.Nullable = notNull == 0
@@ -378,4 +377,3 @@ func loadSQLiteDDL(ctx context.Context, db *sql.DB, databaseName string, tableNa
 	}
 	return ddl, nil
 }
-

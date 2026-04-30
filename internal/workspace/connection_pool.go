@@ -6,28 +6,47 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/redis/go-redis/v9"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
-type poolEntry struct {
+type sqlPoolEntry struct {
 	db       *sql.DB
 	lastUsed time.Time
 	openedAt time.Time
 }
 
-// ConnectionPool caches open database connections for reuse.
+type redisPoolEntry struct {
+	client   *redis.Client
+	lastUsed time.Time
+	openedAt time.Time
+}
+
+type mongoPoolEntry struct {
+	client   *mongo.Client
+	lastUsed time.Time
+	openedAt time.Time
+}
+
+// ConnectionPool caches open database, Redis, and MongoDB connections for reuse.
 type ConnectionPool struct {
-	mu      sync.Mutex
-	entries map[string]*poolEntry // key: connectionID + "/" + database
-	maxIdle time.Duration
-	maxOpen time.Duration
+	mu           sync.Mutex
+	sqlEntries   map[string]*sqlPoolEntry   // key: connectionID + "/" + database
+	redisEntries map[string]*redisPoolEntry // key: connectionID
+	mongoEntries map[string]*mongoPoolEntry // key: connectionID
+	maxIdle      time.Duration
+	maxOpen      time.Duration
 }
 
 // NewConnectionPool creates a new connection pool.
 func NewConnectionPool() *ConnectionPool {
 	return &ConnectionPool{
-		entries: make(map[string]*poolEntry),
-		maxIdle: 5 * time.Minute,  // Close after 5 min idle
-		maxOpen: 30 * time.Minute, // Close after 30 min total
+		sqlEntries:   make(map[string]*sqlPoolEntry),
+		redisEntries: make(map[string]*redisPoolEntry),
+		mongoEntries: make(map[string]*mongoPoolEntry),
+		maxIdle:      ConnMaxIdle,
+		maxOpen:      ConnMaxAge,
 	}
 }
 
@@ -35,69 +54,157 @@ func poolKey(connectionID string, database string) string {
 	return connectionID + "/" + database
 }
 
-// Get retrieves or opens a database connection.
+// Get retrieves or opens a SQL database connection.
 func (p *ConnectionPool) Get(connectionID string, database string, opener func() (*sql.DB, error)) (*sql.DB, error) {
 	key := poolKey(connectionID, database)
 
 	p.mu.Lock()
-	entry, exists := p.entries[key]
-	p.mu.Unlock()
-
+	entry, exists := p.sqlEntries[key]
 	if exists {
-		// Check if connection is still alive
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		// Validate connection under lock to prevent use-after-close races.
+		ctx, cancel := context.WithTimeout(context.Background(), TimeoutPoolPing)
 		err := entry.db.PingContext(ctx)
 		cancel()
 
 		if err == nil {
-			p.mu.Lock()
 			entry.lastUsed = time.Now()
+			db := entry.db
 			p.mu.Unlock()
-			return entry.db, nil
+			return db, nil
 		}
-		// Connection is dead, remove it
+		// Connection is dead, remove it.
 		entry.db.Close()
-		p.mu.Lock()
-		delete(p.entries, key)
-		p.mu.Unlock()
+		delete(p.sqlEntries, key)
 	}
+	p.mu.Unlock()
 
-	// Open a new connection
+	// Open a new connection outside the lock.
 	db, err := opener()
 	if err != nil {
 		return nil, err
 	}
 
-	// Configure pool settings
-	db.SetMaxOpenConns(2)
-	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(30 * time.Minute)
+	// Only set ConnMaxLifetime here. MaxOpenConns/MaxIdleConns are
+	// set by each engine's opener (SQLite needs 1, others use PoolMaxOpenConns).
+	db.SetConnMaxLifetime(ConnMaxLifetime)
 
-	entry = &poolEntry{
+	newEntry := &sqlPoolEntry{
 		db:       db,
 		lastUsed: time.Now(),
 		openedAt: time.Now(),
 	}
 
 	p.mu.Lock()
-	// Close existing entry if another goroutine created one
-	if existing, ok := p.entries[key]; ok {
-		existing.db.Close()
+	// Another goroutine may have created one while we were opening.
+	if existing, ok := p.sqlEntries[key]; ok {
+		p.mu.Unlock()
+		db.Close()
+		return existing.db, nil
 	}
-	p.entries[key] = entry
+	p.sqlEntries[key] = newEntry
 	p.mu.Unlock()
 
 	return db, nil
 }
 
-// Remove closes and removes a cached connection.
+// GetRedis retrieves or opens a Redis client.
+func (p *ConnectionPool) GetRedis(connectionID string, opener func() (*redis.Client, error)) (*redis.Client, error) {
+	key := "redis:" + connectionID
+
+	p.mu.Lock()
+	entry, exists := p.redisEntries[key]
+	if exists {
+		ctx, cancel := context.WithTimeout(context.Background(), TimeoutPoolPing)
+		_, err := entry.client.Ping(ctx).Result()
+		cancel()
+
+		if err == nil {
+			entry.lastUsed = time.Now()
+			client := entry.client
+			p.mu.Unlock()
+			return client, nil
+		}
+		_ = entry.client.Close()
+		delete(p.redisEntries, key)
+	}
+	p.mu.Unlock()
+
+	client, err := opener()
+	if err != nil {
+		return nil, err
+	}
+
+	newEntry := &redisPoolEntry{
+		client:   client,
+		lastUsed: time.Now(),
+		openedAt: time.Now(),
+	}
+
+	p.mu.Lock()
+	if existing, ok := p.redisEntries[key]; ok {
+		p.mu.Unlock()
+		_ = client.Close()
+		return existing.client, nil
+	}
+	p.redisEntries[key] = newEntry
+	p.mu.Unlock()
+
+	return client, nil
+}
+
+// GetMongo retrieves or opens a MongoDB client.
+func (p *ConnectionPool) GetMongo(connectionID string, opener func() (*mongo.Client, error)) (*mongo.Client, error) {
+	key := "mongo:" + connectionID
+
+	p.mu.Lock()
+	entry, exists := p.mongoEntries[key]
+	if exists {
+		ctx, cancel := context.WithTimeout(context.Background(), TimeoutPoolPing)
+		err := entry.client.Ping(ctx, nil)
+		cancel()
+
+		if err == nil {
+			entry.lastUsed = time.Now()
+			client := entry.client
+			p.mu.Unlock()
+			return client, nil
+		}
+		_ = entry.client.Disconnect(context.Background())
+		delete(p.mongoEntries, key)
+	}
+	p.mu.Unlock()
+
+	client, err := opener()
+	if err != nil {
+		return nil, err
+	}
+
+	newEntry := &mongoPoolEntry{
+		client:   client,
+		lastUsed: time.Now(),
+		openedAt: time.Now(),
+	}
+
+	p.mu.Lock()
+	if existing, ok := p.mongoEntries[key]; ok {
+		p.mu.Unlock()
+		_ = client.Disconnect(context.Background())
+		return existing.client, nil
+	}
+	p.mongoEntries[key] = newEntry
+	p.mu.Unlock()
+
+	return client, nil
+}
+
+// Remove closes and removes a cached SQL connection.
 func (p *ConnectionPool) Remove(connectionID string, database string) {
 	key := poolKey(connectionID, database)
 
 	p.mu.Lock()
-	entry, exists := p.entries[key]
+	entry, exists := p.sqlEntries[key]
 	if exists {
-		delete(p.entries, key)
+		delete(p.sqlEntries, key)
 	}
 	p.mu.Unlock()
 
@@ -111,46 +218,95 @@ func (p *ConnectionPool) CloseByConnectionID(connectionID string) int {
 	prefix := connectionID + "/"
 
 	p.mu.Lock()
-	var toClose []*poolEntry
-	for key := range p.entries {
+	var closedCount int
+
+	// SQL entries
+	var sqlToClose []*sqlPoolEntry
+	for key := range p.sqlEntries {
 		if strings.HasPrefix(key, prefix) {
-			if entry, ok := p.entries[key]; ok {
-				toClose = append(toClose, entry)
+			if entry, ok := p.sqlEntries[key]; ok {
+				sqlToClose = append(sqlToClose, entry)
 			}
-			delete(p.entries, key)
+			delete(p.sqlEntries, key)
 		}
 	}
-	p.mu.Unlock()
 
-	for _, entry := range toClose {
-		entry.db.Close()
+	// Redis entries
+	var redisToClose []*redisPoolEntry
+	redisKey := "redis:" + connectionID
+	if entry, ok := p.redisEntries[redisKey]; ok {
+		redisToClose = append(redisToClose, entry)
+		delete(p.redisEntries, redisKey)
 	}
 
-	return len(toClose)
+	// Mongo entries
+	var mongoToClose []*mongoPoolEntry
+	mongoKey := "mongo:" + connectionID
+	if entry, ok := p.mongoEntries[mongoKey]; ok {
+		mongoToClose = append(mongoToClose, entry)
+		delete(p.mongoEntries, mongoKey)
+	}
+
+	p.mu.Unlock()
+
+	for _, entry := range sqlToClose {
+		entry.db.Close()
+		closedCount++
+	}
+	for _, entry := range redisToClose {
+		_ = entry.client.Close()
+		closedCount++
+	}
+	for _, entry := range mongoToClose {
+		_ = entry.client.Disconnect(context.Background())
+		closedCount++
+	}
+
+	return closedCount
 }
 
 // CloseAll closes all cached connections.
 func (p *ConnectionPool) CloseAll() {
 	p.mu.Lock()
-	entries := p.entries
-	p.entries = make(map[string]*poolEntry)
+	sqlEntries := p.sqlEntries
+	redisEntries := p.redisEntries
+	mongoEntries := p.mongoEntries
+	p.sqlEntries = make(map[string]*sqlPoolEntry)
+	p.redisEntries = make(map[string]*redisPoolEntry)
+	p.mongoEntries = make(map[string]*mongoPoolEntry)
 	p.mu.Unlock()
 
-	for _, entry := range entries {
+	for _, entry := range sqlEntries {
 		entry.db.Close()
+	}
+	for _, entry := range redisEntries {
+		_ = entry.client.Close()
+	}
+	for _, entry := range mongoEntries {
+		_ = entry.client.Disconnect(context.Background())
 	}
 }
 
 // CloseAllWithCount closes all cached connections and returns the count.
 func (p *ConnectionPool) CloseAllWithCount() int {
 	p.mu.Lock()
-	entries := p.entries
-	count := len(entries)
-	p.entries = make(map[string]*poolEntry)
+	sqlEntries := p.sqlEntries
+	redisEntries := p.redisEntries
+	mongoEntries := p.mongoEntries
+	count := len(sqlEntries) + len(redisEntries) + len(mongoEntries)
+	p.sqlEntries = make(map[string]*sqlPoolEntry)
+	p.redisEntries = make(map[string]*redisPoolEntry)
+	p.mongoEntries = make(map[string]*mongoPoolEntry)
 	p.mu.Unlock()
 
-	for _, entry := range entries {
+	for _, entry := range sqlEntries {
 		entry.db.Close()
+	}
+	for _, entry := range redisEntries {
+		_ = entry.client.Close()
+	}
+	for _, entry := range mongoEntries {
+		_ = entry.client.Disconnect(context.Background())
 	}
 	return count
 }
@@ -162,15 +318,37 @@ func (p *ConnectionPool) Cleanup() int {
 
 	now := time.Now()
 	var closed int
-	for key, entry := range p.entries {
+
+	for key, entry := range p.sqlEntries {
 		idle := now.Sub(entry.lastUsed)
 		age := now.Sub(entry.openedAt)
 		if idle > p.maxIdle || age > p.maxOpen {
 			entry.db.Close()
-			delete(p.entries, key)
+			delete(p.sqlEntries, key)
 			closed++
 		}
 	}
+
+	for key, entry := range p.redisEntries {
+		idle := now.Sub(entry.lastUsed)
+		age := now.Sub(entry.openedAt)
+		if idle > p.maxIdle || age > p.maxOpen {
+			_ = entry.client.Close()
+			delete(p.redisEntries, key)
+			closed++
+		}
+	}
+
+	for key, entry := range p.mongoEntries {
+		idle := now.Sub(entry.lastUsed)
+		age := now.Sub(entry.openedAt)
+		if idle > p.maxIdle || age > p.maxOpen {
+			_ = entry.client.Disconnect(context.Background())
+			delete(p.mongoEntries, key)
+			closed++
+		}
+	}
+
 	return closed
 }
 
@@ -179,8 +357,22 @@ func (p *ConnectionPool) Status() ConnectionPoolStatus {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	entries := make([]PoolEntryInfo, 0, len(p.entries))
-	for key, entry := range p.entries {
+	entries := make([]PoolEntryInfo, 0, len(p.sqlEntries)+len(p.redisEntries)+len(p.mongoEntries))
+	for key, entry := range p.sqlEntries {
+		entries = append(entries, PoolEntryInfo{
+			Key:      key,
+			LastUsed: entry.lastUsed.Format(time.RFC3339),
+			OpenedAt: entry.openedAt.Format(time.RFC3339),
+		})
+	}
+	for key, entry := range p.redisEntries {
+		entries = append(entries, PoolEntryInfo{
+			Key:      key,
+			LastUsed: entry.lastUsed.Format(time.RFC3339),
+			OpenedAt: entry.openedAt.Format(time.RFC3339),
+		})
+	}
+	for key, entry := range p.mongoEntries {
 		entries = append(entries, PoolEntryInfo{
 			Key:      key,
 			LastUsed: entry.lastUsed.Format(time.RFC3339),

@@ -19,7 +19,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const pingTimeout = 2 * time.Second
+// pingTimeout is derived from the centralized TimeoutPing constant.
+var pingTimeout = TimeoutPing
 
 func testMySQLConnection(input ConnectionInput) (ConnectionTestResult, error) {
 	dsn, detail, err := buildMySQLDSN(input)

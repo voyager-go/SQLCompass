@@ -11,11 +11,11 @@
     background:
         linear-gradient(180deg, color-mix(in srgb, var(--sidebar-bg) 96%, #ffffff) 0%, var(--sidebar-bg) 100%);
     border-right: none;
-    box-shadow: none;
+    box-shadow: 1px 0 8px rgba(0, 0, 0, 0.03);
     overflow: hidden;
     overflow-x: hidden;
     z-index: 10;
-    transition: width 0.25s ease, min-width 0.25s ease;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     -webkit-overflow-scrolling: touch;
 }
 
@@ -134,24 +134,27 @@
     gap: 6px;
     padding: 6px 7px;
     border: 1px solid transparent;
-    border-radius: 7px;
+    border-radius: 8px;
     background: transparent;
     color: var(--sidebar-muted);
     cursor: pointer;
     font-size: 12px;
-    transition: all 0.15s ease;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     white-space: nowrap;
+    position: relative;
 }
 
 .sidebar-tab:hover {
     background: var(--sidebar-surface);
     color: var(--sidebar-text);
+    transform: translateY(-1px);
 }
 
 .sidebar-tab--active {
-    background: var(--sidebar-surface-strong);
+    background: linear-gradient(135deg, var(--sidebar-surface-strong), color-mix(in srgb, var(--sidebar-surface-strong) 80%, var(--sidebar-accent)));
     color: var(--sidebar-accent);
-    border-color: rgba(45, 116, 214, 0.2);
+    border-color: color-mix(in srgb, var(--sidebar-accent) 25%, transparent);
+    box-shadow: 0 2px 8px rgba(45, 116, 214, 0.1);
 }
 
 .sidebar-tab svg {
@@ -344,17 +347,18 @@
     margin: 1px 0;
     border-radius: 7px;
     cursor: pointer;
-    transition: background 0.12s ease;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .navigator-table:hover {
-    background: color-mix(in srgb, var(--sidebar-surface) 72%, transparent);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--sidebar-surface) 80%, transparent), transparent);
+    transform: translateX(2px);
 }
 
 .navigator-table--active {
-    background: linear-gradient(90deg, color-mix(in srgb, var(--sidebar-accent) 18%, transparent), transparent);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--sidebar-accent) 15%, transparent), transparent);
     color: var(--sidebar-accent);
-    box-shadow: inset 2px 0 0 var(--sidebar-accent);
+    box-shadow: inset 3px 0 0 var(--sidebar-accent);
 }
 
 .navigator-table--active .navigator-table__main {

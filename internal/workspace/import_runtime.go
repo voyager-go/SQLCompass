@@ -168,10 +168,21 @@ func (s *Service) previewSQL(input ImportPreviewRequest) (ImportPreviewResult, e
 	}, nil
 }
 
+// importCSV imports CSV data using parameterized queries to prevent SQL injection.
 func (s *Service) importCSV(record store.ConnectionRecord, input ImportFileRequest) (ImportResult, error) {
+	// Get table structure to validate columns and find primary keys.
 	tableDetail, err := s.getTableDetailByRecord(record, input.Database, input.Table)
 	if err != nil {
 		return ImportResult{}, fmt.Errorf("无法获取表结构: %w", err)
+	}
+
+	fieldMap := make(map[string]TableField)
+	var pkCols []string
+	for _, f := range tableDetail.Fields {
+		fieldMap[strings.ToLower(f.Name)] = f
+		if f.Primary {
+			pkCols = append(pkCols, quoteIdentifierForEngine(record.Engine, f.Name))
+		}
 	}
 
 	file, err := os.Open(input.FilePath)
@@ -193,108 +204,119 @@ func (s *Service) importCSV(record store.ConnectionRecord, input ImportFileReque
 	reader.LazyQuotes = true
 	reader.TrimLeadingSpace = true
 
-	fieldMap := make(map[string]TableField)
-	for _, f := range tableDetail.Fields {
-		fieldMap[strings.ToLower(f.Name)] = f
+	// Read header or first data row.
+	var columns []string
+	var pendingRow []string
+	if input.HasHeader {
+		header, err := reader.Read()
+		if err != nil {
+			return ImportResult{}, fmt.Errorf("无法读取CSV头: %w", err)
+		}
+		columns = header
+	} else {
+		firstRow, err := reader.Read()
+		if err != nil {
+			return ImportResult{}, fmt.Errorf("无法读取CSV数据: %w", err)
+		}
+		columns = make([]string, len(firstRow))
+		for i := range columns {
+			columns[i] = fmt.Sprintf("column_%d", i+1)
+		}
+		pendingRow = firstRow
 	}
 
-	var columns []string
-	var insertSQLs []string
+	// Build the list of columns that exist in the target table.
+	var colNames []string
+	var colIndices []int
+	for i, colName := range columns {
+		if _, exists := fieldMap[strings.ToLower(colName)]; exists {
+			colNames = append(colNames, quoteIdentifierForEngine(record.Engine, colName))
+			colIndices = append(colIndices, i)
+		}
+	}
+
+	if len(colNames) == 0 {
+		return ImportResult{Success: false, Message: "CSV列与表字段不匹配"}, nil
+	}
+
+	// Open a database connection.
+	db, err := s.getImportDB(record, input.Database)
+	if err != nil {
+		return ImportResult{}, fmt.Errorf("连接数据库失败: %w", err)
+	}
+
+	// Truncate the table if requested.
+	if input.Mode == "truncate_insert" {
+		truncateSQL := truncateTableSQL(record.Engine, input.Table)
+		if _, err := db.Exec(truncateSQL); err != nil {
+			return ImportResult{}, fmt.Errorf("清空表失败: %w", err)
+		}
+	}
+
+	// Build the INSERT statement with parameterized placeholders.
+	placeholders := make([]string, len(colNames))
+	for i := range placeholders {
+		placeholders[i] = "?"
+	}
+
+	insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		quoteIdentifierForEngine(record.Engine, input.Table),
+		strings.Join(colNames, ", "),
+		strings.Join(placeholders, ", "))
+
+	// Append engine-specific upsert clause.
+	if input.Mode == "upsert" {
+		if strings.EqualFold(record.Engine, "sqlite") {
+			insertSQL = strings.Replace(insertSQL, "INSERT INTO", "INSERT OR REPLACE INTO", 1)
+		} else {
+			insertSQL += buildUpsertClause(record.Engine, colNames, pkCols)
+		}
+	}
+
+	stmt, err := db.Prepare(insertSQL)
+	if err != nil {
+		return ImportResult{}, fmt.Errorf("准备SQL失败: %w", err)
+	}
+	defer stmt.Close()
+
 	insertedRows := 0
 	skippedRows := 0
-	rowIndex := 0
 
+	// Process the pending first row (when there is no CSV header).
+	if pendingRow != nil {
+		args := buildCSVRowArgs(pendingRow, colIndices)
+		if _, err := stmt.Exec(args...); err != nil {
+			skippedRows++
+		} else {
+			insertedRows++
+		}
+	}
+
+	// Process remaining rows.
 	for {
-		csvRecord, err := reader.Read()
-		if err == io.EOF {
+		csvRecord, readErr := reader.Read()
+		if readErr == io.EOF {
 			break
 		}
-		if err != nil {
+		if readErr != nil {
 			skippedRows++
 			continue
 		}
 
-		if rowIndex == 0 && input.HasHeader {
-			columns = make([]string, len(csvRecord))
-			copy(columns, csvRecord)
-			rowIndex++
-			continue
-		}
-
-		if len(columns) == 0 {
-			columns = make([]string, len(csvRecord))
-			for i := range columns {
-				columns[i] = fmt.Sprintf("column_%d", i+1)
-			}
-		}
-
-		var valueParts []string
-		var colParts []string
-		for i, value := range csvRecord {
-			if i >= len(columns) {
-				break
-			}
-			colName := columns[i]
-			if _, exists := fieldMap[strings.ToLower(colName)]; !exists {
-				continue
-			}
-			colParts = append(colParts, quoteIdentifierForEngine(record.Engine, colName))
-			if value == "" || strings.EqualFold(value, "NULL") {
-				valueParts = append(valueParts, "NULL")
-			} else {
-				valueParts = append(valueParts, fmt.Sprintf("'%s'", strings.ReplaceAll(value, "'", "''")))
-			}
-		}
-
-		if len(colParts) == 0 {
+		args := buildCSVRowArgs(csvRecord, colIndices)
+		if _, err := stmt.Exec(args...); err != nil {
 			skippedRows++
-			rowIndex++
 			continue
 		}
-
-		sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s);",
-			quoteIdentifierForEngine(record.Engine, input.Table),
-			strings.Join(colParts, ", "),
-			strings.Join(valueParts, ", "))
-		insertSQLs = append(insertSQLs, sql)
 		insertedRows++
-		rowIndex++
 	}
 
-	if len(insertSQLs) == 0 {
-		return ImportResult{
-			Success:      false,
-			Message:      "没有可导入的数据行",
-			InsertedRows: 0,
-			SkippedRows:  skippedRows,
-		}, nil
-	}
-
-	if input.Mode == "truncate_insert" {
-		truncateSQL := fmt.Sprintf("TRUNCATE TABLE %s;", quoteIdentifierForEngine(record.Engine, input.Table))
-		insertSQLs = append([]string{truncateSQL}, insertSQLs...)
-	} else if input.Mode == "upsert" {
-		// Convert INSERT statements to INSERT ... ON DUPLICATE KEY UPDATE
-		for i, sql := range insertSQLs {
-			if strings.HasPrefix(sql, "INSERT INTO") {
-				// Extract the column list from the INSERT statement
-				parenStart := strings.Index(sql, "(")
-				parenEnd := strings.Index(sql, ") VALUES")
-				if parenStart >= 0 && parenEnd > parenStart {
-					colList := sql[parenStart+1 : parenEnd]
-					cols := strings.Split(colList, ",")
-					var updateParts []string
-					for _, col := range cols {
-						trimmed := strings.TrimSpace(col)
-						updateParts = append(updateParts, fmt.Sprintf("%s = VALUES(%s)", trimmed, trimmed))
-					}
-					insertSQLs[i] = sql[:len(sql)-1] + " ON DUPLICATE KEY UPDATE " + strings.Join(updateParts, ", ") + ";"
-				}
-			}
-		}
-	}
-
-	return s.executeRelationalImport(record, input.Database, insertSQLs, insertedRows, skippedRows)
+	return ImportResult{
+		Success:      true,
+		Message:      fmt.Sprintf("成功导入 %d 行，跳过 %d 行", insertedRows, skippedRows),
+		InsertedRows: insertedRows,
+		SkippedRows:  skippedRows,
+	}, nil
 }
 
 func (s *Service) importSQL(record store.ConnectionRecord, input ImportFileRequest) (ImportResult, error) {
@@ -312,28 +334,10 @@ func (s *Service) importSQL(record store.ConnectionRecord, input ImportFileReque
 }
 
 func (s *Service) executeRelationalImport(record store.ConnectionRecord, databaseName string, statements []string, insertCount int, skipCount int) (ImportResult, error) {
-	var opener func(store.ConnectionRecord, string) (*dbsql.DB, error)
-	switch record.Engine {
-	case string(database.MySQL), string(database.MariaDB):
-		opener = openMySQLDatabase
-	case string(database.PostgreSQL):
-		opener = openPostgreSQLDatabase
-	case string(database.SQLite):
-		opener = func(r store.ConnectionRecord, _ string) (*dbsql.DB, error) { return openSQLiteDatabase(r) }
-	case string(database.ClickHouse):
-		opener = openClickHouseDatabase
-	default:
-		return ImportResult{
-			Success: false,
-			Message: fmt.Sprintf("%s 暂不支持文件导入执行", record.Engine),
-		}, nil
-	}
-
-	db, err := opener(record, databaseName)
+	db, err := s.getImportDB(record, databaseName)
 	if err != nil {
 		return ImportResult{}, fmt.Errorf("连接数据库失败: %w", err)
 	}
-	defer db.Close()
 
 	insertedRows := 0
 	skippedRows := 0
@@ -350,7 +354,7 @@ func (s *Service) executeRelationalImport(record store.ConnectionRecord, databas
 		insertedRows++
 	}
 
-	// Override with provided counts if they were tracked externally
+	// Override with provided counts if they were tracked externally.
 	if insertCount > 0 {
 		insertedRows = insertCount
 	}
@@ -364,6 +368,32 @@ func (s *Service) executeRelationalImport(record store.ConnectionRecord, databas
 		InsertedRows: insertedRows,
 		SkippedRows:  skippedRows,
 	}, nil
+}
+
+// getImportDB returns a pooled database connection for import operations.
+func (s *Service) getImportDB(record store.ConnectionRecord, databaseName string) (*dbsql.DB, error) {
+	var opener func(store.ConnectionRecord, string) (*dbsql.DB, error)
+	switch record.Engine {
+	case string(database.MySQL), string(database.MariaDB):
+		opener = openMySQLDatabase
+	case string(database.PostgreSQL):
+		opener = openPostgreSQLDatabase
+	case string(database.SQLite):
+		opener = func(r store.ConnectionRecord, _ string) (*dbsql.DB, error) { return openSQLiteDatabase(r) }
+	case string(database.ClickHouse):
+		opener = openClickHouseDatabase
+	default:
+		return nil, fmt.Errorf("%s 暂不支持文件导入", record.Engine)
+	}
+
+	dbName := strings.TrimSpace(databaseName)
+	if dbName == "" {
+		dbName = firstNonEmpty(record.Database, defaultDatabaseForEngine(record.Engine))
+	}
+
+	return s.pool.Get(record.ID, dbName, func() (*dbsql.DB, error) {
+		return opener(record, dbName)
+	})
 }
 
 // quoteIdentifierForEngine quotes a SQL identifier based on the database engine.
@@ -440,4 +470,58 @@ func splitSQLStatements(sqlText string) []string {
 	}
 
 	return statements
+}
+
+// buildUpsertClause returns the engine-specific upsert clause for an INSERT statement.
+func buildUpsertClause(engine string, colNames []string, pkCols []string) string {
+	switch strings.ToLower(engine) {
+	case "mysql", "mariadb":
+		updateParts := make([]string, len(colNames))
+		for i, col := range colNames {
+			updateParts[i] = fmt.Sprintf("%s = VALUES(%s)", col, col)
+		}
+		return " ON DUPLICATE KEY UPDATE " + strings.Join(updateParts, ", ")
+	case "postgresql", "sqlite":
+		if len(pkCols) == 0 {
+			return ""
+		}
+		updateParts := make([]string, len(colNames))
+		for i, col := range colNames {
+			updateParts[i] = fmt.Sprintf("%s = EXCLUDED.%s", col, col)
+		}
+		return fmt.Sprintf(" ON CONFLICT (%s) DO UPDATE SET %s",
+			strings.Join(pkCols, ", "),
+			strings.Join(updateParts, ", "))
+	default:
+		return ""
+	}
+}
+
+// truncateTableSQL returns a TRUNCATE or DELETE statement for the given engine.
+func truncateTableSQL(engine string, tableName string) string {
+	quoted := quoteIdentifierForEngine(engine, tableName)
+	switch strings.ToLower(engine) {
+	case "sqlite":
+		return fmt.Sprintf("DELETE FROM %s", quoted)
+	default:
+		return fmt.Sprintf("TRUNCATE TABLE %s", quoted)
+	}
+}
+
+// buildCSVRowArgs converts a CSV row to a slice of arguments for a prepared statement.
+func buildCSVRowArgs(csvRecord []string, colIndices []int) []any {
+	args := make([]any, 0, len(colIndices))
+	for _, idx := range colIndices {
+		if idx < len(csvRecord) {
+			value := csvRecord[idx]
+			if value == "" || strings.EqualFold(value, "NULL") {
+				args = append(args, nil)
+			} else {
+				args = append(args, value)
+			}
+		} else {
+			args = append(args, nil)
+		}
+	}
+	return args
 }

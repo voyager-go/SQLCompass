@@ -487,7 +487,7 @@ export function SchemaPage({
                             </div>
                         </div>
                         <div className="schema-table-shell">
-                            <table className="schema-table">
+                            <table className="schema-table schema-table--fields">
                                 <thead>
                                     <tr>
                                         <th>字段名</th><th>类型</th><th>可空</th><th>主键</th><th>注释</th><th style={{ width: 80 }}>操作</th>
@@ -643,7 +643,7 @@ export function SchemaPage({
                             </div>
                         </div>
                         <div className="schema-table-shell">
-                            <table className="schema-table">
+                            <table className="schema-table schema-table--indexes">
                                 <thead>
                                     <tr>
                                         <th>索引名</th>
@@ -667,7 +667,7 @@ export function SchemaPage({
                                                             value={idx.name}
                                                             onChange={(event) => updateDraftIndex(index, "name", event.target.value)}
                                                             placeholder="索引名"
-                                                            style={{ flex: 1, minWidth: 60 }}
+                                                            style={{ flex: 1, minWidth: 0 }}
                                                             autoCapitalize="none"
                                                         />
                                                         <button

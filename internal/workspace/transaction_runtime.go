@@ -18,7 +18,7 @@ func (s *Service) ExecuteTransaction(input TransactionRequest) (TransactionResul
 	}
 
 	switch record.Engine {
-	case string(database.MySQL), string(database.MariaDB), string(database.PostgreSQL):
+	case string(database.MySQL), string(database.MariaDB), string(database.PostgreSQL), string(database.SQLite):
 		return s.executeRelationalTransaction(record, input)
 	default:
 		return TransactionResult{
@@ -60,6 +60,8 @@ func (s *Service) beginTransaction(record store.ConnectionRecord, dbName, key st
 		opener = openMySQLDatabase
 	case string(database.PostgreSQL):
 		opener = openPostgreSQLDatabase
+	case string(database.SQLite):
+		opener = func(r store.ConnectionRecord, _ string) (*sql.DB, error) { return openSQLiteDatabase(r) }
 	default:
 		return TransactionResult{Success: false, Message: fmt.Sprintf("%s 暂不支持事务控制", record.Engine)}, nil
 	}
@@ -145,6 +147,8 @@ func (s *Service) BatchExecute(input BatchExecuteRequest) (BatchExecuteResult, e
 		opener = openMySQLDatabase
 	case string(database.PostgreSQL):
 		opener = openPostgreSQLDatabase
+	case string(database.SQLite):
+		opener = func(r store.ConnectionRecord, _ string) (*sql.DB, error) { return openSQLiteDatabase(r) }
 	case string(database.ClickHouse):
 		opener = openClickHouseDatabase
 	default:

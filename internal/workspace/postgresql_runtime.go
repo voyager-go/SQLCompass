@@ -458,9 +458,8 @@ func openPostgreSQLDatabase(record store.ConnectionRecord, databaseOverride stri
 	if err != nil {
 		return nil, err
 	}
-	db.SetConnMaxLifetime(2 * time.Minute)
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(2)
+	db.SetMaxOpenConns(PoolMaxOpenConns)
+	db.SetMaxIdleConns(PoolMaxIdleConns)
 	return db, nil
 }
 
@@ -548,4 +547,3 @@ func buildPostgreSQLCreateTableParts(input CreateTableRequest, tableIdentifier s
 	}
 	return fieldDefs, postStatements
 }
-

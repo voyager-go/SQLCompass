@@ -70,7 +70,7 @@ func (s *Service) getTableDetailByRecord(record store.ConnectionRecord, database
 func (s *Service) executeQueryByRecord(record store.ConnectionRecord, input QueryRequest, persistHistory bool) (QueryResult, error) {
 	switch record.Engine {
 	case string(database.MySQL), string(database.MariaDB):
-		return s.runMySQLQuery(record, input, persistHistory)
+		return s.runRelationalQuery(record, input, persistHistory, openMySQLDatabase)
 	case string(database.PostgreSQL):
 		return s.runPostgreSQLQuery(record, input, persistHistory)
 	case string(database.SQLite):
@@ -93,18 +93,7 @@ func (s *Service) previewTableDataByRecord(record store.ConnectionRecord, input 
 
 	switch record.Engine {
 	case string(database.MySQL), string(database.MariaDB):
-		result, err := s.runMySQLQuery(record, QueryRequest{
-			ConnectionID: input.ConnectionID,
-			Database:     input.Database,
-			SQL:          fmt.Sprintf("SELECT * FROM `%s`", escapeIdentifier(input.Table)),
-			Page:         input.Page,
-			PageSize:     input.PageSize,
-		}, false)
-		if err != nil {
-			return QueryResult{}, err
-		}
-		result.Message = fmt.Sprintf("已预览表 %s 的前 %d 行数据", input.Table, len(result.Rows))
-		return result, nil
+		return s.previewMySQLTable(record, input)
 	case string(database.PostgreSQL):
 		return s.previewPostgreSQLTable(record, input)
 	case string(database.SQLite):
