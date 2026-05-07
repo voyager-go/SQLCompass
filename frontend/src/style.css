@@ -1900,6 +1900,87 @@ body[data-theme="dark"] .connection-card__item--active {
     table-layout: fixed;
 }
 
+/* Column resize handle */
+.schema-table th {
+    position: relative;
+}
+
+.schema-table th .col-resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    z-index: 2;
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
+.schema-table th .col-resize-handle::after {
+    content: "";
+    position: absolute;
+    right: 2px;
+    top: 25%;
+    height: 50%;
+    width: 1px;
+    background: transparent;
+    transition: background 0.15s ease;
+    border-radius: 1px;
+}
+
+.schema-table th .col-resize-handle:hover::after,
+.schema-table th .col-resize-handle:active::after {
+    background: var(--accent-color, #2563eb);
+}
+
+/* Drag reorder */
+.drag-row {
+    cursor: grab;
+}
+
+.drag-row:active {
+    cursor: grabbing;
+}
+
+.drag-row--dragging {
+    opacity: 0.4;
+}
+
+.drag-row--over-above td {
+    box-shadow: inset 3px 0 0 -1px var(--accent-color, #2563eb), inset 0 2px 0 0 var(--accent-color, #2563eb);
+}
+
+.drag-row--over-below td {
+    box-shadow: inset 3px 0 0 -1px var(--accent-color, #2563eb), inset 0 -2px 0 0 var(--accent-color, #2563eb);
+}
+
+/* Drag handle icon */
+.row-drag-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 20px;
+    margin-right: 2px;
+    cursor: grab;
+    opacity: 0.35;
+    flex-shrink: 0;
+    transition: opacity 0.15s ease;
+    color: var(--text-secondary);
+    touch-action: none;
+    user-select: none;
+}
+
+.row-drag-handle:hover {
+    opacity: 0.8;
+}
+
+.row-drag-handle svg {
+    display: block;
+}
+
 .schema-table th,
 .schema-table td {
     padding: 8px 10px;
@@ -3918,6 +3999,74 @@ body[data-theme="dark"] .connection-card__item--active {
 
 .combobox-wrap--multi .multiselect-tag button:hover {
     opacity: 1;
+}
+
+/* Index Field Selector - checkbox popover */
+.index-field-selector__trigger {
+    position: relative;
+    cursor: pointer;
+}
+
+.index-field-selector__arrow {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    transition: transform 0.15s ease;
+    opacity: 0.5;
+    pointer-events: none;
+    flex-shrink: 0;
+}
+
+.index-field-selector__arrow--open {
+    transform: translateY(-50%) rotate(180deg);
+}
+
+.index-field-selector__popover {
+    background: var(--surface-1);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    overflow-y: auto;
+    z-index: 1000;
+    padding: 4px 0;
+}
+
+.index-field-selector__empty {
+    padding: 12px 14px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.index-field-selector__option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    cursor: pointer;
+    font-size: 12.5px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    transition: background 0.1s ease;
+    user-select: none;
+}
+
+.index-field-selector__option:hover {
+    background: var(--surface-3);
+}
+
+.index-field-selector__option input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent-color, #2563eb);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.index-field-selector__option span {
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* AI index name button */

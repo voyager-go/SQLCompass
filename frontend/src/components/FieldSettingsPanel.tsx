@@ -146,10 +146,12 @@ export function FieldSettingsPanel({
                 </label>
             ) : null}
 
-            <label className="field-settings-panel__row">
-                <span>自增</span>
-                <input className="field-settings-panel__toggle" type="checkbox" checked={autoIncrement} onChange={onToggleAutoIncrement} />
-            </label>
+            {isIntegerType(fieldType) ? (
+                <label className="field-settings-panel__row">
+                    <span>自增</span>
+                    <input className="field-settings-panel__toggle" type="checkbox" checked={autoIncrement} onChange={onToggleAutoIncrement} />
+                </label>
+            ) : null}
 
             <div className="field-settings-panel__field" key={`dv-${fieldType}`}>
                 <span>默认值</span>

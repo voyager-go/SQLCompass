@@ -105,6 +105,7 @@ export function MultiSelectCombobox({ options, value, onChange, placeholder }: M
                             onChange([...value, opt]);
                             setInputValue("");
                             setActiveIndex(0);
+                            setOpen(true);
                         }}
                     >
                         {opt}

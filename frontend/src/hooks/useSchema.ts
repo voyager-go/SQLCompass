@@ -206,9 +206,9 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
         setSchemaDraftFields((current) =>
             current.map((field, itemIndex) => {
                 if (itemIndex !== index) {
-                    // 当设置当前字段为主键时，取消其他字段的主键状态
+                    // 当设置当前字段为主键时，取消其他字段的主键和自增状态
                     if (key === "primary" && value === true) {
-                        return { ...field, primary: false };
+                        return { ...field, primary: false, autoIncrement: false };
                     }
                     return field;
                 }

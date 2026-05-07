@@ -5,8 +5,10 @@ import type { SchemaFieldInput, SchemaIndexInput } from "../types/runtime";
 import type { WorkbenchPage } from "../lib/constants";
 import { TypeCombobox } from "../components/TypeCombobox";
 import { MultiSelectCombobox } from "../components/MultiSelectCombobox";
+import { IndexFieldSelector } from "../components/IndexFieldSelector";
 import { FieldSettingsPanel } from "../components/FieldSettingsPanel";
 import { browserGeneratedID, getFieldTypeOptions, getIndexTypeOptions, isIntegerType, isTimestampType, isStringType } from "../lib/utils";
+import { useResizableColumns, useDragReorder } from "../hooks/useTableInteraction";
 
 type PartitionSuggestion = {
     partitionddl: string;
@@ -77,6 +79,12 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
     const [settingsAnchorEl, setSettingsAnchorEl] = useState<HTMLButtonElement | null>(null);
     // 主键勾选后自增提示框状态
     const [pkAutoIncrPrompt, setPkAutoIncrPrompt] = useState<{ index: number; target: HTMLElement } | null>(null);
+    // 列宽可调
+    const fieldColResizer = useResizableColumns();
+    const indexColResizer = useResizableColumns();
+    // 行拖拽排序
+    const fieldDrag = useDragReorder(fields, setFields);
+    const indexDrag = useDragReorder(indexes, setIndexes);
     const fieldTypeOptions = getFieldTypeOptions(selectedConnection?.engine ?? "mysql", fields.map((f) => f.type));
     const supportsCreateTable = ["mysql", "mariadb", "postgresql", "sqlite", "clickhouse"].includes((selectedConnection?.engine ?? "mysql").toLowerCase());
     const engine = (selectedConnection?.engine ?? "mysql").toLowerCase();
@@ -135,7 +143,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
         setFields((current) =>
             current.map((field, i) => {
                 if (i !== index) {
-                    if (key === "primary" && value === true) return { ...field, primary: false };
+                    if (key === "primary" && value === true) return { ...field, primary: false, autoIncrement: false };
                     return field;
                 }
                 return { ...field, [key]: value };
@@ -362,24 +370,44 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                             <div><h3>字段结构</h3></div>
                         </div>
                         <div className="schema-table-shell">
-                            <table className="schema-table">
+                            <table className="schema-table" style={fieldColResizer.getTableStyle()}>
                                 <thead>
                                     <tr>
-                                        <th>字段名</th><th>类型</th><th>可空</th><th>主键</th><th>注释</th><th style={{ width: 80 }}>操作</th>
+                                        <th style={fieldColResizer.getColumnStyle(0)}>字段名<button className="col-resize-handle" onMouseDown={(e) => fieldColResizer.handleResizeStart(0, e)} /></th>
+                                        <th style={fieldColResizer.getColumnStyle(1)}>类型<button className="col-resize-handle" onMouseDown={(e) => fieldColResizer.handleResizeStart(1, e)} /></th>
+                                        <th style={fieldColResizer.getColumnStyle(2)}>可空<button className="col-resize-handle" onMouseDown={(e) => fieldColResizer.handleResizeStart(2, e)} /></th>
+                                        <th style={fieldColResizer.getColumnStyle(3)}>主键<button className="col-resize-handle" onMouseDown={(e) => fieldColResizer.handleResizeStart(3, e)} /></th>
+                                        <th style={fieldColResizer.getColumnStyle(4)}>注释<button className="col-resize-handle" onMouseDown={(e) => fieldColResizer.handleResizeStart(4, e)} /></th>
+                                        <th style={{ ...fieldColResizer.getColumnStyle(5), width: 80 }}>操作</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {fields.map((field, index) => (
-                                        <tr key={field.id} style={{ position: "relative" }}>
+                                        <tr
+                                            key={field.id}
+                                            className={`drag-row${fieldDrag.dragIndex === index ? " drag-row--dragging" : ""}${fieldDrag.dropTargetIndex === index && fieldDrag.dragIndex !== null && fieldDrag.dragIndex < index ? " drag-row--over-below" : ""}${fieldDrag.dropTargetIndex === index && fieldDrag.dragIndex !== null && fieldDrag.dragIndex > index ? " drag-row--over-above" : ""}`}
+                                            draggable
+                                            onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(index)); fieldDrag.handleDragStart(index, e); }}
+                                            onDragOver={(e) => fieldDrag.handleDragOver(index, e)}
+                                            onDragLeave={() => fieldDrag.handleDragLeave()}
+                                            onDrop={(e) => fieldDrag.handleDrop(index, e)}
+                                            onDragEnd={() => fieldDrag.handleDragEnd()}
+                                            style={{ position: "relative" }}
+                                        >
                                             <td>
-                                                <input
-                                                    value={field.name}
-                                                    onChange={(e) => updateField(index, "name", e.target.value)}
-                                                    placeholder="字段名"
-                                                    autoComplete="off"
-                                                    autoCapitalize="none"
-                                                    spellCheck={false}
-                                                />
+                                                <div style={{ display: "flex", alignItems: "center" }}>
+                                                    <span className="row-drag-handle" title="拖拽排序">
+                                                        <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor"><circle cx="2.5" cy="1.5" r="1.5"/><circle cx="7.5" cy="1.5" r="1.5"/><circle cx="2.5" cy="6" r="1.5"/><circle cx="7.5" cy="6" r="1.5"/><circle cx="2.5" cy="10.5" r="1.5"/><circle cx="7.5" cy="10.5" r="1.5"/></svg>
+                                                    </span>
+                                                    <input
+                                                        value={field.name}
+                                                        onChange={(e) => updateField(index, "name", e.target.value)}
+                                                        placeholder="字段名"
+                                                        autoComplete="off"
+                                                        autoCapitalize="none"
+                                                        spellCheck={false}
+                                                    />
+                                                </div>
                                             </td>
                                             <td>
                                                 <TypeCombobox options={fieldTypeOptions} value={field.type} onChange={(value) => updateField(index, "type", value)} />
@@ -508,10 +536,12 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                             </div>
                         </div>
                         <div className="schema-table-shell">
-                            <table className="schema-table">
+                            <table className="schema-table" style={indexColResizer.getTableStyle()}>
                                 <thead>
                                     <tr>
-                                        <th>索引名</th><th>字段</th><th>唯一</th>{getIndexTypeOptions(engine).length > 0 ? <th>类型</th> : null}<th>操作</th>
+                                        <th style={indexColResizer.getColumnStyle(0)}>索引名<button className="col-resize-handle" onMouseDown={(e) => indexColResizer.handleResizeStart(0, e)} /></th>
+                                        <th style={indexColResizer.getColumnStyle(1)}>字段<button className="col-resize-handle" onMouseDown={(e) => indexColResizer.handleResizeStart(1, e)} /></th>
+                                        <th style={indexColResizer.getColumnStyle(2)}>唯一<button className="col-resize-handle" onMouseDown={(e) => indexColResizer.handleResizeStart(2, e)} /></th>{getIndexTypeOptions(engine).length > 0 ? <th style={indexColResizer.getColumnStyle(3)}>类型<button className="col-resize-handle" onMouseDown={(e) => indexColResizer.handleResizeStart(3, e)} /></th> : null}<th style={{ ...indexColResizer.getColumnStyle(getIndexTypeOptions(engine).length > 0 ? 4 : 3), width: 48 }}>操作</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -519,9 +549,21 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                         <tr><td colSpan={getIndexTypeOptions(engine).length > 0 ? 5 : 4} style={{ textAlign: "center", color: "#999" }}>暂无索引，点击上方「新增索引」添加</td></tr>
                                     ) : (
                                         indexes.map((idx, index) => (
-                                            <tr key={idx.id}>
+                                            <tr
+                                                key={idx.id}
+                                                className={`drag-row${indexDrag.dragIndex === index ? " drag-row--dragging" : ""}${indexDrag.dropTargetIndex === index && indexDrag.dragIndex !== null && indexDrag.dragIndex < index ? " drag-row--over-below" : ""}${indexDrag.dropTargetIndex === index && indexDrag.dragIndex !== null && indexDrag.dragIndex > index ? " drag-row--over-above" : ""}`}
+                                                draggable
+                                                onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(index)); indexDrag.handleDragStart(index, e); }}
+                                                onDragOver={(e) => indexDrag.handleDragOver(index, e)}
+                                                onDragLeave={() => indexDrag.handleDragLeave()}
+                                                onDrop={(e) => indexDrag.handleDrop(index, e)}
+                                                onDragEnd={() => indexDrag.handleDragEnd()}
+                                            >
                                                 <td>
                                                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                                        <span className="row-drag-handle" title="拖拽排序">
+                                                            <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor"><circle cx="2.5" cy="1.5" r="1.5"/><circle cx="7.5" cy="1.5" r="1.5"/><circle cx="2.5" cy="6" r="1.5"/><circle cx="7.5" cy="6" r="1.5"/><circle cx="2.5" cy="10.5" r="1.5"/><circle cx="7.5" cy="10.5" r="1.5"/></svg>
+                                                        </span>
                                                         <input
                                                             value={idx.name}
                                                             onChange={(e) => updateIndex(index, "name", e.target.value)}
@@ -543,7 +585,7 @@ export function CreateTablePage({ selectedConnection, selectedDatabase, pushToas
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    <MultiSelectCombobox
+                                                    <IndexFieldSelector
                                                         options={fieldNames}
                                                         value={idx.columns}
                                                         onChange={(val) => updateIndex(index, "columns", val)}

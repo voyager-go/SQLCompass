@@ -54,6 +54,8 @@ interface SidebarProps {
     onTruncateTable: (database: string, table: string) => void;
     onDropTable: (database: string, table: string) => void;
     onDropDatabase: (database: string) => void;
+    onRenameTableFromMenu?: (database: string, table: string) => void;
+    onNewQueryFromMenu?: (database: string) => void;
 }
 
 export function Sidebar({
@@ -106,6 +108,8 @@ export function Sidebar({
     onTruncateTable,
     onDropTable,
     onDropDatabase,
+    onRenameTableFromMenu,
+    onNewQueryFromMenu,
 }: SidebarProps) {
     const isRedisExplorer = explorerTree?.engine === "redis";
     const selectedRedisDatabase = explorerTree?.databases.find((db) => db.name === selectedDatabase) ?? null;
@@ -352,6 +356,8 @@ export function Sidebar({
                                     onTruncateTable={onTruncateTable}
                                     onDropTable={onDropTable}
                                     onDropDatabase={onDropDatabase}
+                                    onRenameTableFromMenu={onRenameTableFromMenu}
+                                    onNewQueryFromMenu={onNewQueryFromMenu}
                                 />
                             </div>
                         </div>

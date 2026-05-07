@@ -2007,6 +2007,28 @@ function App() {
         setTableContextMenu(null);
     }
 
+    function handleRenameTableFromMenu(databaseName: string, tableName: string) {
+        if (!navigationGuardBypassRef.current && hasUnsavedStructureChanges()) {
+            runWithStructureLeaveGuard(() => handleRenameTableFromMenu(databaseName, tableName));
+            return;
+        }
+        if (workMode === "chat") {
+            setWorkMode("normal");
+        }
+        setSelectedDatabase(databaseName);
+        setSelectedTable(tableName);
+        setActivePage("schema");
+        setPreviewContext(null);
+        setExpandedDatabases((current) => ({
+            ...current,
+            [databaseName]: true,
+        }));
+        setTableContextMenu(null);
+        schema.setRenameTableName(tableName);
+        // Delay to ensure table is loaded before opening modal
+        setTimeout(() => schema.setRenameModalOpen(true), 100);
+    }
+
     function openPartitionPage() {
         if (!navigationGuardBypassRef.current && hasUnsavedStructureChanges()) {
             runWithStructureLeaveGuard(openPartitionPage);
@@ -2016,6 +2038,20 @@ function App() {
             setWorkMode("normal");
         }
         setActivePage("partition");
+    }
+
+    function handleNewQueryFromMenu(databaseName: string) {
+        if (workMode === "chat") {
+            setWorkMode("normal");
+        }
+        setSelectedDatabase(databaseName);
+        setSelectedTable("");
+        setActivePage("query");
+        setSQLEditorCollapsed(false);
+        setDbContextMenu(null);
+        setPreviewContext(null);
+        setQueryResult(null);
+        setQueryErrorDetail("");
     }
 
     function syncSelectedSnippet() {
@@ -2651,6 +2687,8 @@ function App() {
                     onTruncateTable={handleTruncateTable}
                     onDropTable={handleDropTable}
                     onDropDatabase={handleDropDatabase}
+                    onRenameTableFromMenu={handleRenameTableFromMenu}
+                    onNewQueryFromMenu={handleNewQueryFromMenu}
                 />
 
             <main className="workbench">

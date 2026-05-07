@@ -46,6 +46,8 @@ interface SidebarTreeProps {
     onTruncateTable: (database: string, table: string) => void;
     onDropTable: (database: string, table: string) => void;
     onDropDatabase: (database: string) => void;
+    onRenameTableFromMenu?: (database: string, table: string) => void;
+    onNewQueryFromMenu?: (database: string) => void;
 }
 
 const tablePageSize = 12;
@@ -157,6 +159,8 @@ export function SidebarTree({
     onTruncateTable,
     onDropTable,
     onDropDatabase,
+    onRenameTableFromMenu,
+    onNewQueryFromMenu,
 }: SidebarTreeProps) {
     function toggleDatabaseExpanded(databaseName: string) {
         setExpandedDatabases((current) => ({
@@ -413,6 +417,22 @@ export function SidebarTree({
                             设计
                         </button>
                     ) : null}
+                    {onRenameTableFromMenu ? (
+                        <button
+                            type="button"
+                            className="context-menu__item"
+                            onClick={() => {
+                                const { database, table } = tableContextMenu;
+                                setTableContextMenu(null);
+                                onRenameTableFromMenu(database, table);
+                            }}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                            </svg>
+                            重命名表
+                        </button>
+                    ) : null}
                     <div className="context-menu__divider" />
                     <button
                         type="button"
@@ -484,6 +504,21 @@ export function SidebarTree({
                             <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
                         </svg>
                         刷新数据库
+                    </button>
+                    <button
+                        type="button"
+                        className="context-menu__item"
+                        onClick={() => {
+                            const database = dbContextMenu.database;
+                            setDbContextMenu(null);
+                            onNewQueryFromMenu?.(database);
+                        }}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="4 17 10 11 4 5"></polyline>
+                            <line x1="12" y1="19" x2="20" y2="19"></line>
+                        </svg>
+                        新建查询
                     </button>
                     {explorerTree?.canDesignTables ? (
                         <button
