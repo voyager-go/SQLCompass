@@ -50,9 +50,10 @@ func (s *Service) getMySQLExplorerTree(record store.ConnectionRecord, preferredD
 	activeDatabase := chooseActiveDatabase(preferredDatabase, record.Database, databases)
 	nodes := make([]DatabaseNode, 0, len(databases))
 	for _, name := range databases {
-		tables, err := s.listMySQLTables(record, name)
-		if err != nil {
-			return ExplorerTree{}, err
+		tables := make([]TableNode, 0)
+		if !isSystemDatabase(name) {
+			tables, _ = s.listMySQLTables(record, name)
+			// 单个数据库无权限或查询失败时跳过，不影响其他数据库
 		}
 
 		nodes = append(nodes, DatabaseNode{
@@ -290,6 +291,9 @@ func loadMySQLFields(ctx context.Context, db *dbsql.DB, databaseName string, tab
 		field.Primary = columnKey == "PRI"
 		field.AutoIncrement = strings.Contains(strings.ToLower(extra), "auto_increment")
 		field.Unsigned = strings.Contains(strings.ToLower(field.Type), "unsigned")
+		if idx := strings.Index(strings.ToLower(extra), "on update "); idx >= 0 {
+			field.OnUpdate = strings.TrimSpace(extra[idx+len("on update "):])
+		}
 		fields = append(fields, field)
 	}
 

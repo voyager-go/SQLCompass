@@ -57,6 +57,10 @@ export interface UseSchemaReturn {
     handleAddIndex: () => void;
     handleDeleteDraftIndex: (index: number) => void;
     updateDraftIndex: <K extends keyof SchemaDraftIndex>(index: number, key: K, value: SchemaDraftIndex[K]) => void;
+    moveDraftFieldUp: (index: number) => void;
+    moveDraftFieldDown: (index: number) => void;
+    moveDraftIndexUp: (index: number) => void;
+    moveDraftIndexDown: (index: number) => void;
     handleGenerateIndexName: (index: number, tableName: string) => Promise<void>;
     alterPreview: AlterPreviewState;
     setAlterPreview: React.Dispatch<React.SetStateAction<AlterPreviewState>>;
@@ -280,6 +284,42 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
                     : idx,
             ),
         );
+    }
+
+    function moveDraftFieldUp(index: number) {
+        if (index <= 0) return;
+        setSchemaDraftFields((current) => {
+            const next = [...current];
+            [next[index - 1], next[index]] = [next[index], next[index - 1]];
+            return next;
+        });
+    }
+
+    function moveDraftFieldDown(index: number) {
+        setSchemaDraftFields((current) => {
+            if (index >= current.length - 1) return current;
+            const next = [...current];
+            [next[index], next[index + 1]] = [next[index + 1], next[index]];
+            return next;
+        });
+    }
+
+    function moveDraftIndexUp(index: number) {
+        if (index <= 0) return;
+        setSchemaDraftIndexes((current) => {
+            const next = [...current];
+            [next[index - 1], next[index]] = [next[index], next[index - 1]];
+            return next;
+        });
+    }
+
+    function moveDraftIndexDown(index: number) {
+        setSchemaDraftIndexes((current) => {
+            if (index >= current.length - 1) return current;
+            const next = [...current];
+            [next[index], next[index + 1]] = [next[index + 1], next[index]];
+            return next;
+        });
     }
 
     async function handleGenerateIndexName(index: number, tableName: string) {
@@ -520,6 +560,10 @@ export function useSchema(options: UseSchemaOptions): UseSchemaReturn {
         handleAddIndex,
         handleDeleteDraftIndex,
         updateDraftIndex,
+        moveDraftFieldUp,
+        moveDraftFieldDown,
+        moveDraftIndexUp,
+        moveDraftIndexDown,
         handleGenerateIndexName,
         alterPreview,
         setAlterPreview,

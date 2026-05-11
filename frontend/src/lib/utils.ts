@@ -541,6 +541,20 @@ export function buildAlterSQL(
     if (!scope || scope === "fields") {
         const originals = new Map(tableDetail.fields.map((field) => [field.name, field]));
         const draftNames = new Set(draftFields.map((field) => field.originName || field.name));
+        const originalFieldOrder = new Map(tableDetail.fields.map((field, i) => [field.name, i]));
+
+        function buildPositionClause(field: SchemaDraftField): string {
+            const idx = draftFields.findIndex((f) => f.originName === field.originName);
+            if (idx <= 0) return " FIRST";
+            const prevField = draftFields[idx - 1];
+            return ` AFTER ${quoteIdentifierByEngine(normalizedEngine, prevField.name)}`;
+        }
+
+        function isPositionChanged(field: SchemaDraftField): boolean {
+            const originalIndex = originalFieldOrder.get(field.originName);
+            const currentIndex = draftFields.findIndex((f) => f.originName === field.originName);
+            return originalIndex !== undefined && originalIndex !== currentIndex;
+        }
 
         tableDetail.fields.forEach((field) => {
             if (!draftNames.has(field.name)) {
@@ -569,7 +583,7 @@ export function buildAlterSQL(
 
             if (original.name !== field.name) {
                 if (normalizedEngine === "mysql" || normalizedEngine === "mariadb") {
-                    statements.push(`CHANGE COLUMN ${quoteIdentifierByEngine(normalizedEngine, original.name)} ${buildFieldDefinition(normalizedEngine, field)}`);
+                    statements.push(`CHANGE COLUMN ${quoteIdentifierByEngine(normalizedEngine, original.name)} ${buildFieldDefinition(normalizedEngine, field)}${buildPositionClause(field)}`);
                 } else {
                     statements.push(`RENAME COLUMN ${quoteIdentifierByEngine(normalizedEngine, original.name)} TO ${quoteIdentifierByEngine(normalizedEngine, field.name)}`);
                     if (fieldSignature(original) !== fieldSignature(field)) {
@@ -585,7 +599,10 @@ export function buildAlterSQL(
                 return;
             }
 
-            if (fieldSignature(original) !== fieldSignature(field)) {
+            const sigChanged = fieldSignature(original) !== fieldSignature(field);
+            const positionChanged = isPositionChanged(field);
+
+            if (sigChanged || positionChanged) {
                 if (normalizedEngine === "postgresql") {
                     if (original.type !== field.type) {
                         statements.push(`ALTER COLUMN ${quoteIdentifierByEngine(normalizedEngine, field.name)} TYPE ${field.type}`);
@@ -602,7 +619,7 @@ export function buildAlterSQL(
                 } else if (normalizedEngine === "sqlite") {
                     statements.push(`-- SQLite 修改列定义通常需要重建整张表: ${field.name}`);
                 } else {
-                    statements.push(`MODIFY COLUMN ${buildFieldDefinition(normalizedEngine, field)}`);
+                    statements.push(`MODIFY COLUMN ${buildFieldDefinition(normalizedEngine, field)}${buildPositionClause(field)}`);
                 }
             }
         });

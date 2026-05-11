@@ -49,6 +49,8 @@ import { useConnections } from "./hooks/useConnections";
 import { useSchema } from "./hooks/useSchema";
 import { useAISettings } from "./hooks/useAISettings";
 import { useCellEditor } from "./hooks/useCellEditor";
+import { useTaskManager } from "./hooks/useTaskManager";
+import { TaskProgressOverlay } from "./pages/TaskCenterPage";
 import { type NoticeTone, type WorkbenchPage, type WorkMode, type ThemeMode } from "./lib/constants";
 import { CellEditorModal } from "./pages/CellEditorModal";
 import { DeleteDialogModal } from "./pages/DeleteDialogModal";
@@ -360,6 +362,7 @@ function App() {
     const [showCreateDBModal, setShowCreateDBModal] = useState(false);
     const [createDBForm, setCreateDBForm] = useState({ name: "", charset: "utf8mb4", collation: "utf8mb4_unicode_ci" });
     const [isCreatingDB, setIsCreatingDB] = useState(false);
+    const [createDBError, setCreateDBError] = useState("");
     const [dbContextMenu, setDbContextMenu] = useState<{ x: number; y: number; database: string } | null>(null);
     const [dangerConfirm, setDangerConfirm] = useState<DangerConfirmState>({
         open: false,
@@ -492,6 +495,8 @@ function App() {
         emptyWorkspaceState,
         refreshWorkspaceState,
     });
+
+    const taskMgr = useTaskManager();
 
     const cellEditorHook = useCellEditor({
         previewContext,
@@ -957,24 +962,38 @@ function App() {
             pushToast("error", "导出失败", "未找到数据库");
             return;
         }
+        const tables = dbNode.schemas
+            ? dbNode.schemas.flatMap((s) => s.tables)
+            : dbNode.tables;
+        const task = taskMgr.createTask({
+            type: "export-structure",
+            label: `导出 ${database} 结构`,
+            connectionName: selectedConnection.name,
+            database,
+            total: tables.length,
+        });
         try {
             setIsExportingDB(true);
             let sql = `-- Database: ${database}\n-- Engine: ${explorerTree.engine}\n-- Exported at: ${new Date().toISOString()}\n\n`;
-            const tables = dbNode.schemas
-                ? dbNode.schemas.flatMap((s) => s.tables)
-                : dbNode.tables;
-            for (const table of tables) {
+            for (let i = 0; i < tables.length; i++) {
                 const detail = (await GetTableDetail({
                     connectionId: selectedConnection.id,
                     database,
-                    table: table.name,
+                    table: tables[i].name,
                 })) as TableDetail;
-                sql += detail.ddl + "\n\n";
+                const ddl = detail.ddl.trimEnd();
+                sql += ddl.endsWith(";") ? ddl + "\n\n" : ddl + ";\n\n";
+                taskMgr.updateTask(task.id, {
+                    current: i + 1,
+                    progress: Math.round(((i + 1) / tables.length) * 90),
+                    message: `正在导出表 ${tables[i].name} (${i + 1}/${tables.length})`,
+                });
             }
             await exportTextFile("sql", `${database}-structure.sql`, sql, `导出数据库 ${database} 结构`);
+            taskMgr.completeTask(task.id, "导出完成");
         } catch (error) {
             const message = error instanceof Error ? error.message : "导出失败";
-            pushToast("error", "导出失败", message);
+            taskMgr.failTask(task.id, message);
         } finally {
             setIsExportingDB(false);
         }
@@ -990,23 +1009,39 @@ function App() {
             pushToast("error", "导出失败", "未找到数据库");
             return;
         }
+        const tableList = dbNode.schemas
+            ? dbNode.schemas.flatMap((s) => s.tables)
+            : dbNode.tables;
+        const task = taskMgr.createTask({
+            type: "export-structure-data",
+            label: `导出 ${database} 结构及数据`,
+            connectionName: selectedConnection.name,
+            database,
+            total: tableList.length,
+        });
         try {
             setIsExportingDB(true);
             const engine = explorerTree.engine;
             let sql = `-- Database: ${database}\n-- Engine: ${engine}\n-- Exported at: ${new Date().toISOString()}\n\n`;
-            const tables = dbNode.schemas
-                ? dbNode.schemas.flatMap((s) => s.tables)
-                : dbNode.tables;
 
-            for (const table of tables) {
+            for (let i = 0; i < tableList.length; i++) {
+                const table = tableList[i];
                 const detail = (await GetTableDetail({
                     connectionId: selectedConnection.id,
                     database,
                     table: table.name,
                 })) as TableDetail;
-                sql += detail.ddl + "\n\n";
+                const ddl = detail.ddl.trimEnd();
+                sql += ddl.endsWith(";") ? ddl + "\n\n" : ddl + ";\n\n";
 
-                if (detail.fields.length === 0) continue;
+                if (detail.fields.length === 0) {
+                    taskMgr.updateTask(task.id, {
+                        current: i + 1,
+                        progress: Math.round(((i + 1) / tableList.length) * 90),
+                        message: `已导出表 ${table.name} (${i + 1}/${tableList.length})`,
+                    });
+                    continue;
+                }
 
                 const columns = detail.fields.map((f) => f.name);
                 const qColumns = columns.map((c) => quoteIdentifierForEngine(c, engine)).join(", ");
@@ -1034,12 +1069,19 @@ function App() {
                     page++;
                 }
                 sql += "\n";
+
+                taskMgr.updateTask(task.id, {
+                    current: i + 1,
+                    progress: Math.round(((i + 1) / tableList.length) * 90),
+                    message: `已导出表 ${table.name} (${i + 1}/${tableList.length})`,
+                });
             }
 
             await exportTextFile("sql", `${database}-full.sql`, sql, `导出数据库 ${database} 结构及数据`);
+            taskMgr.completeTask(task.id, "导出完成");
         } catch (error) {
             const message = error instanceof Error ? error.message : "导出失败";
-            pushToast("error", "导出失败", message);
+            taskMgr.failTask(task.id, message);
         } finally {
             setIsExportingDB(false);
         }
@@ -1216,6 +1258,13 @@ function App() {
             return;
         }
 
+        const task = taskMgr.createTask({
+            type: "import-sql",
+            label: `导入 SQL 到 ${dbImportTargetDatabase}`,
+            connectionName: selectedConnection.name,
+            database: dbImportTargetDatabase,
+        });
+
         try {
             setIsImportingDB(true);
             const content = await file.text();
@@ -1223,12 +1272,14 @@ function App() {
             let executed = 0;
             let failed = 0;
 
-            for (const stmt of statements) {
+            taskMgr.updateTask(task.id, { total: statements.length });
+
+            for (let i = 0; i < statements.length; i++) {
                 try {
                     await ExecuteQuery({
                         connectionId: selectedConnection.id,
                         database: dbImportTargetDatabase,
-                        sql: stmt,
+                        sql: statements[i],
                         page: 1,
                         pageSize: 1,
                     });
@@ -1236,17 +1287,23 @@ function App() {
                 } catch {
                     failed++;
                 }
+                const progress = Math.round(((i + 1) / statements.length) * 95);
+                taskMgr.updateTask(task.id, {
+                    current: i + 1,
+                    progress,
+                    message: `执行中 (${i + 1}/${statements.length}) 成功:${executed} 失败:${failed}`,
+                });
             }
 
             if (failed > 0) {
-                pushToast("info", "导入完成", `成功 ${executed} 条，失败 ${failed} 条`);
+                taskMgr.completeTask(task.id, `完成: 成功 ${executed} 条，失败 ${failed} 条`);
             } else {
-                pushToast("success", "导入完成", `成功执行 ${executed} 条 SQL`);
+                taskMgr.completeTask(task.id, `完成: 成功执行 ${executed} 条 SQL`);
             }
             await loadExplorer(selectedConnection.id, dbImportTargetDatabase);
         } catch (error) {
             const message = error instanceof Error ? error.message : "导入失败";
-            pushToast("error", "导入失败", message);
+            taskMgr.failTask(task.id, message);
         } finally {
             setIsImportingDB(false);
             event.target.value = "";
@@ -2213,14 +2270,6 @@ function App() {
             }
         });
 
-        // 内容变化时也触发（但跳过以分号结尾的行）
-        editor.onDidChangeModelContent(() => {
-            if (editor.hasTextFocus() && !isCurrentLineEndsWithSemicolon()) {
-                setTimeout(() => {
-                    editor.trigger("keyboard", "editor.action.triggerSuggest", {});
-                }, 60);
-            }
-        });
     }
 
     async function handleExecuteQuery(nextPage = 1) {
@@ -2553,6 +2602,7 @@ function App() {
         if (!selectedConnection || !createDBForm.name.trim()) {
             return;
         }
+        setCreateDBError("");
         try {
             setIsCreatingDB(true);
             const result = (await CreateDatabase({
@@ -2564,15 +2614,16 @@ function App() {
             if (result.success) {
                 pushToast("success", "创建成功", result.message);
                 setShowCreateDBModal(false);
+                setCreateDBError("");
                 const resetEngine = selectedConnection?.engine ?? "mysql";
                 setCreateDBForm(resetEngine === "postgresql" ? { name: "", charset: "UTF8", collation: "" } : resetEngine === "clickhouse" ? { name: "", charset: "", collation: "" } : { name: "", charset: "utf8mb4", collation: "utf8mb4_unicode_ci" });
                 await loadExplorer(selectedConnection.id);
             } else {
-                setWorkspaceNotice({ tone: "error", message: result.message });
+                setCreateDBError(result.message);
             }
         } catch (error) {
             const message = getErrorMessage(error);
-            setWorkspaceNotice({ tone: "error", message });
+            setCreateDBError(message);
         } finally {
             setIsCreatingDB(false);
         }
@@ -2637,6 +2688,12 @@ function App() {
             {showSplash && <SplashScreen />}
             <div className={`studio-shell${sidebarCollapsed ? " studio-shell--collapsed" : ""}`}>
                 <FloatingToast toast={toast} />
+                <TaskProgressOverlay
+                    taskIds={taskMgr.activeTaskIds}
+                    tasks={taskMgr.tasks}
+                    onDismiss={taskMgr.dismissActiveTask}
+                    onGoToTaskCenter={() => setActivePage("task-center")}
+                />
                 <Sidebar
                     sidebarCollapsed={sidebarCollapsed}
                     setSidebarCollapsed={setSidebarCollapsed}
@@ -2836,6 +2893,10 @@ function App() {
                         handleAddIndex={schema.handleAddIndex}
                         handleDeleteDraftIndex={schema.handleDeleteDraftIndex}
                         updateDraftIndex={schema.updateDraftIndex}
+                        moveDraftFieldUp={schema.moveDraftFieldUp}
+                        moveDraftFieldDown={schema.moveDraftFieldDown}
+                        moveDraftIndexUp={schema.moveDraftIndexUp}
+                        moveDraftIndexDown={schema.moveDraftIndexDown}
                         handleGenerateIndexName={schema.handleGenerateIndexName}
                         aiConfigured={workspaceState.ai.apiKeyConfigured}
                         alterPreview={schema.alterPreview}
@@ -2871,6 +2932,9 @@ function App() {
                         handleSelectDatabase={handleSelectDatabase}
                         loadExplorer={loadExplorer}
                         onCreateTableDirtyChange={setCreateTableDirty}
+                        tasks={taskMgr.tasks}
+                        onClearCompletedTasks={taskMgr.clearCompletedTasks}
+                        onRemoveTask={taskMgr.removeTask}
                     />
                 </div>
             </main>
@@ -2926,11 +2990,16 @@ function App() {
             ) : null}
 
             {showCreateDBModal ? (
-                <div className="modal-backdrop" onClick={() => setShowCreateDBModal(false)}>
+                <div className="modal-backdrop" onClick={() => { setShowCreateDBModal(false); setCreateDBError(""); }}>
                     <div className="modal-card" onClick={(event) => event.stopPropagation()}>
                         <div className="section-title">
                             <h3>新建数据库</h3>
                         </div>
+                        {createDBError ? (
+                            <div style={{ padding: "10px 14px", marginBottom: 12, borderRadius: 8, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", fontSize: 13, color: "#dc2626", lineHeight: 1.5, wordBreak: "break-word" }}>
+                                {createDBError}
+                            </div>
+                        ) : null}
                         <label className="field">
                             <span>数据库名称</span>
                             <input
@@ -3006,7 +3075,7 @@ function App() {
                             </label>
                         )}
                         <div className="toolbar-actions toolbar-actions--end" style={{ marginTop: "20px" }}>
-                            <button type="button" className="ghost-button" onClick={() => setShowCreateDBModal(false)}>
+                            <button type="button" className="ghost-button" onClick={() => { setShowCreateDBModal(false); setCreateDBError(""); }}>
                                 取消
                             </button>
                             <button

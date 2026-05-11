@@ -8,6 +8,7 @@ import { PartitionPage } from "../pages/PartitionPage";
 import { PerformancePage } from "../pages/PerformancePage";
 import { AccessControlPage } from "../pages/AccessControlPage";
 import { ImportPage } from "../pages/ImportPage";
+import { TaskCenterPage } from "../pages/TaskCenterPage";
 import { AIPage } from "../pages/AIPage";
 import { ThemePage } from "../pages/ThemePage";
 import { SettingsPage } from "../pages/SettingsPage";
@@ -205,6 +206,10 @@ export interface WorkbenchRouterProps {
     handleAddIndex: () => void;
     handleDeleteDraftIndex: (index: number) => void;
     updateDraftIndex: <K extends keyof { id: string; originName: string; name: string; columns: string[]; unique: boolean; indexType: string; aiLoading: boolean }>(index: number, key: K, value: { id: string; originName: string; name: string; columns: string[]; unique: boolean; indexType: string; aiLoading: boolean }[K]) => void;
+    moveDraftFieldUp: (index: number) => void;
+    moveDraftFieldDown: (index: number) => void;
+    moveDraftIndexUp: (index: number) => void;
+    moveDraftIndexDown: (index: number) => void;
     handleGenerateIndexName: (index: number, tableName: string) => Promise<void>;
     aiConfigured: boolean;
     alterPreview: AlterPreviewState;
@@ -267,6 +272,11 @@ export interface WorkbenchRouterProps {
     handleSelectDatabase: (databaseName: string) => void;
     loadExplorer: (connectionId: string, preferredDatabase?: string) => Promise<void>;
     onCreateTableDirtyChange: (dirty: boolean) => void;
+
+    // Task Center
+    tasks: import("../types/task").TaskRecord[];
+    onClearCompletedTasks: () => void;
+    onRemoveTask: (id: string) => void;
 }
 
 export function WorkbenchRouter(props: WorkbenchRouterProps) {
@@ -417,6 +427,10 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         handleAddIndex,
         handleDeleteDraftIndex,
         updateDraftIndex,
+        moveDraftFieldUp,
+        moveDraftFieldDown,
+        moveDraftIndexUp,
+        moveDraftIndexDown,
         handleGenerateIndexName,
         aiConfigured,
         alterPreview,
@@ -454,6 +468,10 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         refreshWorkspaceState,
         loadExplorer,
         onCreateTableDirtyChange,
+        // Task Center
+        tasks,
+        onClearCompletedTasks,
+        onRemoveTask,
     } = props;
 
     if (workMode === "chat") {
@@ -632,6 +650,10 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     handleAddIndex={handleAddIndex}
                     handleDeleteDraftIndex={handleDeleteDraftIndex}
                     updateDraftIndex={updateDraftIndex}
+                    moveDraftFieldUp={moveDraftFieldUp}
+                    moveDraftFieldDown={moveDraftFieldDown}
+                    moveDraftIndexUp={moveDraftIndexUp}
+                    moveDraftIndexDown={moveDraftIndexDown}
                     handleGenerateIndexName={handleGenerateIndexName}
                     aiConfigured={aiConfigured}
                     alterPreview={alterPreview}
@@ -700,6 +722,14 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                     selectedDatabase={selectedDatabase}
                     selectedTable={selectedTable}
                     pushToast={pushToast}
+                />
+            );
+        case "task-center":
+            return (
+                <TaskCenterPage
+                    tasks={tasks}
+                    onClearCompleted={onClearCompletedTasks}
+                    onRemoveTask={onRemoveTask}
                 />
             );
         case "create-table":

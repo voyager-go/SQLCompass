@@ -137,6 +137,17 @@ export function FieldSettingsPanel({
                     <div className="field-settings-panel__eyebrow">字段设置</div>
                     <div className="field-settings-panel__type">{fieldTypeLabel}</div>
                 </div>
+                <button
+                    type="button"
+                    className="field-settings-panel__close"
+                    onClick={onClose}
+                    title="关闭"
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
             </div>
 
             {showUnsigned ? (
@@ -155,27 +166,60 @@ export function FieldSettingsPanel({
 
             <div className="field-settings-panel__field" key={`dv-${fieldType}`}>
                 <span>默认值</span>
-                <div className="field-settings-panel__input-row">
-                    <input
-                        className="field-settings-panel__input"
-                        value={defaultValue}
-                        onChange={(e) => onChangeDefaultValue(e.target.value)}
-                        placeholder="默认值"
-                        autoComplete="off"
-                        autoCapitalize="none"
-                        spellCheck={false}
-                    />
-                    {showNowButton ? (
-                        <button
-                            type="button"
-                            className="field-settings-panel__token-button"
-                            title="填充 CURRENT_TIMESTAMP"
-                            onClick={() => onChangeDefaultValue("CURRENT_TIMESTAMP")}
-                        >
-                            NOW
-                        </button>
-                    ) : null}
-                </div>
+                {isStringType(fieldType) ? (
+                    <select
+                        className="field-settings-panel__select"
+                        value={
+                            defaultValue === "" ? "__emptystr__"
+                            : defaultValue === null || defaultValue === undefined ? "__none__"
+                            : defaultValue
+                        }
+                        onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === "__custom__") return;
+                            if (val === "__none__") { onChangeDefaultValue(""); return; }
+                            if (val === "__emptystr__") { onChangeDefaultValue(""); return; }
+                            onChangeDefaultValue(val);
+                        }}
+                        onBlur={(e) => {
+                            const sel = e.target;
+                            if (sel.value === "__custom__") {
+                                const userInput = window.prompt("输入自定义默认值：", defaultValue || "");
+                                if (userInput !== null) {
+                                    onChangeDefaultValue(userInput);
+                                }
+                                sel.value = defaultValue || "__emptystr__";
+                            }
+                        }}
+                    >
+                        <option value="__none__">不设默认</option>
+                        <option value="__emptystr__">空字符串 ''</option>
+                        <option value="NULL">NULL</option>
+                        <option value="__custom__">自定义...</option>
+                    </select>
+                ) : (
+                    <div className="field-settings-panel__input-row">
+                        <input
+                            className="field-settings-panel__input"
+                            value={defaultValue}
+                            onChange={(e) => onChangeDefaultValue(e.target.value)}
+                            placeholder="默认值"
+                            autoComplete="off"
+                            autoCapitalize="none"
+                            spellCheck={false}
+                        />
+                        {showNowButton ? (
+                            <button
+                                type="button"
+                                className="field-settings-panel__token-button"
+                                title="填充 CURRENT_TIMESTAMP"
+                                onClick={() => onChangeDefaultValue("CURRENT_TIMESTAMP")}
+                            >
+                                NOW
+                            </button>
+                        ) : null}
+                    </div>
+                )}
             </div>
 
             {showAutoUpdate ? (

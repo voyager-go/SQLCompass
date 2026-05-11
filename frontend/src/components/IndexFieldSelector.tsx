@@ -12,6 +12,7 @@ export function IndexFieldSelector({ options, value, onChange, placeholder }: In
     const [open, setOpen] = useState(false);
     const [searchText, setSearchText] = useState("");
     const wrapRef = useRef<HTMLDivElement>(null);
+    const popoverRef = useRef<HTMLDivElement>(null);
     const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
 
     const filtered = options.filter(
@@ -30,7 +31,11 @@ export function IndexFieldSelector({ options, value, onChange, placeholder }: In
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
-            if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
+            const target = event.target as Node;
+            if (
+                wrapRef.current && !wrapRef.current.contains(target)
+                && popoverRef.current && !popoverRef.current.contains(target)
+            ) {
                 setOpen(false);
             }
         }
@@ -87,6 +92,7 @@ export function IndexFieldSelector({ options, value, onChange, placeholder }: In
         open && dropdownPos ? (
             createPortal(
                 <div
+                    ref={popoverRef}
                     className="index-field-selector__popover"
                     style={{
                         position: "absolute",
@@ -122,7 +128,7 @@ export function IndexFieldSelector({ options, value, onChange, placeholder }: In
                 className="combobox-wrap combobox-wrap--multi index-field-selector"
                 ref={wrapRef}
             >
-                <div className="multiselect-input index-field-selector__trigger" onClick={() => setOpen((v) => !v)}>
+                <div className="multiselect-input index-field-selector__trigger" onClick={() => setOpen(true)}>
                     {value.length > 0 ? (
                         value.map((item) => (
                             <span key={item} className="multiselect-tag">

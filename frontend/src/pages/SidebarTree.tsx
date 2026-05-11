@@ -1,3 +1,5 @@
+import { useRef, useState, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import { CopyableText } from "../components/CopyableText";
 import { escapeHTML } from "../lib/utils";
 import type { ExplorerTree, TableNode } from "../types/runtime";
@@ -52,6 +54,60 @@ interface SidebarTreeProps {
 
 const tablePageSize = 12;
 
+function TruncatableTableName({ name }: { name: string }) {
+    const labelRef = useRef<HTMLSpanElement>(null);
+    const [show, setShow] = useState(false);
+    const [pos, setPos] = useState({ x: 0, y: 0 });
+    const timerRef = useRef<number | null>(null);
+
+    function isTruncated() {
+        const el = labelRef.current;
+        return el ? el.scrollWidth > el.clientWidth + 1 : false;
+    }
+
+    function clear() {
+        if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
+    }
+
+    useLayoutEffect(() => {
+        if (show && labelRef.current) {
+            const rect = labelRef.current.getBoundingClientRect();
+            setPos({ x: Math.min(rect.left, window.innerWidth - 300), y: rect.bottom + 8 });
+        }
+    }, [show]);
+
+    const tooltip = show ? (
+        <div
+            className="table-name-tooltip"
+            style={{
+                position: "fixed",
+                left: pos.x,
+                top: pos.y,
+                zIndex: 9999,
+            }}
+        >
+            {name}
+        </div>
+    ) : null;
+
+    return (
+        <div
+            className="copyable-text"
+            onMouseEnter={() => {
+                clear();
+                timerRef.current = window.setTimeout(() => {
+                    if (isTruncated()) setShow(true);
+                }, 2000);
+            }}
+            onMouseLeave={() => { clear(); setShow(false); }}
+            onContextMenu={(e) => { e.preventDefault(); navigator.clipboard.writeText(name).catch(() => {}); }}
+        >
+            <span ref={labelRef} className="copyable-text__label">{name}</span>
+            {tooltip ? createPortal(tooltip, document.body) : null}
+        </div>
+    );
+}
+
 function renderTableItem(
     databaseName: string,
     table: TableNode,
@@ -104,11 +160,7 @@ function renderTableItem(
             }}
         >
             <div className="navigator-table__main">
-                <CopyableText
-                    value={table.name}
-                    helperText={table.comment || "暂无表注释"}
-                    onCopied={(value) => pushToast(value ? "success" : "error", value ? "已复制表名" : "复制失败", value || "请重试")}
-                />
+                <TruncatableTableName name={table.name} />
             </div>
             {isRedisKey ? <span className={redisTypeLabel((table as TableNode & { keyType?: string }).keyType)}>{(table as TableNode & { keyType?: string }).keyType || "key"}</span> : null}
             <span className="navigator-meta">
@@ -169,7 +221,7 @@ export function SidebarTree({
         }));
     }
 
-    if (!explorerTree || explorerTree.databases.length === 0) {
+    if (!explorerTree || !explorerTree.databases || explorerTree.databases.length === 0) {
         return <div className="sidebar-empty">先选择一个连接，或者先在连接管理里新建连接。</div>;
     }
 
@@ -189,16 +241,17 @@ export function SidebarTree({
                 const isActive = database.name === selectedDatabase;
                 const isExpanded = expandedDatabases[database.name] ?? isActive;
                 const shouldFilterTables = Boolean(tableSearch.trim()) && database.name === selectedDatabase;
+                const tables = database.tables || [];
                 let filteredTables = shouldFilterTables
-                    ? database.tables.filter((table) => table.name.toLowerCase().includes(tableSearch.trim().toLowerCase()))
-                    : database.tables;
+                    ? tables.filter((table) => table.name.toLowerCase().includes(tableSearch.trim().toLowerCase()))
+                    : tables;
 
                 // 只保留实际存在于当前 database 中的有效筛选值，避免旧连接/旧库残留导致空白
                 const validTableFilter = isRedisExplorer
                     ? tableFilter.filter((type) =>
-                          database.tables.some((t) => (t as TableNode & { keyType?: string }).keyType === type)
+                          tables.some((t) => (t as TableNode & { keyType?: string }).keyType === type)
                       )
-                    : tableFilter.filter((name) => database.tables.some((t) => t.name === name));
+                    : tableFilter.filter((name) => tables.some((t) => t.name === name));
 
                 if (validTableFilter.length > 0 && database.name === selectedDatabase) {
                     filteredTables = filteredTables.filter((table) =>

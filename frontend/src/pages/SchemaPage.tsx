@@ -10,7 +10,7 @@ import type { SchemaDraftIndex } from "../lib/utils";
 import type { AlterPreviewState } from "../hooks/useSchema";
 import { getIndexTypeOptions, isIntegerType, isTimestampType } from "../lib/utils";
 import { highlightSQL } from "../lib/sqlHighlight";
-import { useResizableColumns, useDragReorder } from "../hooks/useTableInteraction";
+import { useResizableColumns } from "../hooks/useTableInteraction";
 
 type NoticeTone = "success" | "error" | "info";
 
@@ -328,6 +328,10 @@ interface SchemaPageProps {
     handleAddIndex: () => void;
     handleDeleteDraftIndex: (index: number) => void;
     updateDraftIndex: <K extends keyof SchemaDraftIndex>(index: number, key: K, value: SchemaDraftIndex[K]) => void;
+    moveDraftFieldUp: (index: number) => void;
+    moveDraftFieldDown: (index: number) => void;
+    moveDraftIndexUp: (index: number) => void;
+    moveDraftIndexDown: (index: number) => void;
     handleGenerateIndexName: (index: number, tableName: string) => Promise<void>;
     aiConfigured: boolean;
     alterPreview: AlterPreviewState;
@@ -367,6 +371,10 @@ export function SchemaPage({
     handleAddIndex,
     handleDeleteDraftIndex,
     updateDraftIndex,
+    moveDraftFieldUp,
+    moveDraftFieldDown,
+    moveDraftIndexUp,
+    moveDraftIndexDown,
     handleGenerateIndexName,
     aiConfigured,
     alterPreview,
@@ -396,13 +404,6 @@ export function SchemaPage({
     // 列宽可调
     const fieldColResizer = useResizableColumns();
     const indexColResizer = useResizableColumns();
-    // 行拖拽排序
-    const fieldDrag = useDragReorder(schemaDraftFields, (reordered) => {
-        reordered.forEach((f, i) => updateDraftField(i, "id", f.id));
-    });
-    const indexDrag = useDragReorder(schemaDraftIndexes, (reordered) => {
-        reordered.forEach((idx, i) => updateDraftIndex(i, "id", idx.id));
-    });
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -508,36 +509,21 @@ export function SchemaPage({
                                         <th style={fieldColResizer.getColumnStyle(2)}>可空<button className="col-resize-handle" onMouseDown={(e) => fieldColResizer.handleResizeStart(2, e)} /></th>
                                         <th style={fieldColResizer.getColumnStyle(3)}>主键<button className="col-resize-handle" onMouseDown={(e) => fieldColResizer.handleResizeStart(3, e)} /></th>
                                         <th style={fieldColResizer.getColumnStyle(4)}>注释<button className="col-resize-handle" onMouseDown={(e) => fieldColResizer.handleResizeStart(4, e)} /></th>
-                                        <th style={{ ...fieldColResizer.getColumnStyle(5), width: 80 }}>操作</th>
+                                        <th style={{ ...fieldColResizer.getColumnStyle(5), width: 140 }}>操作</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {schemaDraftFields.map((field, index) => (
-                                        <tr
-                                            key={field.id}
-                                            className={`drag-row${fieldDrag.dragIndex === index ? " drag-row--dragging" : ""}${fieldDrag.dropTargetIndex === index && fieldDrag.dragIndex !== null && fieldDrag.dragIndex < index ? " drag-row--over-below" : ""}${fieldDrag.dropTargetIndex === index && fieldDrag.dragIndex !== null && fieldDrag.dragIndex > index ? " drag-row--over-above" : ""}`}
-                                            draggable
-                                            onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(index)); fieldDrag.handleDragStart(index, e); }}
-                                            onDragOver={(e) => fieldDrag.handleDragOver(index, e)}
-                                            onDragLeave={() => fieldDrag.handleDragLeave()}
-                                            onDrop={(e) => fieldDrag.handleDrop(index, e)}
-                                            onDragEnd={() => fieldDrag.handleDragEnd()}
-                                            style={{ position: "relative" }}
-                                        >
+                                        <tr key={field.id}>
                                             <td>
-                                                <div style={{ display: "flex", alignItems: "center" }}>
-                                                    <span className="row-drag-handle" title="拖拽排序">
-                                                        <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor"><circle cx="2.5" cy="1.5" r="1.5"/><circle cx="7.5" cy="1.5" r="1.5"/><circle cx="2.5" cy="6" r="1.5"/><circle cx="7.5" cy="6" r="1.5"/><circle cx="2.5" cy="10.5" r="1.5"/><circle cx="7.5" cy="10.5" r="1.5"/></svg>
-                                                    </span>
-                                                    <input
-                                                        value={field.name}
-                                                        onChange={(event) => updateDraftField(index, "name", event.target.value)}
-                                                        onBlur={(event) => applyFieldSuggestion(index, event.target.value)}
-                                                        autoCapitalize="none"
-                                                        autoComplete="off"
-                                                        spellCheck={false}
-                                                    />
-                                                </div>
+                                                <input
+                                                    value={field.name}
+                                                    onChange={(event) => updateDraftField(index, "name", event.target.value)}
+                                                    onBlur={(event) => applyFieldSuggestion(index, event.target.value)}
+                                                    autoCapitalize="none"
+                                                    autoComplete="off"
+                                                    spellCheck={false}
+                                                />
                                             </td>
                                             <td>
                                                 <TypeCombobox
@@ -606,55 +592,63 @@ export function SchemaPage({
                                                     ) : null}
                                                 </div>
                                             </td>
-                                            <td style={{ display: "flex", gap: 4, alignItems: "center", position: "relative" }}>
-                                                <button
-                                                    type="button"
-                                                    className="icon-btn icon-btn--settings"
-                                                    title="字段设置"
-                                                    aria-expanded={settingsFieldIndex === index}
-                                                    onClick={(event) => {
-                                                        if (settingsFieldIndex === index) {
+                                            <td style={{ position: "relative" }}>
+                                                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                                    <button type="button" className="icon-btn" title="上移" disabled={index === 0} onClick={() => moveDraftFieldUp(index)}>
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                                                    </button>
+                                                    <button type="button" className="icon-btn" title="下移" disabled={index === schemaDraftFields.length - 1} onClick={() => moveDraftFieldDown(index)}>
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="icon-btn icon-btn--settings"
+                                                        title="字段设置"
+                                                        aria-expanded={settingsFieldIndex === index}
+                                                        onClick={(event) => {
+                                                            if (settingsFieldIndex === index) {
+                                                                setSettingsFieldIndex(null);
+                                                                setSettingsAnchorEl(null);
+                                                                return;
+                                                            }
+                                                            setSettingsFieldIndex(index);
+                                                            setSettingsAnchorEl(event.currentTarget);
+                                                        }}
+                                                    >
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                            <circle cx="12" cy="12" r="3"></circle>
+                                                            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"></path>
+                                                        </svg>
+                                                    </button>
+                                                    <FieldSettingsPanel
+                                                        visible={settingsFieldIndex === index}
+                                                        fieldType={field.type}
+                                                        isMySQL={isMySQL}
+                                                        unsigned={field.unsigned || false}
+                                                        autoIncrement={field.autoIncrement || false}
+                                                        defaultValue={field.defaultValue}
+                                                        onUpdate={field.onUpdate || ""}
+                                                        charset={field.charset || "utf8mb4"}
+                                                        collation={field.collation || "utf8mb4_general_ci"}
+                                                        anchorEl={settingsFieldIndex === index ? settingsAnchorEl : null}
+                                                        onToggleUnsigned={() => updateDraftField(index, "unsigned", !(field.unsigned || false))}
+                                                        onToggleAutoIncrement={() => updateDraftField(index, "autoIncrement", !(field.autoIncrement || false))}
+                                                        onChangeDefaultValue={(val) => updateDraftField(index, "defaultValue", val)}
+                                                        onToggleOnUpdate={(checked) => updateDraftField(index, "onUpdate", checked ? "CURRENT_TIMESTAMP" : "")}
+                                                        onChangeCharset={(val) => updateDraftField(index, "charset", val)}
+                                                        onChangeCollation={(val) => updateDraftField(index, "collation", val)}
+                                                        onClose={() => {
                                                             setSettingsFieldIndex(null);
                                                             setSettingsAnchorEl(null);
-                                                            return;
-                                                        }
-                                                        setSettingsFieldIndex(index);
-                                                        setSettingsAnchorEl(event.currentTarget);
-                                                    }}
-                                                >
-                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                        <circle cx="12" cy="12" r="3"></circle>
-                                                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"></path>
-                                                    </svg>
-                                                </button>
-                                                <FieldSettingsPanel
-                                                    visible={settingsFieldIndex === index}
-                                                    fieldType={field.type}
-                                                    isMySQL={isMySQL}
-                                                    unsigned={field.unsigned || false}
-                                                    autoIncrement={field.autoIncrement || false}
-                                                    defaultValue={field.defaultValue}
-                                                    onUpdate={field.onUpdate || ""}
-                                                    charset={field.charset || "utf8mb4"}
-                                                    collation={field.collation || "utf8mb4_general_ci"}
-                                                    anchorEl={settingsFieldIndex === index ? settingsAnchorEl : null}
-                                                    onToggleUnsigned={() => updateDraftField(index, "unsigned", !(field.unsigned || false))}
-                                                    onToggleAutoIncrement={() => updateDraftField(index, "autoIncrement", !(field.autoIncrement || false))}
-                                                    onChangeDefaultValue={(val) => updateDraftField(index, "defaultValue", val)}
-                                                    onToggleOnUpdate={(checked) => updateDraftField(index, "onUpdate", checked ? "CURRENT_TIMESTAMP" : "")}
-                                                    onChangeCharset={(val) => updateDraftField(index, "charset", val)}
-                                                    onChangeCollation={(val) => updateDraftField(index, "collation", val)}
-                                                    onClose={() => {
-                                                        setSettingsFieldIndex(null);
-                                                        setSettingsAnchorEl(null);
-                                                    }}
-                                                />
-                                                <button type="button" className="icon-btn icon-btn--add" title="在下方插入字段" onClick={() => handleAddField(index)}>
-                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                                                </button>
-                                                <button type="button" className="icon-btn icon-btn--delete" title="删除字段" onClick={() => handleDeleteDraftField(index)}>
-                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                                                </button>
+                                                        }}
+                                                    />
+                                                    <button type="button" className="icon-btn icon-btn--add" title="在下方插入字段" onClick={() => handleAddField(index)}>
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                                    </button>
+                                                    <button type="button" className="icon-btn icon-btn--delete" title="删除字段" onClick={() => handleDeleteDraftField(index)}>
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -693,21 +687,9 @@ export function SchemaPage({
                                         </tr>
                                     ) : (
                                         schemaDraftIndexes.map((idx, index) => (
-                                            <tr
-                                                key={idx.id}
-                                                className={`drag-row${indexDrag.dragIndex === index ? " drag-row--dragging" : ""}${indexDrag.dropTargetIndex === index && indexDrag.dragIndex !== null && indexDrag.dragIndex < index ? " drag-row--over-below" : ""}${indexDrag.dropTargetIndex === index && indexDrag.dragIndex !== null && indexDrag.dragIndex > index ? " drag-row--over-above" : ""}`}
-                                                draggable
-                                                onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(index)); indexDrag.handleDragStart(index, e); }}
-                                                onDragOver={(e) => indexDrag.handleDragOver(index, e)}
-                                                onDragLeave={() => indexDrag.handleDragLeave()}
-                                                onDrop={(e) => indexDrag.handleDrop(index, e)}
-                                                onDragEnd={() => indexDrag.handleDragEnd()}
-                                            >
+                                            <tr key={idx.id}>
                                                 <td>
                                                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                                        <span className="row-drag-handle" title="拖拽排序">
-                                                            <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor"><circle cx="2.5" cy="1.5" r="1.5"/><circle cx="7.5" cy="1.5" r="1.5"/><circle cx="2.5" cy="6" r="1.5"/><circle cx="7.5" cy="6" r="1.5"/><circle cx="2.5" cy="10.5" r="1.5"/><circle cx="7.5" cy="10.5" r="1.5"/></svg>
-                                                        </span>
                                                         <input
                                                             value={idx.name}
                                                             onChange={(event) => updateDraftIndex(index, "name", event.target.value)}
@@ -762,12 +744,20 @@ export function SchemaPage({
                                                     </td>
                                                 ) : null}
                                                 <td>
-                                                    <button type="button" className="icon-btn icon-btn--delete" title="删除索引" onClick={() => handleDeleteDraftIndex(index)}>
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                            <polyline points="3 6 5 6 21 6"></polyline>
-                                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                                        </svg>
-                                                    </button>
+                                                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                                        <button type="button" className="icon-btn" title="上移" disabled={index === 0} onClick={() => moveDraftIndexUp(index)}>
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                                                        </button>
+                                                        <button type="button" className="icon-btn" title="下移" disabled={index === schemaDraftIndexes.length - 1} onClick={() => moveDraftIndexDown(index)}>
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                                                        </button>
+                                                        <button type="button" className="icon-btn icon-btn--delete" title="删除索引" onClick={() => handleDeleteDraftIndex(index)}>
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                <polyline points="3 6 5 6 21 6"></polyline>
+                                                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                                            </svg>
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))

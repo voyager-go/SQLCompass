@@ -81,9 +81,11 @@ export function useResizableColumns(initialWidths?: number[]) {
 export function useDragReorder<T>(items: T[], setItems: (items: T[]) => void) {
     const [dragIndex, setDragIndex] = useState<number | null>(null);
     const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+    const dragIndexRef = useRef<number | null>(null);
 
     function handleDragStart(index: number, e: React.DragEvent) {
         setDragIndex(index);
+        dragIndexRef.current = index;
         e.dataTransfer.effectAllowed = "move";
         // Use empty image to avoid default ghost
         const img = new Image();
@@ -93,7 +95,8 @@ export function useDragReorder<T>(items: T[], setItems: (items: T[]) => void) {
 
     function handleDragOver(index: number, e: React.DragEvent) {
         e.preventDefault();
-        if (dragIndex === null || index === dragIndex || index === dragIndex + 1) return;
+        const di = dragIndexRef.current;
+        if (di === null || index === di || index === di + 1) return;
         e.dataTransfer.dropEffect = "move";
         setDropTargetIndex(index);
     }
@@ -104,24 +107,28 @@ export function useDragReorder<T>(items: T[], setItems: (items: T[]) => void) {
 
     function handleDrop(targetIndex: number, e: React.DragEvent) {
         e.preventDefault();
-        if (dragIndex === null || dragIndex === targetIndex) {
+        const di = dragIndexRef.current;
+        if (di === null || di === targetIndex) {
             setDragIndex(null);
             setDropTargetIndex(null);
+            dragIndexRef.current = null;
             return;
         }
 
         const newItems = [...items];
-        const [moved] = newItems.splice(dragIndex, 1);
+        const [moved] = newItems.splice(di, 1);
         newItems.splice(targetIndex, 0, moved);
         setItems(newItems);
 
         setDragIndex(null);
         setDropTargetIndex(null);
+        dragIndexRef.current = null;
     }
 
     function handleDragEnd() {
         setDragIndex(null);
         setDropTargetIndex(null);
+        dragIndexRef.current = null;
     }
 
     return {
