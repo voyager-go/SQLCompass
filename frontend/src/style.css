@@ -1760,8 +1760,47 @@ body[data-theme="dark"] .connection-card__item--active {
 }
 
 /* ================================================================
-   HISTORY PAGE
+   PAGE LOADING OVERLAY
    ================================================================ */
+
+.page-loading-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 24px;
+    gap: 20px;
+    user-select: none;
+}
+
+.page-loading-spinner {
+    --spinner-size: 40px;
+    width: var(--spinner-size);
+    height: var(--spinner-size);
+    border-radius: 50%;
+    border: 3px solid var(--border-soft, #e5e7eb);
+    border-top-color: #5b8def;
+    animation: spin 0.7s linear infinite;
+}
+
+.page-loading-text {
+    font-size: 14px;
+    color: var(--text-secondary, #6b7280);
+    letter-spacing: 0.2px;
+}
+
+.page-loading-dots::after {
+    content: "";
+    animation: loadingDots 1.4s steps(4, end) infinite;
+}
+
+@keyframes loadingDots {
+    0% { content: ""; }
+    25% { content: "."; }
+    50% { content: ".."; }
+    75% { content: "..."; }
+    100% { content: ""; }
+}
 
 .history-header {
     display: flex;

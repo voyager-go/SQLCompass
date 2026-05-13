@@ -311,6 +311,7 @@ function App() {
     }, [showSplash]);
 
     const [tableDetail, setTableDetail] = useState<TableDetail | null>(null);
+    const [isLoadingSchema, setIsLoadingSchema] = useState(false);
     const [tablePageByDatabase, setTablePageByDatabase] = useState<Record<string, number>>({});
     const [redisCursorHistoryByDatabase, setRedisCursorHistoryByDatabase] = useState<Record<string, number[]>>({});
     const [expandedDatabases, setExpandedDatabases] = useState<Record<string, boolean>>({});
@@ -855,32 +856,37 @@ function App() {
             return;
         }
 
-        const detail = (await GetTableDetail({ connectionId, database, table })) as TableDetail;
-        setTableDetail(detail);
-        schema.setRenameTableName(detail.table);
-        schema.setSchemaDraftFields(
-            detail.fields.map((field) => ({
-                ...field,
-                id: browserGeneratedID(),
-                originName: field.name,
-                needsAiComment: field.comment.trim() === "",
-                aiLoading: false,
-                charset: (field as any).charset || "utf8mb4",
-                collation: (field as any).collation || "utf8mb4_general_ci",
-            })),
-        );
-        schema.setSchemaDraftIndexes(
-            detail.indexes.map((index) => ({
-                id: browserGeneratedID(),
-                originName: index.name,
-                name: index.name,
-                columns: index.columns,
-                unique: index.unique,
-                indexType: index.indexType,
-                aiLoading: false,
-            })),
-        );
-        schema.setSchemaNotice(null);
+        setIsLoadingSchema(true);
+        try {
+            const detail = (await GetTableDetail({ connectionId, database, table })) as TableDetail;
+            setTableDetail(detail);
+            schema.setRenameTableName(detail.table);
+            schema.setSchemaDraftFields(
+                detail.fields.map((field) => ({
+                    ...field,
+                    id: browserGeneratedID(),
+                    originName: field.name,
+                    needsAiComment: field.comment.trim() === "",
+                    aiLoading: false,
+                    charset: (field as any).charset || "utf8mb4",
+                    collation: (field as any).collation || "utf8mb4_general_ci",
+                })),
+            );
+            schema.setSchemaDraftIndexes(
+                detail.indexes.map((index) => ({
+                    id: browserGeneratedID(),
+                    originName: index.name,
+                    name: index.name,
+                    columns: index.columns,
+                    unique: index.unique,
+                    indexType: index.indexType,
+                    aiLoading: false,
+                })),
+            );
+            schema.setSchemaNotice(null);
+        } finally {
+            setIsLoadingSchema(false);
+        }
     }
 
     async function loadHistory(connectionId: string) {

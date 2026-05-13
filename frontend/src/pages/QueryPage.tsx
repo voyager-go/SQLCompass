@@ -923,6 +923,11 @@ export function QueryPage({
                             <div className="empty-block">该 SQL 没有返回结果集。</div>
                         )}
                     </>
+                ) : isExecutingQuery ? (
+                    <div className="page-loading-overlay">
+                        <div className="page-loading-spinner"></div>
+                        <span className="page-loading-text page-loading-dots">正在执行查询</span>
+                    </div>
                 ) : (
                     <div className="empty-block">执行 SQL 或点击左侧某张表后，这里会展示真实数据结果。</div>
                 )}

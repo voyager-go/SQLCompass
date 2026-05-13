@@ -305,6 +305,7 @@ function generateModelCode(target: ModelTarget, tableName: string, fields: Schem
 interface SchemaPageProps {
     selectedTable: string;
     tableDetail: TableDetail | null;
+    isLoadingSchema: boolean;
     schemaNotice: { tone: NoticeTone; message: string } | null;
     schemaDraftFields: SchemaDraftField[];
     fieldTypeOptions: string[];
@@ -348,6 +349,7 @@ interface SchemaPageProps {
 export function SchemaPage({
     selectedTable,
     tableDetail,
+    isLoadingSchema,
     schemaNotice,
     schemaDraftFields,
     fieldTypeOptions,
@@ -486,7 +488,14 @@ export function SchemaPage({
             <NoticeBanner notice={schemaNotice} />
 
             {!tableDetail ? (
-                <div className="empty-block">左侧点开数据库后，单击某张表先查看前 30 行数据；需要改结构时再切到这里。</div>
+                isLoadingSchema ? (
+                    <div className="page-loading-overlay">
+                        <div className="page-loading-spinner"></div>
+                        <span className="page-loading-text page-loading-dots">正在加载表结构</span>
+                    </div>
+                ) : (
+                    <div className="empty-block">左侧点开数据库后，单击某张表先查看前 30 行数据；需要改结构时再切到这里。</div>
+                )
             ) : (
                 <div className="schema-layout">
                     <div className="detail-card schema-form-card">

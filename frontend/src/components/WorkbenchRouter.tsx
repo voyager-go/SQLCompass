@@ -154,6 +154,7 @@ export interface WorkbenchRouterProps {
     selectedResultRowKeys: string[];
     buildRowSelectionKey: (page: number, columns: string[], row: Record<string, any>, index: number) => string;
     tableDetail: TableDetail | null;
+    isLoadingSchema: boolean;
     openCellEditor: (row: Record<string, any>, rowKey: string, column: string) => void;
     handleCopySQL: () => void;
     handleExportQuerySQL: () => void;
@@ -377,6 +378,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
         selectedResultRowKeys,
         buildRowSelectionKey,
         tableDetail,
+        isLoadingSchema,
         openCellEditor,
         handleCopySQL,
         handleExportQuerySQL,
@@ -627,6 +629,7 @@ export function WorkbenchRouter(props: WorkbenchRouterProps) {
                 <SchemaPage
                     selectedTable={selectedTable}
                     tableDetail={tableDetail}
+                    isLoadingSchema={isLoadingSchema}
                     schemaNotice={schemaNotice}
                     schemaDraftFields={schemaDraftFields}
                     fieldTypeOptions={fieldTypeOptions}
