@@ -261,6 +261,7 @@ function App() {
     const [selectedTable, setSelectedTable] = useState("");
     const [tableSearch, setTableSearch] = useState("");
     const [explorerTree, setExplorerTree] = useState<ExplorerTree | null>(null);
+    const [isLoadingExplorer, setIsLoadingExplorer] = useState(false);
     // Database and table filters
     const [databaseFilter, setDatabaseFilter] = useState<string[]>([]);
     const [tableFilter, setTableFilter] = useState<string[]>([]);
@@ -693,40 +694,45 @@ function App() {
             return;
         }
 
-        // 1. 快速获取表列表（不含行数）
-        const tree = (await GetExplorerTree({ connectionId, database: preferredDatabase })) as ExplorerTree;
-        setExplorerTree(tree);
+        setIsLoadingExplorer(true);
+        try {
+            // 1. 快速获取表列表（不含行数）
+            const tree = (await GetExplorerTree({ connectionId, database: preferredDatabase })) as ExplorerTree;
+            setExplorerTree(tree);
 
-        if (tree.engine === "redis") {
-            const nextHistory: Record<string, number[]> = {};
-            tree.databases.forEach((db) => {
-                nextHistory[db.name] = [0];
-            });
-            setRedisCursorHistoryByDatabase(nextHistory);
-        }
-
-        // 2. 异步加载行数
-        if (tree.engine !== "redis" && tree.databases && tree.databases.length > 0) {
-            loadTableRowCounts(connectionId, tree);
-        }
-
-        // 不自动选中数据库，让用户自行选择
-        // 仅在用户明确指定了 preferredDatabase 时才选中
-        const nextDatabase = preferredDatabase
-            ? tree.databases.find((item) => item.name === preferredDatabase)?.name
-            : "";
-
-        setSelectedDatabase(nextDatabase || "");
-        setTablePageByDatabase((current) => ({
-            ...current,
-            ...(nextDatabase ? { [nextDatabase]: current[nextDatabase] ?? 1 } : {}),
-        }));
-
-        if (selectedTable && nextDatabase) {
-            const tableExists = tree.databases.find((item) => item.name === nextDatabase)?.tables.some((item) => item.name === selectedTable);
-            if (!tableExists) {
-                setSelectedTable("");
+            if (tree.engine === "redis") {
+                const nextHistory: Record<string, number[]> = {};
+                tree.databases.forEach((db) => {
+                    nextHistory[db.name] = [0];
+                });
+                setRedisCursorHistoryByDatabase(nextHistory);
             }
+
+            // 2. 异步加载行数
+            if (tree.engine !== "redis" && tree.databases && tree.databases.length > 0) {
+                loadTableRowCounts(connectionId, tree);
+            }
+
+            // 不自动选中数据库，让用户自行选择
+            // 仅在用户明确指定了 preferredDatabase 时才选中
+            const nextDatabase = preferredDatabase
+                ? tree.databases.find((item) => item.name === preferredDatabase)?.name
+                : "";
+
+            setSelectedDatabase(nextDatabase || "");
+            setTablePageByDatabase((current) => ({
+                ...current,
+                ...(nextDatabase ? { [nextDatabase]: current[nextDatabase] ?? 1 } : {}),
+            }));
+
+            if (selectedTable && nextDatabase) {
+                const tableExists = tree.databases.find((item) => item.name === nextDatabase)?.tables.some((item) => item.name === selectedTable);
+                if (!tableExists) {
+                    setSelectedTable("");
+                }
+            }
+        } finally {
+            setIsLoadingExplorer(false);
         }
     }
 
@@ -2714,6 +2720,7 @@ function App() {
                     setShowTableFilter={setShowTableFilter}
                     selectedDatabase={selectedDatabase}
                     explorerTree={explorerTree}
+                    isLoadingExplorer={isLoadingExplorer}
                     databaseFilter={databaseFilter}
                     setDatabaseFilter={setDatabaseFilter}
                     tableFilter={tableFilter}
@@ -2912,6 +2919,7 @@ function App() {
                         isSavingFields={schema.isSavingFields}
                         handleSaveIndexes={schema.handleSaveIndexes}
                         isSavingIndexes={schema.isSavingIndexes}
+                        isLoadingSchema={isLoadingSchema}
                         onOpenPartitionPage={openPartitionPage}
                         aiNotice={ai.aiNotice}
                         aiForm={ai.aiForm}

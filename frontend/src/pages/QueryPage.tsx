@@ -620,6 +620,7 @@ export function QueryPage({
                 </div>
             ) : null}
 
+            {(queryResult || isExecutingQuery) && (
             <div className="result-board">
                 <div className="result-board__header">
                     <div className="result-board__title">
@@ -627,7 +628,7 @@ export function QueryPage({
                         查询结果
                     </div>
                     {queryResult && queryResult.columns.length > 0 ? (
-                        <div ref={colMenuRef} style={{ position: "relative", marginRight: "auto", marginLeft: 8 }}>
+                        <div ref={colMenuRef} style={{ position: "relative", marginRight: "auto", marginLeft: 8, display: "flex", alignItems: "center", gap: 4 }}>
                             <button
                                 type="button"
                                 className="ghost-button"
@@ -642,10 +643,25 @@ export function QueryPage({
                                 </svg>
                                 列
                             </button>
+                            {lastExecutedSQL && (
+                                <button
+                                    type="button"
+                                    className="ghost-button"
+                                    style={{ padding: "4px 6px", fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}
+                                    onClick={() => handleExecuteQuery(queryPage)}
+                                    disabled={isExecutingQuery}
+                                    title="刷新当前页查询结果"
+                                >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <polyline points="23 4 23 10 17 10"></polyline>
+                                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                                    </svg>
+                                </button>
+                            )}
                             {colMenuOpen ? (
                                 <div
                                     className="context-menu"
-                                    style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, minWidth: 180, maxHeight: 320, overflowY: "auto", zIndex: 10 }}
+                                    style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, minWidth: 180, maxHeight: 420, overflowY: "auto", zIndex: 10 }}
                                 >
                                     <div style={{ padding: "6px 10px", display: "flex", gap: 10, borderBottom: "1px solid var(--border-soft)" }}>
                                         <button
@@ -932,6 +948,7 @@ export function QueryPage({
                     <div className="empty-block">执行 SQL 或点击左侧某张表后，这里会展示真实数据结果。</div>
                 )}
             </div>
+            )}
 
             {smartFillModal.open ? (
                 <div className="modal-backdrop" onClick={handleCloseSmartFillModal}>

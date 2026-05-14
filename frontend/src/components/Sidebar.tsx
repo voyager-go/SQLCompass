@@ -18,6 +18,7 @@ interface SidebarProps {
     setShowTableFilter: React.Dispatch<React.SetStateAction<boolean>>;
     selectedDatabase: string;
     explorerTree: ExplorerTree | null;
+    isLoadingExplorer: boolean;
     databaseFilter: string[];
     setDatabaseFilter: React.Dispatch<React.SetStateAction<string[]>>;
     tableFilter: string[];
@@ -72,6 +73,7 @@ export function Sidebar({
     setShowTableFilter,
     selectedDatabase,
     explorerTree,
+    isLoadingExplorer,
     databaseFilter,
     setDatabaseFilter,
     tableFilter,
@@ -324,8 +326,15 @@ export function Sidebar({
                                 />
                             </div>
                             <div className="navigator-shell">
+                                {isLoadingExplorer && !explorerTree ? (
+                                    <div className="page-loading-overlay" style={{ padding: "60px 24px", minHeight: 200 }}>
+                                        <div className="page-loading-spinner"></div>
+                                        <span className="page-loading-text page-loading-dots">正在连接数据库</span>
+                                    </div>
+                                ) : explorerTree ? (
                                 <SidebarTree
                                     explorerTree={explorerTree}
+                                    isLoadingExplorer={isLoadingExplorer}
                                     databaseFilter={databaseFilter}
                                     selectedDatabase={selectedDatabase}
                                     expandedDatabases={expandedDatabases}
@@ -359,6 +368,7 @@ export function Sidebar({
                                     onRenameTableFromMenu={onRenameTableFromMenu}
                                     onNewQueryFromMenu={onNewQueryFromMenu}
                                 />
+                                )}
                             </div>
                         </div>
                     ) : (

@@ -18,6 +18,7 @@ function redisTypeLabel(type?: string) {
 
 interface SidebarTreeProps {
     explorerTree: ExplorerTree | null;
+    isLoadingExplorer: boolean;
     databaseFilter: string[];
     selectedDatabase: string;
     expandedDatabases: Record<string, boolean>;
@@ -164,7 +165,7 @@ function renderTableItem(
             </div>
             {isRedisKey ? <span className={redisTypeLabel((table as TableNode & { keyType?: string }).keyType)}>{(table as TableNode & { keyType?: string }).keyType || "key"}</span> : null}
             <span className="navigator-meta">
-                {isRedisKey ? (table.comment || "Key") : table.rows === -1 ? "加载中..." : table.rows >= 0 ? table.rows.toLocaleString() : "-"}
+                {isRedisKey ? (table.comment || "Key") : table.rows === -1 ? <span className="navigator-meta__spinner"></span> : table.rows >= 0 ? table.rows.toLocaleString() : "-"}
             </span>
         </div>
     );
@@ -181,6 +182,7 @@ function setDragPreview(event: React.DragEvent<HTMLElement>, title: string, type
 
 export function SidebarTree({
     explorerTree,
+    isLoadingExplorer,
     databaseFilter,
     selectedDatabase,
     expandedDatabases,
